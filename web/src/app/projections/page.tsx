@@ -73,7 +73,7 @@ export default function ProjectionsPage() {
                 <tr>
                    <td colSpan={9} className="px-6 py-8 text-center text-muted-foreground">Loading exact projections...</td>
                 </tr>
-              ) : projections?.map((p: PlayerProjection) => (
+              ) : projections?.data?.map((p: PlayerProjection) => (
                 <TableRow key={p.id} {...p} />
               ))}
             </tbody>
