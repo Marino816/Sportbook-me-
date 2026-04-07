@@ -46,8 +46,18 @@ export default function DashboardPage() {
   icon={Calendar}
   trend="Data Fetched Live"
 />
-        <KpiCard title="Projected Edge" value={perf?.total_roi || "0%"} icon={Activity} trend={perf?.ave_error ? `MAE: ${perf.ave_error}` : "Calculating..."} />
-        <KpiCard title="Win Rate" value={perf?.win_rate || "0%"} icon={Save} trend="Historical performance" />
+        <KpiCard
+  title="Projected Edge"
+  value={perf?.data?.total_roi || "0%"}
+  icon={Activity}
+  trend={perf?.data?.ave_error ? `MAE: ${perf.data.ave_error}` : "Calculating..."}
+/>
+<KpiCard
+  title="Win Rate"
+  value={perf?.data?.win_rate || "0%"}
+  icon={Save}
+  trend="Historical performance"
+/>
         <KpiCard title="Active Alerts" value="3" icon={AlertTriangle} trend="Critical injuries" destructive />
       </div>
 
