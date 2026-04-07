@@ -40,7 +40,7 @@ export default function DashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <KpiCard title="Active Players in Model" value={projections?.length || 0} icon={Calendar} trend="Data Fetched Live" />
+        <<KpiCard title="Active Players in Model" value={projections?.data?.length || 0} icon={Calendar} trend="Data Fetched Live" /> trend="Data Fetched Live" />
         <KpiCard title="Projected Edge" value={perf?.total_roi || "0%"} icon={Activity} trend={perf?.ave_error ? `MAE: ${perf.ave_error}` : "Calculating..."} />
         <KpiCard title="Win Rate" value={perf?.win_rate || "0%"} icon={Save} trend="Historical performance" />
         <KpiCard title="Active Alerts" value="3" icon={AlertTriangle} trend="Critical injuries" destructive />
