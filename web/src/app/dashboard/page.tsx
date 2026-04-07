@@ -84,10 +84,10 @@ export default function DashboardPage() {
                <div className="w-full h-32 bg-primary/20 blur-xl translate-y-16" />
              </div>
              <Activity className="size-8 text-primary mb-3" />
-             <h3 className="font-bold text-xl text-foreground">{perf?.total_roi || "+0.0%"} ROI</h3>
-             <p className="text-sm text-balance text-center text-muted-foreground/70 max-w-sm mt-2">
-               Your bankroll is up across the last 30 slates. {perf?.win_rate} win rate sustained.
-             </p>
+            <h3 className="font-bold text-xl text-foreground">{perf?.data?.total_roi || "+0.0%"} ROI</h3> 
+<p className="text-sm text-balance text-center text-muted-foreground/70 max-w-sm mt-2">
+  Your bankroll is up across the last 30 slates. {perf?.data?.win_rate || "0%"} win rate sustained.
+</p>
           </div>
         </div>
 
