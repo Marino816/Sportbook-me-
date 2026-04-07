@@ -13,8 +13,8 @@ async def lifespan(app: FastAPI):
     print("Starting up Apex DFS API...")
     
     # Initialize DB tables in production (safe for already existing tables)
-    from backend.models.database import engine
-    from backend.models.domain import Base
+    from models.database import engine
+    from models.domain import Base
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
@@ -29,7 +29,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-from backend.api import router as api_router
+from api import router as api_router
 from backend.api import admin, stats, sports, billing
 
 # Allow CORS for Next.js / Expo frontend
