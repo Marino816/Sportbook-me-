@@ -30,7 +30,7 @@ app = FastAPI(
 )
 
 from api import router as api_router
-from backend.api import admin, stats, sports, billing
+from api import admin, stats, sports, billing
 
 # Allow CORS for Next.js / Expo frontend
 FRONTEND_URL = os.getenv("FRONTEND_URL", os.getenv("NEXT_PUBLIC_WEB_URL", "*"))
