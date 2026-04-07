@@ -4,6 +4,8 @@ import "./globals.css";
 import Providers from "@/lib/providers";
 import { Navigation } from "@/components/Navigation";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -38,6 +40,8 @@ export default function RootLayout({
           </main>
           <DataSourceBadge />
         </Providers>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
