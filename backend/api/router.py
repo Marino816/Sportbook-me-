@@ -3,12 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Dict, Any
 
-from backend.models.database import get_db
-from backend.models.schemas import LineupRequest, LineupResponse, ProjectionSchema
-from backend.models.domain import Projection, Player, User, Subscription
-from backend.optimizer.core import DFSOptimizer
-from backend.api.utils import wrap_data
-from backend.api.billing import get_current_user
+from models.database import get_db
+from models.schemas import LineupRequest, LineupResponse, ProjectionSchema
+from models.domain import Projection, Player, User, Subscription
+from optimizer.core import DFSOptimizer
+from api.utils import wrap_data
+from api.billing import get_current_user
 import pandas as pd
 
 router = APIRouter()
