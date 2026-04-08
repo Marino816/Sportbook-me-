@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timezone
-from backend.models.database import get_db
-from backend.models.domain import Matchup
-from backend.integrations.odds import fetch_live_odds
-from backend.api.utils import wrap_data
+from models.database import get_db
+from models.domain import Matchup
+from integrations.odds import fetch_live_odds
+from api.utils import wrap_data
 
 router = APIRouter()
 

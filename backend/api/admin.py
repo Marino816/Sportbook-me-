@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timedelta, timezone
-from backend.models.database import get_db
-from backend.models.domain import User, Subscription, SystemStatus
-from backend.api.utils import wrap_data
+from models.database import get_db
+from models.domain import User, Subscription, SystemStatus
+from api.utils import wrap_data
 
 router = APIRouter()
 

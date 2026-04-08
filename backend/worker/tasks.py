@@ -1,9 +1,9 @@
 import os
 from celery import Celery
-from backend.integrations.balldontlie import BallDontLieAPI
-from backend.integrations.odds import OddsAPI
-from backend.models.database import SessionLocal
-from backend.models.domain import SystemStatus
+from integrations.balldontlie import BallDontLieAPI
+from integrations.odds import OddsAPI
+from models.database import SessionLocal
+from models.domain import SystemStatus
 from datetime import datetime, timezone
 import asyncio
 

@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
-from backend.models.domain import User, Subscription, StripeEvent
+from models.domain import User, Subscription, StripeEvent
 
 # Fetch from environment (Production Safety)
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
