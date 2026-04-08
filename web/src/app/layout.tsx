@@ -18,8 +18,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sportsbook Me DFS AI",
-  description: "Next-generation Daily Fantasy Sports Optimizer & Predictions",
+  title: "Sportsbook Me DFS AI — MLB, NBA, NFL & More",
+  description:
+    "The most powerful DFS AI platform. Optimize lineups across MLB, NBA, NFL, NHL, Soccer, MLS, UFC, PGA, NCAAF, NCAAM, NCAAW, and Boxing.",
 };
 
 export default function RootLayout({
@@ -30,12 +31,13 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex bg-background`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex`}
+        style={{ background: "#0d1117" }}
       >
         <Providers>
+          {/* Navigation is hidden on "/" by internal logic */}
           <Navigation />
           <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-          <h1 className="text-xl font-bold tracking-tight text-white">SPORTSBOOK <span className="text-neon-green">ME DFS AI</span></h1>
             {children}
           </main>
           <DataSourceBadge />

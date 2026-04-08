@@ -1,36 +1,52 @@
 @import "tailwindcss";
 
 :root {
-  /* Premium Dark Theme by default */
-  --background: #09090b;
-  --foreground: #fafafa;
-  
-  --card: #18181b;
-  --card-foreground: #fafafa;
-  
-  --popover: #18181b;
-  --popover-foreground: #fafafa;
-  
-  --primary: #3b82f6;
-  --primary-foreground: #ffffff;
-  
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
-  
-  --destructive: #ef4444;
-  --destructive-foreground: #fafafa;
-  
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #3b82f6;
-  
+  /* Sportbook Me - Dark Navy Theme */
+  --background: #0d1117;
+  --foreground: #f0f6fc;
+
+  --card: #161b22;
+  --card-foreground: #f0f6fc;
+
+  --card-elevated: #1c2128;
+
+  --popover: #161b22;
+  --popover-foreground: #f0f6fc;
+
+  --primary: #00dc82;
+  --primary-foreground: #0d1117;
+
+  --secondary: #21262d;
+  --secondary-foreground: #f0f6fc;
+
+  --muted: #21262d;
+  --muted-foreground: #8b949e;
+
+  --accent: #00dc82;
+  --accent-foreground: #0d1117;
+
+  --destructive: #f85149;
+  --destructive-foreground: #f0f6fc;
+
+  --border: #30363d;
+  --input: #21262d;
+  --ring: #00dc82;
+
   --radius: 0.75rem;
+
+  /* Sport Color Variables */
+  --sport-nfl: #d4ac0d;
+  --sport-nba: #f97316;
+  --sport-mlb: #3b82f6;
+  --sport-nhl: #06b6d4;
+  --sport-soccer: #22c55e;
+  --sport-mls: #0ea5e9;
+  --sport-ufc: #ef4444;
+  --sport-pga: #10b981;
+  --sport-ncaaf: #a855f7;
+  --sport-ncaam: #6366f1;
+  --sport-ncaaw: #ec4899;
+  --sport-boxing: #f59e0b;
 }
 
 @theme inline {
@@ -56,19 +72,154 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-  
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-  @apply antialiased selection:bg-primary/30;
+  font-family: 'Inter', 'Geist', Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Glassmorphism utilities */
+/* Glassmorphism */
 .glass {
-  @apply bg-card/60 backdrop-blur-md border border-white/10 shadow-xl;
+  background: rgba(22, 27, 34, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(48, 54, 61, 0.8);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* Hide scrollbar but keep scroll */
+.scroll-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scroll-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Neon green glow */
+.glow-primary {
+  box-shadow: 0 0 20px rgba(0, 220, 130, 0.3), 0 0 40px rgba(0, 220, 130, 0.1);
+}
+
+/* Live pulse dot */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background: #ef4444;
+  border-radius: 50%;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+
+/* Fade in animation */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease-out forwards;
+}
+
+/* Sport icon card active state */
+.sport-card-active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 0 16px rgba(0, 220, 130, 0.4);
+}
+
+/* Bottom navigation active indicator */
+.bottom-nav-active {
+  color: var(--primary);
+}
+
+/* Gradient hero overlay */
+.hero-overlay {
+  background: linear-gradient(
+    135deg,
+    rgba(13, 17, 23, 0.92) 0%,
+    rgba(13, 17, 23, 0.7) 50%,
+    rgba(13, 17, 23, 0.4) 100%
+  );
+}
+
+/* Odds pill */
+.odds-pill {
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.odds-pill:hover {
+  background: rgba(0, 220, 130, 0.15);
+  border-color: var(--primary);
+}
+
+/* Coming up row */
+.coming-up-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.coming-up-row:last-child {
+  border-bottom: none;
+}
+
+/* FAB button */
+.fab {
+  position: fixed;
+  bottom: 80px;
+  right: 16px;
+  width: 52px;
+  height: 52px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 300;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 220, 130, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  z-index: 50;
+  border: none;
+}
+
+.fab:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 24px rgba(0, 220, 130, 0.5);
+}
+
+/* Parlay card accent border */
+.parlay-accent {
+  border-left: 3px solid var(--primary);
 }
