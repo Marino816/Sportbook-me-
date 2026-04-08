@@ -3,7 +3,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Expecting this format: postgresql+asyncpg://postgres:password@localhost/apex_dfs
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:password@localhost:5432/apex_dfs")
+# Railway provides postgresql:// — we auto-convert for asyncpg compatibility
+_raw_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:password@localhost:5432/apex_dfs")
+DATABASE_URL = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1) if _raw_url.startswith("postgresql://") else _raw_url
 
 # In production, we often need SSL or a connection pooler like PgBouncer
 # Railway and Supabase require SSL for external connections
