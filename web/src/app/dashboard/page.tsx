@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { checkHealth, fetchProjections, fetchPerformanceStats } from "@/lib/api";
 import { useSearchParams, useRouter } from "next/navigation";
+import { Suspense } from "react";
 
 const SPORTS = [
   { id: "all",    label: "All",    emoji: "🎯", color: "#00dc82" },
@@ -33,7 +34,7 @@ const ALL_SLATES = [
   { sport: "MLS", sportId: "mls",  time: "8:00 PM EST", games: 4,  site: "FanDuel",    color: "#0ea5e9" },
 ];
 
-export default function DashboardPage() {
+function DashboardInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeSport = searchParams.get("sport") || "all";
@@ -266,5 +267,15 @@ function NewsItem({ time, text, impact }: any) {
         <span className="text-[10px] mt-1 block font-medium" style={{ color: "#8b949e" }}>{time}</span>
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center" style={{ background: "#0d1117" }}>
+      <div className="text-sm" style={{ color: "#8b949e" }}>Loading...</div>
+    </div>}>
+      <DashboardInner />
+    </Suspense>
   );
 }

@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LayoutDashboard, Calculator, Activity, CreditCard, Settings, Zap, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchSubscriptionStatus, type SubscriptionStatus } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 
 const SPORTS = [
   { id: "nfl",    label: "NFL",    emoji: "🏈", color: "#d4ac0d" },
@@ -31,7 +31,8 @@ const NAV_LINKS = [
   { name: "Admin",       href: "/admin",        icon: Settings },
 ];
 
-export function Navigation() {
+// Inner component that uses useSearchParams (must be inside Suspense)
+function NavigationInner() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -162,5 +163,14 @@ export function Navigation() {
         </Link>
       </div>
     </div>
+  );
+}
+
+// Exported wrapper with Suspense to satisfy Next.js static build requirement
+export function Navigation() {
+  return (
+    <Suspense fallback={null}>
+      <NavigationInner />
+    </Suspense>
   );
 }
