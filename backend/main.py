@@ -9,18 +9,16 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Load ML models if necessary, connect to redis, etc.
-    print("Starting up Apex DFS API...")
-    
-    # Initialize DB tables in production (safe for already existing tables)
-    from models.database import engine
-    from models.domain import Base
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
+    # Startup
+    # NOTE: Database table creation is intentionally omitted here.
+    # Running Base.metadata.create_all() during lifespan causes the app to hang
+    # when the database connection is slow or unavailable at boot time, resulting
+    # in 502 errors across all workers. Use Alembic migrations or a separate
+    # management command to manage schema changes.
+    logging.info("Starting up Sportsbook ME DFS AI API...")
     yield
-    # Shutdown: Clean up connections
-    print("Shutting down SPORTSBOOK ME DFS AI API...")
+    # Shutdown
+    logging.info("Shutting down Sportsbook ME DFS AI API...")
 
 app = FastAPI(
     title="Sportsbook Me DFS AI API",
