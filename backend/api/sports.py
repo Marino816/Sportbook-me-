@@ -4,7 +4,6 @@ from sqlalchemy import select
 from datetime import datetime, timezone
 from models.database import get_db
 from models.domain import Matchup
-from integrations.odds import fetch_odds
 from api.utils import wrap_data
 
 router = APIRouter()
