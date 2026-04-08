@@ -5,10 +5,10 @@ from typing import Dict, Any
 import os
 import json
 
-from backend.models.database import get_db, SessionLocal
-from backend.models.domain import User, Subscription
-from backend.services.stripe_service import StripeService
-from backend.api.utils import wrap_data
+from models.database import get_db, SessionLocal
+from models.domain import User, Subscription
+from services.stripe_service import StripeService
+from api.utils import wrap_data
 
 router = APIRouter()
 
