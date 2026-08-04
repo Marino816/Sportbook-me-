@@ -10,12 +10,22 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    logging.info("Starting up Sportsbook ME DFS AI API...")
+
+    # Production safety: reject dev JWT secret in production
+    jwt_secret = os.getenv("JWT_SECRET_KEY", "")
+    is_production = os.getenv("NODE_ENV") == "production"
+    if is_production and jwt_secret in ("", "dev-secret-change-in-production"):
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be set to a secure random value in production. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
+
     # NOTE: Database table creation is intentionally omitted here.
     # Running Base.metadata.create_all() during lifespan causes the app to hang
     # when the database connection is slow or unavailable at boot time, resulting
     # in 502 errors across all workers. Use Alembic migrations or a separate
     # management command to manage schema changes.
-    logging.info("Starting up Sportsbook ME DFS AI API...")
     yield
     # Shutdown
     logging.info("Shutting down Sportsbook ME DFS AI API...")
@@ -31,10 +41,17 @@ from api import router as api_router
 from api import admin, stats, sports, billing, auth
 
 # Allow CORS for Next.js / Expo frontend
-FRONTEND_URL = os.getenv("FRONTEND_URL", os.getenv("NEXT_PUBLIC_WEB_URL", "*"))
+# Supports: production, staging, and local dev
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in FRONTEND_URL.split(",")
+    if origin.strip()
+] if FRONTEND_URL else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL] if FRONTEND_URL != "*" else ["*"], 
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
