@@ -5,7 +5,7 @@ from typing import Dict, Any
 import os
 import json
 
-from models.database import get_db, SessionLocal
+from models.database import get_db, SyncSessionLocal
 from models.domain import User, Subscription
 from services.stripe_service import StripeService
 from api.utils import wrap_data
@@ -55,8 +55,8 @@ async def stripe_webhook(
     """Handle incoming Stripe events (subscriptions, payments)."""
     payload = await request.body()
     
-    # We use a sync session here because StripeService logic is primarily sync
-    db = SessionLocal()
+    # We use a sync session here because StripeService logic is sync
+    db = SyncSessionLocal()
     try:
         StripeService.handle_webhook_event(payload, stripe_signature, db)
         return {"status": "success"}

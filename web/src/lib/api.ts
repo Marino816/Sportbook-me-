@@ -1,5 +1,22 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 
+const TOKEN_KEY = "sbme_dfs_token";
+
+export function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function storeToken(token: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 export interface ApiResponse<T> {
   status: string;
   data: T;
@@ -75,7 +92,18 @@ export interface SubscriptionStatus {
 }
 
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<ApiResponse<T>> {
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, options);
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string>),
+  };
+  // Attach auth token if available
+  const token = getStoredToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
+  });
   if (!res.ok) {
     const errorBody = await res.text().catch(() => "Unknown error");
     throw new Error(`API Error ${res.status}: ${errorBody}`);
@@ -154,9 +182,51 @@ export async function createPortal(): Promise<ApiResponse<{ url: string }>> {
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`http://localhost:8000/health`);
+    const res = await fetch(`${API_BASE_URL.replace('/api', '')}/health`);
     return res.ok;
   } catch (error) {
     return false;
   }
+}
+
+
+// ── Authentication API ──────────────────────────────────────
+
+export interface AuthTokens {
+  access_token: string;
+  token_type: string;
+  plan: string;
+  email: string;
+}
+
+export async function register(email: string, password: string): Promise<AuthTokens> {
+  const res = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Registration failed" }));
+    throw new Error(err.detail || "Registration failed");
+  }
+  return res.json();
+}
+
+export async function login(email: string, password: string): Promise<AuthTokens> {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Invalid credentials" }));
+    throw new Error(err.detail || "Invalid credentials");
+  }
+  return res.json();
+}
+
+export async function fetchCurrentUser(): Promise<ApiResponse<any>> {
+  return apiFetch<any>("/auth/me", {
+    headers: { Authorization: `Bearer ${getStoredToken()}` },
+  });
 }

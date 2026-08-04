@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "@/lib/providers";
+import { AuthProvider } from "@/lib/auth";
 import { Navigation } from "@/components/Navigation";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { Analytics } from "@vercel/analytics/next";
@@ -35,12 +36,14 @@ export default function RootLayout({
         style={{ background: "#0d1117" }}
       >
         <Providers>
-          {/* Navigation is hidden on "/" by internal logic */}
-          <Navigation />
-          <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-            {children}
-          </main>
-          <DataSourceBadge />
+          <AuthProvider>
+            {/* Navigation is hidden on "/" by internal logic */}
+            <Navigation />
+            <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
+              {children}
+            </main>
+            <DataSourceBadge />
+          </AuthProvider>
         </Providers>
         <Analytics />
         <SpeedInsights />
