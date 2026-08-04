@@ -5,6 +5,7 @@ import Providers from "@/lib/providers";
 import { AuthProvider } from "@/lib/auth";
 import { Navigation } from "@/components/Navigation";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
@@ -40,7 +41,7 @@ export default function RootLayout({
             {/* Navigation is hidden on "/" by internal logic */}
             <Navigation />
             <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-              {children}
+              <ProtectedRoute>{children}</ProtectedRoute>
             </main>
             <DataSourceBadge />
           </AuthProvider>

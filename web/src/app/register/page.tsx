@@ -8,6 +8,8 @@ import { Loader2, Zap, Mail, Lock, AlertCircle } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const nextPath = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+  const destination = nextPath?.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/dashboard";
   const { register, isAuthenticated } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -18,8 +20,8 @@ export default function RegisterPage() {
 
   // Redirect if already authenticated
   React.useEffect(() => {
-    if (isAuthenticated) router.replace("/dashboard");
-  }, [isAuthenticated, router]);
+    if (isAuthenticated) router.replace(destination);
+  }, [destination, isAuthenticated, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +40,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(email, password);
-      router.push("/dashboard");
+      router.push(destination);
     } catch (err: any) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
