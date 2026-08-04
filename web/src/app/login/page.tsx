@@ -8,6 +8,8 @@ import { Loader2, Zap, Mail, Lock, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
+  const nextPath = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
+  const destination = nextPath?.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/dashboard";
   const { login, isAuthenticated } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -17,8 +19,8 @@ export default function LoginPage() {
 
   // Redirect if already authenticated
   React.useEffect(() => {
-    if (isAuthenticated) router.replace("/dashboard");
-  }, [isAuthenticated, router]);
+    if (isAuthenticated) router.replace(destination);
+  }, [destination, isAuthenticated, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +28,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/dashboard");
+      router.push(destination);
     } catch (err: any) {
       setError(err.message || "Invalid credentials. Please try again.");
     } finally {
