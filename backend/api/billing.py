@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request, Header, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Dict, Any
 import os
@@ -9,29 +9,15 @@ from models.database import get_db, SessionLocal
 from models.domain import User, Subscription
 from services.stripe_service import StripeService
 from api.utils import wrap_data
+from api.auth import get_current_user
 
 router = APIRouter()
-
-# Authentication dependency (Simulated for this demo architecture)
-# In production, this would use a JWT token and set the current_user.
-async def get_current_user(db: Session = Depends(get_db)):
-    """Retrieve the current logged-in user from the database."""
-    # For now, we'll fetch a default user for local testing
-    result = await db.execute(select(User))
-    user = result.scalars().first()
-    if not user:
-        # Create a default user in dev if none exists
-        user = User(email="shark@apexdfs.io", is_pro=False)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-    return user
 
 @router.post("/checkout")
 async def create_checkout(
     plan: str, 
     user: User = Depends(get_current_user), 
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Initiate a Stripe Checkout session for a chosen plan."""
     try:
@@ -82,7 +68,7 @@ async def stripe_webhook(
 @router.get("/status")
 async def get_subscription_status(
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """Get the current user's subscription and plan status."""
     if not user.active_subscription_id:

@@ -5,31 +5,44 @@ from typing import List, Dict, Any
 class DFSOptimizer:
     def __init__(self, projections: pd.DataFrame, settings: Dict[str, Any]):
         """
-        projections: DataFrame containing ['id', 'name', 'salary', 'projected_fp', 'roster_position', 'team']
+        projections: DataFrame with columns:
+            ['id', 'name', 'salary', 'projected_fp', 'roster_position', 'team']
         settings: {
             'num_lineups': int,
             'min_uniqueness': int,
             'max_exposure': float,
-            'locked': List[int],
-            'excluded': List[int]
+            'locked_player_ids': List[int],   # canonical (v2+)
+            'excluded_player_ids': List[int],  # canonical (v2+)
+            'locked': List[int],              # legacy alias
+            'excluded': List[int],            # legacy alias
         }
         """
         self.df = projections.copy()
         self.settings = settings
-        self.solver = pywraplp.Solver.CreateSolver('SCIP') # SCIP is an excellent integer programming solver
-        
-        # Internal states
+        self.solver = pywraplp.Solver.CreateSolver('SCIP')
+
+        # Self internal states
         self.player_vars = {}
         self.lineups_generated = []
 
+        # Normalize field names: accept both canonical and legacy keys
+        self.locked_ids = list(
+            self.settings.get('locked_player_ids', [])
+            or self.settings.get('locked', [])
+        )
+        self.excluded_ids = list(
+            self.settings.get('excluded_player_ids', [])
+            or self.settings.get('excluded', [])
+        )
+
     def build_variables(self):
-        # Create binary variable for each player: 1 if selected, 0 otherwise
+        """Create binary variables for each eligible player."""
         for idx, row in self.df.iterrows():
-            if row['id'] in self.settings.get('excluded', []):
-                continue # Exclude player completely
-            
+            if row['id'] in self.excluded_ids:
+                continue  # Exclude player completely
+
             # Lower bound 1 if locked, 0 otherwise
-            lb = 1 if row['id'] in self.settings.get('locked', []) else 0
+            lb = 1 if row['id'] in self.locked_ids else 0
             self.player_vars[idx] = self.solver.IntVar(lb, 1, f"player_{idx}")
 
     def build_nba_draftkings_constraints(self):

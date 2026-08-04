@@ -7,7 +7,9 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
+    hashed_password = Column(String, nullable=True)
     is_pro = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
     stripe_customer_id = Column(String, nullable=True)
     active_subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

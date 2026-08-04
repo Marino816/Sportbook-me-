@@ -8,7 +8,7 @@ from models.schemas import LineupRequest, LineupResponse, ProjectionSchema
 from models.domain import Projection, Player, User, Subscription
 from optimizer.core import DFSOptimizer
 from api.utils import wrap_data
-from api.billing import get_current_user
+from api.auth import get_current_user
 import pandas as pd
 
 router = APIRouter()

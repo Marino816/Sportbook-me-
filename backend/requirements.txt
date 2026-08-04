@@ -14,6 +14,8 @@ numpy
 firebase-admin
 celery
 gunicorn
-uvicorn[standard]
 asyncpg
 stripe
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart

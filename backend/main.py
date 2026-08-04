@@ -28,7 +28,7 @@ app = FastAPI(
 )
 
 from api import router as api_router
-from api import admin, stats, sports, billing
+from api import admin, stats, sports, billing, auth
 
 # Allow CORS for Next.js / Expo frontend
 FRONTEND_URL = os.getenv("FRONTEND_URL", os.getenv("NEXT_PUBLIC_WEB_URL", "*"))
@@ -49,6 +49,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(stats.router, prefix="/api/stats", tags=["Performance"])
 app.include_router(sports.router, prefix="/api/sports", tags=["Sports"])
 app.include_router(billing.router, prefix="/api/billing", tags=["Billing"])
+app.include_router(auth.router, prefix="/api", tags=["Authentication"])
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

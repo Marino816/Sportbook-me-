@@ -103,8 +103,9 @@ async def get_system_health(db: AsyncSession = Depends(get_db)):
 @router.post("/sync/trigger")
 async def trigger_manual_sync():
     """Manually trigger the background sync task."""
-    from backend.worker.tasks import sync_daily_slate
-    # In a real environment, we'd use .delay() for Celery
-    # For this dev environment, we'll run it and return
-    task_result = sync_daily_slate.apply() # Synchronous execution for feedback
+    from worker.tasks import sync_daily_slate
+
+    # In a real environment, we'd use .delay() for Celery.
+    # For dev, we run synchronously so the caller gets immediate feedback.
+    task_result = sync_daily_slate.apply()  # Synchronous execution for feedback
     return wrap_data({"task_id": str(task_result.id), "status": "success"})

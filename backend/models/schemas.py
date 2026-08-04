@@ -37,14 +37,25 @@ class SlateSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class OptimizerSettings(BaseModel):
+    """Settings for the lineup optimizer.
+
+    All player-ID fields reference the canonical player ID in the players table.
+    """
+
     num_lineups: int = 20
     min_uniqueness: int = 2
-    max_exposure: float = 1.0 # default 100%
-    randomness: float = 0.0 # 0% variation
+    max_exposure: float = 1.0
+    randomness: float = 0.0
+
+    # Canonical field names — use these in new code
     locked_player_ids: List[int] = []
     excluded_player_ids: List[int] = []
-    # Advanced stacks: [{"team": "LAL", "count": 2}]
+
+    # Legacy aliases — preserved for backward compatibility
+    # (mapped automatically by the optimizer)
     team_stacks: List[Dict[str, Any]] = []
+
+    model_config = ConfigDict(populate_by_name=True)
 
 class LineupRequest(BaseModel):
     slate_id: int
@@ -54,3 +65,36 @@ class LineupResponse(BaseModel):
     total_salary: int
     projected_score: float
     players: List[ProjectionSchema]
+
+
+# ── Authentication schemas ──────────────────────────────────
+
+class UserRegisterRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    plan: str = "Starter"
+    email: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    is_pro: bool
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MessageResponse(BaseModel):
+    message: str
