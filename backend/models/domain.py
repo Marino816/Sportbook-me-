@@ -13,7 +13,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     stripe_customer_id = Column(String, nullable=True)
     active_subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     subscription = relationship("Subscription", foreign_keys=[active_subscription_id])
 
@@ -76,7 +76,7 @@ class Lineup(Base):
     actual_score = Column(Float, nullable=True) # For ROI calculation
     won_amount = Column(Float, default=0.0)
     entry_fee = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class Subscription(Base):
     """SaaS billing and plan tracking."""
@@ -89,7 +89,7 @@ class Subscription(Base):
     mrr_value = Column(Float, default=49.99)
     current_period_end = Column(DateTime)
     cancel_at_period_end = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class Matchup(Base):
     """Real-world sports matches for the Betting Lobby."""
@@ -110,7 +110,7 @@ class SystemStatus(Base):
     id = Column(Integer, primary_key=True, index=True)
     provider_name = Column(String, unique=True) # 'DFS_PROJECTIONS', 'SPORTS_ODDS', 'NBA_API'
     is_healthy = Column(Boolean, default=True)
-    last_sync_time = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_sync_time = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_sync_result = Column(String) # 'Success', 'Timeout', 'Rate-Limited', etc.
     data_source_mode = Column(String, default="live") # 'live', 'cached', 'demo'
 
@@ -120,4 +120,4 @@ class StripeEvent(Base):
     id = Column(Integer, primary_key=True, index=True)
     event_id = Column(String, unique=True, index=True)
     event_type = Column(String)
-    processed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    processed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
