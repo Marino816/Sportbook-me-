@@ -173,8 +173,10 @@ export async function fetchSubscriptionStatus(): Promise<ApiResponse<Subscriptio
 }
 
 export async function createCheckout(plan: string): Promise<ApiResponse<{ url: string }>> {
-  return apiFetch<{ url: string }>(`/billing/checkout?plan=${plan}`, {
-    method: "POST"
+  return apiFetch<{ url: string }>(`/billing/checkout`, {
+    method: "POST",
+    body: JSON.stringify({ plan }),
+    headers: { "Content-Type": "application/json" },
   });
 }
 

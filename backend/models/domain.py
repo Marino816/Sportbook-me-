@@ -87,7 +87,8 @@ class Subscription(Base):
     plan_name = Column(String) # 'Starter', 'Pro Arena', 'Elite Stack'
     status = Column(String) # 'active', 'trialing', 'canceled', 'past_due'
     mrr_value = Column(Float, default=49.99)
-    current_period_end = Column(DateTime)
+    current_period_end = Column(DateTime(timezone=True))
+    trial_end = Column(DateTime(timezone=True), nullable=True)
     cancel_at_period_end = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -121,3 +122,18 @@ class StripeEvent(Base):
     event_id = Column(String, unique=True, index=True)
     event_type = Column(String)
     processed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class RevenueLog(Base):
+    """Revenue tracking from successful Stripe payments."""
+    __tablename__ = "revenue_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    subscription_id = Column(Integer, ForeignKey("subscriptions.id"))
+    amount = Column(Float)
+    currency = Column(String, default="usd")
+    stripe_invoice_id = Column(String, unique=True, index=True)
+    status = Column(String, default="paid")
+    period_start = Column(DateTime(timezone=True))
+    period_end = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
