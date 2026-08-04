@@ -76,28 +76,37 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection) -> None:
-    """Configure Alembic context with a live sync-style connection and run migrations."""
-    context.configure(connection=connection, target_metadata=target_metadata)
+    """Configure context and run migrations synchronously within async connection."""
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
 
 
 async def run_migrations_online_async() -> None:
-    """Run migrations against a live async database (asyncpg)."""
+    """Run async migrations against a live async database (asyncpg)."""
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
-    async with connectable.begin_nested() as connection:
+    async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
 
     await connectable.dispose()
 
 
+def run_migrations_online() -> None:
+    """Synchronous wrapper to invoke async migration runner."""
+    asyncio.run(run_migrations_online_async())
+
+
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online_async())
+    run_migrations_online()
