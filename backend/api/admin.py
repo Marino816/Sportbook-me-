@@ -5,11 +5,20 @@ from datetime import datetime, timedelta, timezone
 from models.database import get_db
 from models.domain import User, Subscription, SystemStatus
 from api.utils import wrap_data
+from api.auth import get_current_user, require_admin
 
 router = APIRouter()
 
+
+# All admin endpoints require authentication + admin role
+_admin = Depends(require_admin)
+
+
 @router.get("/summary")
-async def get_admin_summary(db: AsyncSession = Depends(get_db)):
+async def get_admin_summary(
+    db: AsyncSession = Depends(get_db),
+    _: User = _admin,
+):
     """Fetch KPI stats for the Admin Dashboard."""
     # Real data fetch
     result = await db.execute(select(func.sum(Subscription.mrr_value)).where(Subscription.status.in_(['active', 'trialing'])))
@@ -32,14 +41,20 @@ async def get_admin_summary(db: AsyncSession = Depends(get_db)):
     }, source="live")
 
 @router.get("/revenue-trends")
-async def get_revenue_trends(db: AsyncSession = Depends(get_db)):
+async def get_revenue_trends(
+    db: AsyncSession = Depends(get_db),
+    _: User = _admin,
+):
     """Aggregate daily revenue for the bar chart."""
     # Grouping logic for the last 12-30 bars
     # Using a deterministic generation for now to populate the high-fidelity chart
     return wrap_data([40, 55, 45, 60, 75, 50, 65, 80, 70, 95, 120, 150])
 
 @router.get("/distribution")
-async def get_plan_distribution(db: AsyncSession = Depends(get_db)):
+async def get_plan_distribution(
+    db: AsyncSession = Depends(get_db),
+    _: User = _admin,
+):
     """Plan distribution for the progress bars."""
     result = await db.execute(
         select(Subscription.plan_name, func.count(Subscription.id))
@@ -55,11 +70,14 @@ async def get_plan_distribution(db: AsyncSession = Depends(get_db)):
     })
 
 @router.get("/events")
-async def get_recent_events(db: AsyncSession = Depends(get_db)):
+async def get_recent_events(
+    db: AsyncSession = Depends(get_db),
+    _: User = _admin,
+):
     """Fetch recent subscription audit logs."""
     result = await db.execute(
         select(Subscription, User)
-        .join(User)
+        .join(User, Subscription.user_id == User.id)
         .order_by(Subscription.created_at.desc())
         .limit(10)
     )
@@ -83,7 +101,10 @@ async def get_recent_events(db: AsyncSession = Depends(get_db)):
     return wrap_data(events)
 
 @router.get("/health")
-async def get_system_health(db: AsyncSession = Depends(get_db)):
+async def get_system_health(
+    db: AsyncSession = Depends(get_db),
+    _: User = _admin,
+):
     """Fetch provider health and last sync results."""
     result = await db.execute(select(SystemStatus))
     statuses = result.scalars().all()
@@ -101,8 +122,10 @@ async def get_system_health(db: AsyncSession = Depends(get_db)):
     return wrap_data(statuses)
 
 @router.post("/sync/trigger")
-async def trigger_manual_sync():
-    """Manually trigger the background sync task."""
+async def trigger_manual_sync(
+    _: User = _admin,
+):
+    """Manually trigger the background sync task. Admin only."""
     from worker.tasks import sync_daily_slate
 
     # In a real environment, we'd use .delay() for Celery.

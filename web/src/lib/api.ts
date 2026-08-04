@@ -197,6 +197,7 @@ export interface AuthTokens {
   token_type: string;
   plan: string;
   email: string;
+  role: string;
 }
 
 export async function register(email: string, password: string): Promise<AuthTokens> {

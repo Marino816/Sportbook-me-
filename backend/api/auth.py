@@ -101,6 +101,18 @@ async def get_current_user(
     return user
 
 
+async def require_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Require the admin role — returns 403 for non-admin users."""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
 # ── Endpoints ────────────────────────────────────────────────
 
 @router.post("/register", response_model=TokenResponse)
@@ -135,11 +147,12 @@ async def register(
     await db.commit()
     await db.refresh(user)
 
-    token = create_access_token({"sub": str(user.id)})
+    token = create_access_token({"sub": str(user.id), "role": user.role})
     return TokenResponse(
         access_token=token,
         plan="Starter",
         email=user.email,
+        role=user.role,
     )
 
 
@@ -164,7 +177,7 @@ async def login(
             detail="Account is disabled",
         )
 
-    token = create_access_token({"sub": str(user.id)})
+    token = create_access_token({"sub": str(user.id), "role": user.role})
 
     # Determine plan name
     plan = "Starter"
@@ -180,6 +193,7 @@ async def login(
         access_token=token,
         plan=plan,
         email=user.email,
+        role=user.role,
     )
 
 

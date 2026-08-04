@@ -84,11 +84,13 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     plan: str = "Starter"
     email: str
+    role: str = "user"
 
 
 class UserResponse(BaseModel):
     id: int
     email: str
+    role: str
     is_pro: bool
     is_active: bool
     created_at: datetime

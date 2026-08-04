@@ -22,12 +22,14 @@ interface AuthState {
     email: string;
     plan: string;
     isPro: boolean;
+    role: string;
   } | null;
   isLoading: boolean;
   isAuthenticated: boolean;
 }
 
 interface AuthContextType extends AuthState {
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -58,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             email: res.data.email,
             plan: res.data.plan || "Starter",
             isPro: res.data.is_pro || false,
+            role: res.data.role || "user",
           },
           isLoading: false,
           isAuthenticated: true,
@@ -78,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: tokens.email,
         plan: tokens.plan,
         isPro: tokens.plan !== "Starter",
+        role: tokens.role || "user",
       },
       isLoading: false,
       isAuthenticated: true,
@@ -92,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: tokens.email,
         plan: tokens.plan,
         isPro: false,
+        role: tokens.role || "user",
       },
       isLoading: false,
       isAuthenticated: true,
@@ -103,8 +108,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 
+  const isAdmin = state.user?.role === "admin";
+
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout }}>
+    <AuthContext.Provider
+      value={{ ...state, isAdmin, login, register, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );
