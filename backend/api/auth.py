@@ -137,6 +137,17 @@ async def register(
             detail="Password must be at least 8 characters",
         )
 
+    # bcrypt has a hard limit of 72 bytes — validate based on UTF-8 byte
+    # length (not character count) so multibyte passwords are measured
+    # correctly, and reject early with a 422 instead of letting bcrypt
+    # raise a ValueError that would otherwise surface as a 500.
+    password_byte_length = len(body.password.encode("utf-8"))
+    if password_byte_length > 72:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must not exceed 72 bytes when UTF-8 encoded",
+        )
+
     user = User(
         email=body.email,
         hashed_password=hash_password(body.password),
