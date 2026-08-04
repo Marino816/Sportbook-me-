@@ -1,256 +1,379 @@
-# Phase 5 — Staging Deployment — Sportsbook Me DFS AI
+# Phase 5B — Staging Infrastructure Provisioning — Sportsbook Me DFS AI
 
 **Date**: 2026-08-04
 **Branch**: `hermes-production-build`
-**Commit**: `bd0a272` (Phase 4) + smoke tests
+**Status**: INFRASTRUCTURE NOT YET PROVISIONED — requires manual setup
 
 ---
 
-## 1. Staging Services — Status
+## EXECUTIVE SUMMARY
 
-| Service | Platform | Status |
-|---------|----------|--------|
-| Frontend | Vercel (`web/`) | Ready to deploy (build verified) |
-| Backend API | Railway (`backend/`) | Ready to deploy (tests pass, SECRET_KEY guard active) |
-| Celery Worker | Railway (`backend/`) | Ready (task registered, import verified) |
-| Celery Beat | Railway (`backend/`) | Optional (periodic sync configured) |
-| PostgreSQL | Railway plugin | Needs provisioning on Railway |
-| Redis | Railway plugin | Needs provisioning on Railway |
-
-Since Docker/PostgreSQL/Redis are not available on this local macOS machine, the staging infrastructure must be provisioned on Railway directly. All local verification used SQLite in-memory with the FastAPI test client.
+Local verification is complete (49 checks passed). Staging infrastructure on Railway and Vercel must be provisioned manually. This document provides every command, URL, and environment variable needed.
 
 ---
 
-## 2. Public Staging URLs
+## 1. ENVIRONMENT VARIABLE NAMING — FIXED
 
-| Component | URL |
-|-----------|-----|
-| Frontend | `https://staging.sbmedfsai.com` |
-| Backend API | Railway-generated URL (or `https://api-staging.sbmedfsai.com` if custom domain) |
-| Backend Health | `{backend}/health` |
-| API Docs | `{backend}/docs` |
+**Issue found**: `backend/.env.example` used `SECRET_KEY` but the application code (`auth.py`, `main.py`) reads `JWT_SECRET_KEY`. This caused confusion across all Phase reports.
+
+**Fixed**: `backend/.env.example` now uses `JWT_SECRET_KEY` (canonical name). All deployment documentation below uses `JWT_SECRET_KEY`.
+
+**Verification**:
+- `backend/api/auth.py:33`: `os.getenv("JWT_SECRET_KEY", ...)` ✓
+- `backend/main.py:16`: `os.getenv("JWT_SECRET_KEY", "")` ✓
+- `backend/.env.example:4`: `JWT_SECRET_KEY=change-me-to-a-random-64-char-string` ✓
 
 ---
 
-## 3. Deployment Commands
+## 2. STAGING JWT SECRET — GENERATED
 
-### Vercel (Frontend)
+A secure 64-character staging secret has been generated locally. **It is NOT displayed in this report.**
+
+Set it manually in Railway:
+```
+JWT_SECRET_KEY=<64 char value generated via secrets.token_urlsafe(48)>
+```
+
+Generate a new one if needed:
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+---
+
+## 3. RAILWAY STAGING PROJECT SETUP
+
+### 3.1 Create Project
+
+1. Go to https://railway.app/dashboard
+2. Click "New Project"
+3. Name: `sportsbook-me-staging`
+4. Add services from the GitHub repo `Marino816/Sportbook-me-`
+
+### 3.2 Web Service (FastAPI)
+
+| Setting | Value |
+|---------|-------|
+| Source | GitHub: `Marino816/Sportbook-me-` branch `hermes-production-build` |
+| Root directory | `backend` |
+| Start command | `gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:$PORT` |
+| Health check path | `/health` |
+
+### 3.3 Worker Service (Celery)
+
+| Setting | Value |
+|---------|-------|
+| Source | Same as web service |
+| Root directory | `backend` |
+| Start command | `celery -A worker.tasks worker --loglevel=info` |
+
+### 3.4 Beat Service (Celery Beat — Optional)
+
+| Setting | Value |
+|---------|-------|
+| Source | Same as web service |
+| Root directory | `backend` |
+| Start command | `celery -A worker.tasks beat --loglevel=info` |
+
+**Note**: Beat runs the hourly slate sync. Enable only if live sports data is configured.
+
+### 3.5 PostgreSQL Plugin
+
+1. In Railway dashboard, click "Add Plugin"
+2. Select "PostgreSQL"
+3. Railway auto-generates `DATABASE_URL` environment variable
+
+### 3.6 Redis Plugin
+
+1. In Railway dashboard, click "Add Plugin"
+2. Select "Redis"
+3. Railway auto-generates `REDIS_URL` environment variable
+
+---
+
+## 4. RAILWAY ENVIRONMENT VARIABLES
+
+Set these in the Railway project's "Variables" tab (shared across services):
+
+| Variable | Value | Notes |
+|----------|-------|-------|
+| `NODE_ENV` | `production` | Required — enables SECRET_KEY guard + SSL |
+| `JWT_SECRET_KEY` | `<generated-64-char-secret>` | Required — copy from Section 2 |
+| `JWT_EXPIRE_MINUTES` | `1440` | Token lifetime in minutes (24h) |
+| `DATABASE_URL` | `<auto-set-by-railway>` | Railway PostgreSQL plugin |
+| `REDIS_URL` | `<auto-set-by-railway>` | Railway Redis plugin |
+| `FRONTEND_URL` | `https://sbmedfsai.com,https://staging.sbmedfsai.com,https://www.sbmedfsai.com,<vercel-staging-url>` | Comma-separated CORS origins |
+| `STRIPE_SECRET_KEY` | `sk_test_...` | Stripe test mode secret |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_...` | Stripe test webhook secret |
+| `STRIPE_PRO_PRICE_ID` | `price_...` | Test price ID |
+| `STRIPE_ELITE_PRICE_ID` | `price_...` | Test price ID |
+| `DB_POOL_SIZE` | `5` | Connection pool |
+| `DB_MAX_OVERFLOW` | `10` | Overflow connections |
+| `BALLDONTLIE_API_KEY` | `<your-key>` | Optional — demo fallback if empty |
+| `ODDS_API_KEY` | `<your-key>` | Optional — demo fallback if empty |
+| `USE_DEMO_DATA_FALLBACK` | `true` | Graceful fallback when API keys missing |
+
+Do NOT set these on Railway (production only):
+- No live Stripe keys (`sk_live_`, `pk_live_`)
+- No production database URLs
+- No production Redis URLs
+
+---
+
+## 5. DATABASE MIGRATION
+
+After Railway PostgreSQL is provisioned and environment variables set:
+
+### 5.1 Verify Connection
 
 ```bash
-# Deploy to staging (automatic on push to hermes-production-build if configured)
-# or manually:
-vercel --prod  # production
-vercel         # preview/staging
+# Via Railway CLI (after login):
+railway run --service web -- python -c "import os; print(os.getenv('DATABASE_URL','NOT SET'))"
 ```
 
-Config:
-- Framework: Next.js
-- Root directory: `web`
-- Build: `next build --turbopack`
-- Output: `.next`
+### 5.2 Run Migration
 
-### Railway (Backend)
-
-Railway auto-deploys on push. Procfile services:
-```
-web:    gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:$PORT
-worker: celery -A worker.tasks worker --loglevel=info
-beat:   celery -A worker.tasks beat --loglevel=info
-```
-
-### Database Migration
-
-Run once after first deploy:
-```bash
-cd backend
-alembic upgrade head
-```
-
----
-
-## 4. Environment Variables Configured
-
-### Railway (Backend)
-
-| Variable | Configuration Status |
-|----------|---------------------|
-| `DATABASE_URL` | Must be set to Railway PostgreSQL URL |
-| `REDIS_URL` | Must be set to Railway Redis URL |
-| `JWT_SECRET_KEY` | Must generate: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
-| `JWT_EXPIRE_MINUTES` | `1440` (24h) |
-| `FRONTEND_URL` | `https://sbmedfsai.com,https://staging.sbmedfsai.com,https://www.sbmedfsai.com` |
-| `STRIPE_SECRET_KEY` | `sk_test_...` (test mode only) |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_...` (test only) |
-| `STRIPE_PRO_PRICE_ID` | `price_...` (test price) |
-| `STRIPE_ELITE_PRICE_ID` | `price_...` (test price) |
-| `NODE_ENV` | `production` |
-| `DB_POOL_SIZE` | `5` |
-| `DB_MAX_OVERFLOW` | `10` |
-| `BALLDONTLIE_API_KEY` | Optional (demo fallback) |
-| `ODDS_API_KEY` | Optional (demo fallback) |
-| `USE_DEMO_DATA_FALLBACK` | `true` |
-
-### Vercel (Frontend)
-
-| Variable | Value |
-|----------|-------|
-| `NEXT_PUBLIC_API_URL` | `{railway_backend_url}/api` |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` |
-| `NODE_ENV` | `production` |
-
----
-
-## 5. Migration Revision
-
-| Item | Value |
-|------|-------|
-| Alembic revision | `d0ccfbefa849` |
-| Description | `initial_schema` |
-| Tables | 10 (users, slates, players, game_logs, projections, lineups, subscriptions, matchups, system_status, stripe_events) |
-| Status | Ready to apply (verified via SQL generation) |
-
-**Command to run on Railway:**
 ```bash
 railway run --service web -- alembic upgrade head
 ```
 
----
+### 5.3 Verify
 
-## 6. Smoke Test Results
+```bash
+railway run --service web -- alembic current
+```
 
-### Local Verification (FastAPI Test Client + SQLite)
+Expected output:
+```
+d0ccfbefa849 (head)
+```
 
-| # | Test | Result |
-|---|------|--------|
-| 1 | Health endpoint (`GET /health`) | PASS |
-| 2 | Registration (`POST /api/auth/register`) | PASS |
-| 3 | Duplicate registration rejected (409) | PASS |
-| 4 | Login (`POST /api/auth/login`) | PASS |
-| 5 | Invalid login rejected (401) | PASS |
-| 6 | Current user (`GET /api/auth/me`) | PASS |
-| 7 | Missing token rejected (401) | PASS |
-| 8 | Invalid token rejected (401) | PASS |
-| 9 | Logout flow (client-side clear) | PASS |
-| 10 | Billing status protected (401 w/o auth) | PASS |
-| 11 | Billing status with auth (200) | PASS |
-| 12 | Optimizer protected (401 w/o auth) | PASS |
-| 13 | Optimizer locked_player_ids | PASS |
-| 14 | Optimizer excluded_player_ids | PASS |
-| 15 | CORS headers present | PASS |
-| 16 | Database persistence (duplicate detection) | PASS |
-| 17 | Celery task registered | PASS |
-| 18 | Sports lobby demo fallback | PASS |
-
-### Requires Live Staging Infra
-
-| # | Test | Status |
-|---|------|--------|
-| 19 | Frontend loads over HTTPS | Requires Vercel deploy |
-| 20 | Frontend reaches backend | Requires cross-origin deploy |
-| 21 | Redis connectivity | Requires Railway Redis |
-| 22 | Celery worker starts | Requires Railway worker service |
-| 23 | Safe test task completes | Requires Railway Redis |
-| 24 | Odds/sports API live data | Requires API keys |
-| 25 | Stripe test checkout flow | Requires Stripe test mode setup |
-| 26 | Logs contain no secrets | Requires live infra |
+Expected tables (10): `users`, `slates`, `players`, `game_logs`, `projections`, `lineups`, `subscriptions`, `matchups`, `system_status`, `stripe_events`
 
 ---
 
-## 7. Tests Summary
+## 6. RAILWAY DEPLOYMENT
 
-| Suite | Count | Result |
-|-------|-------|--------|
-| Auth unit tests | 14 | All passed |
-| Optimizer unit tests | 9 | All passed |
-| Staging smoke tests | 18 | All passed |
-| TypeScript check | 1 | Clean |
-| Next.js build | 1 | Success (11 routes) |
-| Secret scan | 1 | Clean |
-| Import verification | 5 modules | All OK |
-| **Total** | **49** | **49 passed, 0 failed** |
+Railway auto-deploys on push to the connected branch. After setting up services:
 
----
+1. Push to `hermes-production-build` (already done)
+2. Wait for Railway to build and deploy
+3. Check service logs for errors
 
-## 8. Logs and Errors
+### 6.1 Health Check
 
-### Known warnings (non-blocking)
+```bash
+curl https://<railway-service-url>/health
+# Expected: {"status":"ok"}
+```
 
-- **SAWarning: circular FK (users↔subscriptions)**: SQLite limitation. Works correctly on PostgreSQL.
-- **pytest-asyncio deprecation**: `HTTP_422_UNPROCESSABLE_ENTITY` → `UNPROCESSABLE_CONTENT`. FastAPI internal, no action needed.
-- **bcrypt version warning**: passlib compatibility note with bcrypt 4.2.1. Hashing/verification works correctly.
-- **ORTools SwigPyPacked warnings**: Google OR-Tools internal. No functional impact.
+### 6.2 Verify Services
 
-### No errors found.
+- Web service: check `/health` and `/docs` endpoints
+- Worker service: check logs for "ready" message
+- Beat service (if enabled): check logs for "beat: Starting..."
 
 ---
 
-## 9. Security Findings
+## 7. VERCEL STAGING PROJECT
 
-| Check | Status |
-|-------|--------|
-| Live Stripe keys in code | NONE — all are env variables with `sk_test_`/`sk_live_` placeholders in .env.example |
-| Hardcoded passwords | NONE — bcrypt hashes only |
-| SECRET_KEY production guard | ACTIVE — app refuses to start in production with dev default |
-| CORS origins | Comma-separated, no wildcard with credentials |
-| Token storage | localStorage (XSS risk — acceptable for staging) |
-| .env files tracked | NONE |
+### 7.1 Create Project
+
+```bash
+# If Vercel CLI were authenticated:
+vercel --cwd web --name sportsbook-me-staging
+
+# Or via Vercel dashboard:
+# 1. Go to https://vercel.com/new
+# 2. Import Marino816/Sportbook-me-
+# 3. Set root directory to "web"
+# 4. Set framework to "Next.js"
+```
+
+### 7.2 Vercel Environment Variables
+
+| Variable | Value |
+|----------|-------|
+| `NEXT_PUBLIC_API_URL` | `https://<railway-web-url>/api` |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` |
+| `NODE_ENV` | `production` |
+
+### 7.3 Deploy
+
+```bash
+# If Vercel CLI were authenticated:
+vercel --cwd web --prod
+
+# Or push to hermes-production-build (if auto-deploy configured)
+```
+
+### 7.4 Get Staging URL
+
+Vercel generates a URL like: `sportsbook-me-staging-xxxxx.vercel.app`
+
+Note this URL — it must be added to `FRONTEND_URL` in Railway for CORS.
 
 ---
 
-## 10. Remaining Blockers for Staging
+## 8. CORS CONFIGURATION
 
-| # | Blocker | Status |
-|---|---------|--------|
-| 1 | Railway PostgreSQL not provisioned | Needs Railway setup |
-| 2 | Railway Redis not provisioned | Needs Railway setup |
-| 3 | SECRET_KEY not generated | Needs `secrets.token_urlsafe(48)` |
-| 4 | Stripe test mode prices not created | Needs Stripe dashboard |
-| 5 | Vercel staging project not configured | Needs Vercel dashboard |
-| 6 | DNS for staging.sbmedfsai.com | Needs DNS record |
+After both services are deployed, update `FRONTEND_URL` in Railway:
+
+```
+FRONTEND_URL=https://sbmedfsai.com,https://staging.sbmedfsai.com,https://www.sbmedfsai.com,https://sportsbook-me-staging-xxxxx.vercel.app
+```
+
+The multi-origin CORS middleware (added in Phase 4) supports comma-separated origins.
 
 ---
 
-## 11. Rollback Steps
+## 9. DNS RECORD (DO NOT CREATE WITHOUT APPROVAL)
+
+When ready to point a custom domain to staging:
+
+| Field | Value |
+|-------|-------|
+| Record type | `CNAME` |
+| Host / Name | `staging` |
+| Target / Value | `cname.vercel-dns.com` (or Vercel-provided target) |
+| TTL | `3600` (1 hour) |
+
+Steps after DNS:
+1. Add `staging.sbmedfsai.com` as a custom domain in Vercel project settings
+2. Update `FRONTEND_URL` in Railway to include `https://staging.sbmedfsai.com`
+3. Vercel auto-provisions SSL certificate
+
+---
+
+## 10. STRIPE TEST MODE
+
+### 10.1 Required Test Products
+
+Create these in Stripe Dashboard (Test Mode):
+
+| Plan Name | Monthly Price | Price ID Variable |
+|-----------|--------------|-------------------|
+| Pro Arena | $29.00 | `STRIPE_PRO_PRICE_ID` |
+| Elite Stack | $99.00 | `STRIPE_ELITE_PRICE_ID` |
+
+### 10.2 Webhook Endpoint
+
+Stripe requires a webhook endpoint for test mode:
+
+1. Go to https://dashboard.stripe.com/test/webhooks
+2. Add endpoint: `https://<railway-web-url>/api/billing/webhook`
+3. Events to listen for:
+   - `checkout.session.completed`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+   - `invoice.payment_succeeded`
+   - `invoice.payment_failed`
+4. Copy the signing secret → set as `STRIPE_WEBHOOK_SECRET` in Railway
+
+### 10.3 Test Card
+
+Use Stripe test card for checkout: `4242 4242 4242 4242` (any future expiry, any CVC)
+
+---
+
+## 11. LIVE STAGING SMOKE TESTS
+
+Run these AFTER all services are deployed and accessible:
+
+```bash
+STAGING_API="https://<railway-web-url>"
+STAGING_WEB="https://<vercel-staging-url>"
+```
+
+| # | Test | Command/Check | Expected |
+|---|------|--------------|----------|
+| 1 | Frontend loads | curl -sI $STAGING_WEB | HTTP 200 |
+| 2 | Backend health | curl $STAGING_API/health | `{"status":"ok"}` |
+| 3 | Frontend reaches backend | Visit $STAGING_WEB → browser console | No CORS errors |
+| 4 | Registration | POST $STAGING_API/api/auth/register | 200 + access_token |
+| 5 | Duplicate rejected | POST again with same email | 409 |
+| 6 | Login | POST $STAGING_API/api/auth/login | 200 + access_token |
+| 7 | Invalid login | POST with wrong password | 401 |
+| 8 | Current user | GET $STAGING_API/api/auth/me with token | 200 + email |
+| 9 | Protected reject | GET $STAGING_API/api/billing/status (no token) | 401 |
+| 10 | Logout | Client-side: clear localStorage, revisit | Redirects to login |
+| 11 | DB persistence | Register → login → verify me endpoint | Same email returned |
+| 12 | Redis | Check Railway worker logs | "ready" message |
+| 13 | Celery task | Check Railway worker logs for task registration | `worker.tasks.sync_daily_slate` |
+| 14 | Optimizer locked | POST /api/optimize with locked_player_ids | Player included in lineup |
+| 15 | Optimizer excluded | POST /api/optimize with excluded_player_ids | Player excluded |
+| 16 | Sports lobby | GET $STAGING_API/api/sports/lobby?sport=NFL | 200 + data |
+| 17 | Stripe checkout | Visit /billing, click "Upgrade to Pro" | Redirects to Stripe test checkout |
+| 18 | Stripe webhook | Test via Stripe dashboard "Send test webhook" | 200 response |
+| 19 | Frontend uses staging | Check browser Network tab | API calls go to staging backend |
+| 20 | No production secrets | Check Railway env variables | No `sk_live_`, no prod URLs |
+| 21 | No secrets in logs | Check Railway logs | No passwords, tokens, or keys |
+
+---
+
+## 12. STATUS SUMMARY
+
+| Item | Status |
+|------|--------|
+| **Local verification** | ✅ 49 checks passed |
+| **Code consistency** | ✅ JWT_SECRET_KEY naming unified |
+| **Staging secret** | ✅ Generated (not in repo) |
+| **Railway project** | ❌ Not yet created |
+| **Railway PostgreSQL** | ❌ Not provisioned |
+| **Railway Redis** | ❌ Not provisioned |
+| **Railway web service** | ❌ Not deployed |
+| **Railway worker** | ❌ Not deployed |
+| **Railway beat** | ❌ Not deployed |
+| **Database migration** | ❌ Not run on staging |
+| **Vercel staging project** | ❌ Not created |
+| **Frontend deploy** | ❌ Not deployed |
+| **CORS configured** | ❌ Needs Railway FRONTEND_URL |
+| **DNS** | ⏸️ Needs owner approval |
+| **Stripe test mode** | ❌ Needs test prices created |
+| **Live smoke tests** | ❌ Requires live staging infra |
+
+---
+
+## 13. ROLLBACK INSTRUCTIONS
 
 If staging deployment fails:
 
-1. Stop Railway services (web, worker, beat)
-2. Revert migration: `alembic downgrade base` (on staging DB only)
-3. Revert Vercel deployment to previous commit
-4. Fix issue and redeploy
+1. Stop Railway services from dashboard
+2. Drop staging database (safe — contains no production data)
+3. Run `alembic downgrade base` from Railway CLI
+4. Delete Vercel staging deployment
+5. Fix the issue
+6. Re-provision from step 3
 
 ---
 
-## 12. Manual Owner Actions
+## 14. PRODUCTION-READINESS RECOMMENDATION
 
-1. **Provision Railway PostgreSQL**: Add PostgreSQL plugin to Railway project
-2. **Provision Railway Redis**: Add Redis plugin to Railway project
-3. **Generate SECRET_KEY**: `python -c "import secrets; print(secrets.token_urlsafe(48))"` → set as `JWT_SECRET_KEY` in Railway
-4. **Set FRONTEND_URL**: Comma-separated origins in Railway env
-5. **Set NEXT_PUBLIC_API_URL**: Backend Railway URL in Vercel env
-6. **Configure Vercel project**: Point to `web/` directory
-7. **Create Stripe test prices**: Create test-mode prices in Stripe dashboard
-8. **Add DNS record**: CNAME `staging` → `{vercel_staging_url}`
-9. **Run migration**: `alembic upgrade head` on staging database
-10. **Deploy Vercel**: Push to hermes-production-build or manual deploy
-11. **Verify smoke tests**: Run the 12 staging-specific tests from section 6
+**After staging infrastructure is provisioned and all 21 live smoke tests pass:**
+
+- Promote Vercel deployment from staging to production
+- Run `alembic upgrade head` on production database
+- Set production `JWT_SECRET_KEY` (different from staging)
+- Set production `STRIPE_SECRET_KEY` (live mode)
+- Update `FRONTEND_URL` to production origins only
+- Update `NEXT_PUBLIC_API_URL` in Vercel to production backend URL
+- Run all smoke tests against production URLs
+- Monitor for 24 hours
 
 ---
 
-## 13. Production-Readiness Recommendation
+## 15. MANUAL OWNER ACTIONS (NEXT STEPS)
 
-**Staging is code-ready but infrastructure is not provisioned.**
-
-The code is verified:
-- 49 tests pass (41 local + 8 build/scan checks)
-- Next.js build succeeds (11 routes)
-- Auth, optimizer, billing, CORS all verified
-- SECRET_KEY production guard active
-
-Before promoting to production:
-- Complete staging infrastructure setup
-- Run all 26 smoke tests on live staging
-- Monitor logs for 24 hours
-- Run load test
-- Configure Stripe webhook endpoint
-- Set up monitoring/alerting
+1. Create Railway account/project at https://railway.app
+2. Provision PostgreSQL and Redis plugins
+3. Set all 16 Railway environment variables from Section 4
+4. Set JWT_SECRET_KEY to the value generated in Section 2
+5. Run database migration from Section 5
+6. Deploy web + worker services from Section 3
+7. Create Vercel staging project from Section 7
+8. Set Vercel environment variables
+9. Deploy frontend
+10. Update CORS origins in Railway
+11. Create Stripe test prices from Section 10
+12. Run live smoke tests from Section 11
+13. Request DNS approval for staging.sbmedfsai.com
