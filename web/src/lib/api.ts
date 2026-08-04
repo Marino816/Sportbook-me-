@@ -1,4 +1,6 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+import { getApiBaseUrl } from "./api-base-url";
+
+const API_BASE_URL = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
 const TOKEN_KEY = "sbme_dfs_token";
 
@@ -182,7 +184,7 @@ export async function createPortal(): Promise<ApiResponse<{ url: string }>> {
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE_URL.replace('/api', '')}/health`);
+    const res = await fetch(`${API_BASE_URL.slice(0, -'/api'.length)}/health`);
     return res.ok;
   } catch (error) {
     return false;
