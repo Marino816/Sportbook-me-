@@ -4,12 +4,13 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { getSafeReturnPath } from "@/lib/safe-return-path";
 import { Loader2, Zap, Mail, Lock, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
   const nextPath = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next");
-  const destination = nextPath?.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/dashboard";
+  const destination = getSafeReturnPath(nextPath);
   const { login, isAuthenticated } = useAuth();
 
   const [email, setEmail] = useState("");
