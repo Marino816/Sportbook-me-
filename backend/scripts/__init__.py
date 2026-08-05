@@ -1,0 +1,1 @@
+# Scripts package — operational tooling for Sportsbook Me DFS AI
