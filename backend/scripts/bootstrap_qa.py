@@ -61,7 +61,7 @@ async def bootstrap_qa_account(db: AsyncSession) -> None:
         text("SELECT id, email, role, is_pro FROM users WHERE email = :email"),
         {"email": email},
     )
-    row = await result.fetchone()
+    row = result.fetchone()
 
     if row:
         await db.execute(

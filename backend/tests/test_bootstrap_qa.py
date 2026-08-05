@@ -16,28 +16,28 @@ ENV = {
 
 
 async def _make_mock_db(user_row=None, sub_row=None):
-    """Create an AsyncMock db session with proper awaitable fetchone."""
+    """Create an AsyncMock db session — fetchone is sync, not awaitable."""
     db = AsyncMock()
     results = []
 
     # User lookup
     r0 = AsyncMock()
-    r0.fetchone = AsyncMock(return_value=user_row)
+    r0.fetchone.return_value = user_row
     results.append(r0)
 
     # User mutation
     r1 = AsyncMock()
-    r1.fetchone = AsyncMock(return_value=None)
+    r1.fetchone.return_value = None
     results.append(r1)
 
     # Subscription lookup
     r2 = AsyncMock()
-    r2.fetchone = AsyncMock(return_value=sub_row)
+    r2.fetchone.return_value = sub_row
     results.append(r2)
 
     # Subscription mutation
     r3 = AsyncMock()
-    r3.fetchone = AsyncMock(return_value=None)
+    r3.fetchone.return_value = None
     results.append(r3)
 
     db.execute.side_effect = results
