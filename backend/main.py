@@ -38,7 +38,7 @@ app = FastAPI(
 )
 
 from api import router as api_router
-from api import admin, stats, sports, billing, auth, ai_routes, scout_routes, analyst_routes
+from api import admin, stats, sports, billing, auth, ai_routes, scout_routes, analyst_routes, builder_routes
 
 # Allow CORS for Next.js / Expo frontend
 # Supports: production, staging, and local dev
@@ -70,6 +70,7 @@ app.include_router(auth.router, prefix="/api", tags=["Authentication"])
 app.include_router(ai_routes.router, tags=["AI Engine"])
 app.include_router(scout_routes.router, tags=["SB-Me Scout"])
 app.include_router(analyst_routes.router, tags=["SB-Me Analyst"])
+app.include_router(builder_routes.router, tags=["SB-Me Builder"])
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
