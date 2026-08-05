@@ -2,175 +2,151 @@
 
 **Date**: August 4, 2026
 **Merge commit**: `0e5a8cb`
-**Latest commit**: `4953bc9`
+**Latest commit**: `cc2d510`
 **Branch**: `hermes-production-build`
-**Tag**: Not yet created
+**Tag**: v1.1-beta — NOT YET CREATED
 
 ---
 
-## 1. Merge + Build Verification
+## Local Verification — ALL PASSED
 
 | Check | Result |
 |-------|--------|
-| Tests (5 suites) | 71 passed |
+| Auth tests | 24 passed |
+| Optimizer tests | 9 passed |
+| RBAC tests | 10 passed |
+| Smoke tests | 18 passed |
+| Billing tests | 10 passed |
+| **Total** | **71 passed** |
 | TypeScript | Clean |
 | Next.js build | Passes (11 routes) |
 | Secret scan | Clean |
-| Migration head (local) | `df12511b7d71` |
+| 4 plans in PLAN_PRICE_MAP | Confirmed |
+| StripeEvent.event_id UNIQUE | Confirmed |
+| Idempotency check | Confirmed |
+| RevenueLog model + usage | Confirmed |
+| Webhook signature verification | Confirmed |
 
 ---
 
-## 2. Final Pricing (4 Plans)
+## Live Staging Validation — REQUIRES RAILWAY ACCESS
 
-| Plan | Price | Interval | Env Variable |
-|------|-------|----------|-------------|
-| Pro Arena | $39.99 | Monthly | `STRIPE_PRO_PRICE_ID` |
-| Pro Arena Annual | $149.99 | Yearly | `STRIPE_PRO_ANNUAL_PRICE_ID` |
-| Elite Stack | $79.99 | Monthly | `STRIPE_ELITE_PRICE_ID` |
-| Elite Stack Annual | $249.99 | Yearly | `STRIPE_ELITE_ANNUAL_PRICE_ID` |
+Railway CLI authentication is not available from this terminal. The following must be run manually by the owner against the staging Railway deployment.
 
-All 4 plans mapped in `backend/services/stripe_service.py` `PLAN_PRICE_MAP`.
-All 4 displayed in `web/src/app/billing/page.tsx` (4-column layout).
+### Pre-validation Checklist
 
----
+- [ ] Railway deploys commit `cc2d510` (or later)
+- [ ] `alembic upgrade head` applied — revision should be `df12511b7d71`
+- [ ] 6 Stripe env vars set in Railway (all `sk_test_...` / `price_...` test values)
+- [ ] 4 Stripe test products created with correct monthly/yearly intervals
+- [ ] Webhook endpoint configured → `.../api/billing/webhook`
 
-## 3. Railway Deployment
+### How to Run Each Checkout
 
-| Check | Status |
-|-------|--------|
-| Build | ⏸️ Pending Railway auto-deploy |
-| `/health` | ⏸️ Pending |
-| Migration | ⏸️ Pending: `alembic upgrade head` |
-| Revision | ⏸️ Should be `df12511b7d71` after deploy |
+```bash
+# 1. Get a login token
+curl -X POST https://sportbook-me-production.up.railway.app/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"stripe-test@example.com","password":"TestPass#2026!"}'
 
----
+# 2. For each plan, create checkout session
+curl -X POST https://sportbook-me-production.up.railway.app/api/billing/checkout \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"plan":"Pro Arena"}'  # or "Pro Arena Annual", "Elite Stack", "Elite Stack Annual"
 
-## 4. Stripe Test Products (Dashboard)
-
-Create at https://dashboard.stripe.com/test/products:
-
-| Product | Price | Interval | Recurring |
-|---------|-------|----------|-----------|
-| Pro Arena Monthly | $39.99 | month | Yes |
-| Pro Arena Annual | $149.99 | year | Yes |
-| Elite Stack Monthly | $79.99 | month | Yes |
-| Elite Stack Annual | $249.99 | year | Yes |
-
----
-
-## 5. Environment Variables
-
-### Railway
-
-| Variable | Value |
-|----------|-------|
-| `STRIPE_SECRET_KEY` | `sk_test_...` |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_...` |
-| `STRIPE_PRO_PRICE_ID` | `price_...` |
-| `STRIPE_PRO_ANNUAL_PRICE_ID` | `price_...` |
-| `STRIPE_ELITE_PRICE_ID` | `price_...` |
-| `STRIPE_ELITE_ANNUAL_PRICE_ID` | `price_...` |
-| `JWT_SECRET_KEY` | Generated 64-char |
-| `NODE_ENV` | `production` |
-| `FRONTEND_URL` | Vercel preview + `sbmedfsai.com` |
-
-### Vercel
-
-| Variable | Value |
-|----------|-------|
-| `NEXT_PUBLIC_API_URL` | Railway backend URL `/api` |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` |
-
----
-
-## 6. Webhook Endpoint
-
-Stripe Dashboard → Webhooks → Add endpoint:
-
-| Field | Value |
-|-------|-------|
-| URL | `https://sportbook-me-production.up.railway.app/api/billing/webhook` |
-| Events | `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_succeeded`, `invoice.payment_failed` |
-
----
-
-## 7. Live Staging Tests
-
-| # | Test | Plan | Status |
-|---|------|------|--------|
-| 1 | Login as staging user | — | ⏸️ |
-| 2 | Open Billing page | — | ⏸️ |
-| 3 | Checkout Pro Arena monthly | Pro Arena | ⏸️ |
-| 4 | Pay with 4242 4242 4242 4242 | Pro Arena | ⏸️ |
-| 5 | Success redirect | Pro Arena | ⏸️ |
-| 6 | Webhook received + verified | Pro Arena | ⏸️ |
-| 7 | User becomes Pro Arena | Pro Arena | ⏸️ |
-| 8 | Checkout Pro Arena annual | Pro Arena Annual | ⏸️ |
-| 9 | Checkout Elite Stack monthly | Elite Stack | ⏸️ |
-| 10 | Checkout Elite Stack annual | Elite Stack Annual | ⏸️ |
-| 11 | Subscription rows populated | All | ⏸️ |
-| 12 | trial_end timezone-aware | All | ⏸️ |
-| 13 | current_period_end TIMESTAMPTZ | All | ⏸️ |
-| 14 | stripe_events stores event ID | All | ⏸️ |
-| 15 | Duplicate webhook → idempotent | Any | ⏸️ |
-| 16 | revenue_logs receives record | Any | ⏸️ |
-| 17 | Billing Portal redirect works | Any | ⏸️ |
-| 18 | invoice.payment_failed → downgrade | Any | ⏸️ |
-| 19 | Subscription cancellation → is_pro:false | Any | ⏸️ |
-
----
-
-## 8. Webhook Mapping
-
-Each Stripe price ID must map correctly in `_sync_subscription`:
-
-```
-price_pro_xxx        → "Pro Arena"       (monthly)
-price_pro_annual_xxx → "Pro Arena Annual" (yearly)
-price_elite_xxx      → "Elite Stack"      (monthly)
-price_elite_annual_xxx → "Elite Stack Annual" (yearly)
+# 3. Open the returned URL in browser → pay with 4242 4242 4242 4242
+# 4. Stripe delivers webhook → verify via /api/billing/status
 ```
 
-The `stripe.Subscription.retrieve()` response includes the interval in `items.data[0].plan.interval`. The `cancel_at_period_end` and `current_period_end` fields are synced regardless of interval.
+### Checkout Results
+
+| # | Plan | Product | Amount | Interval | Result |
+|---|------|---------|--------|----------|--------|
+| 1 | Pro Arena | Pro Arena Monthly | $39.99 | Monthly | ⏸️ |
+| 2 | Pro Arena Annual | Pro Arena Annual | $149.99 | Yearly | ⏸️ |
+| 3 | Elite Stack | Elite Stack Monthly | $79.99 | Monthly | ⏸️ |
+| 4 | Elite Stack Annual | Elite Stack Annual | $249.99 | Yearly | ⏸️ |
+
+### Webhook Mapping
+
+| Price ID Variable | Maps To | DB Plan Name | Interval | Verified |
+|-------------------|---------|-------------|----------|----------|
+| STRIPE_PRO_PRICE_ID | price_pro_... | Pro Arena | monthly | ⏸️ |
+| STRIPE_PRO_ANNUAL_PRICE_ID | price_pro_annual_... | Pro Arena Annual | yearly | ⏸️ |
+| STRIPE_ELITE_PRICE_ID | price_elite_... | Elite Stack | monthly | ⏸️ |
+| STRIPE_ELITE_ANNUAL_PRICE_ID | price_elite_annual_... | Elite Stack Annual | yearly | ⏸️ |
+
+### Database Verification
+
+| Check | Query | Result |
+|-------|-------|--------|
+| current_period_end is TIMESTAMPTZ | `\d subscriptions` | ⏸️ |
+| trial_end is TIMESTAMPTZ | `\d subscriptions` | ⏸️ |
+| revenue_logs exists | `\dt revenue_logs` | ⏸️ |
+| alembic_version = df12511b7d71 | `SELECT * FROM alembic_version` | ⏸️ |
+
+### Webhook Events Tested
+
+| Event | Handler | Result |
+|-------|---------|--------|
+| checkout.session.completed | _handle_checkout_completed | ⏸️ |
+| customer.subscription.updated | _handle_subscription_updated | ⏸️ |
+| customer.subscription.deleted | _handle_subscription_updated | ⏸️ |
+| invoice.payment_succeeded | _handle_payment_succeeded | ⏸️ |
+| invoice.payment_failed | _handle_payment_failed | ⏸️ |
+| Duplicate webhook | Idempotency check | ⏸️ |
+
+### Feature Verification
+
+| Test | Result |
+|------|--------|
+| Billing Portal redirect | ⏸️ |
+| Subscription cancellation → is_pro:false | ⏸️ |
+| Payment failure → past_due + downgrade | ⏸️ |
+| revenue_logs: 1 record per invoice | ⏸️ |
+| stripe_events: no duplicates | ⏸️ |
+| No secrets in logs | ⏸️ |
 
 ---
 
-## 9. Database Verification
-
-Post-migration, run on Railway:
-
-```sql
-SELECT column_name, data_type FROM information_schema.columns
-WHERE table_name = 'subscriptions'
-AND column_name IN ('current_period_end', 'trial_end');
--- Expected: both 'timestamp with time zone'
-
-SELECT * FROM alembic_version;
--- Expected: df12511b7d71
-
-SELECT table_name FROM information_schema.tables
-WHERE table_name = 'revenue_logs';
--- Expected: revenue_logs
-```
-
----
-
-## 10. Remaining Blockers
+## Remaining Blockers
 
 | # | Blocker | Priority |
 |---|---------|----------|
 | 1 | Railway migration `df12511b7d71` not applied | HIGH |
 | 2 | 4 Stripe test products not created | HIGH |
 | 3 | Webhook endpoint not configured | HIGH |
-| 4 | 6 env vars not set in Railway | HIGH |
+| 4 | 6 Stripe env vars not set in Railway | HIGH |
+| 5 | Railway CLI not authenticated | MEDIUM |
 
 ---
 
-## 11. After All Tests Pass
+## To Create v1.1-beta
+
+Only when every ⏸️ above becomes ✅:
 
 ```bash
 git tag -a v1.1-beta -m "Stripe billing: 4-tier pricing, timezone fix, trial support, revenue logging"
 git push origin v1.1-beta
 ```
 
-Update CHANGELOG.md with v1.1-beta section.
+Then update CHANGELOG.md with:
+
+```markdown
+## v1.1-beta — August 4, 2026
+
+### Added
+- Stripe subscription billing (4 plans)
+- Pro Arena monthly/annual ($39.99/$149.99)
+- Elite Stack monthly/annual ($79.99/$249.99)
+- Revenue tracking (revenue_logs table)
+- Trial support (trial_end column)
+- Billing Portal integration
+- Webhook idempotency (StripeEvent ledger)
+
+### Fixed
+- subscriptions.current_period_end timezone bug
+- Portal return URL uses FRONTEND_URL
+- Checkout uses JSON body
+```
