@@ -4,6 +4,7 @@ import { useState, Suspense } from "react";
 import { Search, Download, TrendingUp, TrendingDown } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchProjections, type PlayerProjection } from "@/lib/api";
+import Phase7Error, { shouldShowDemo } from "@/components/Phase7Error";
 
 const SPORTS = [
   { id: "nfl",    label: "NFL",    emoji: "🏈", color: "#d4ac0d",

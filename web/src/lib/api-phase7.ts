@@ -6,6 +6,7 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getStoredToken } from "./api";
+import { getApiBaseUrl } from "./api-base-url";
 
 const TOKEN_KEY = "sbme_dfs_token";
 
@@ -15,7 +16,7 @@ function getToken(): string | null {
 }
 
 async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const base = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
