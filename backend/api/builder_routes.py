@@ -27,6 +27,7 @@ from ai.projection_service import log_audit_record
 
 from builder.engine import (
     BuilderValidator, ExposureEngine, PortfolioEngine, ExplanationGenerator,
+    DK_CAP, FD_CAP,
 )
 from builder.strategy import (
     get_strategy, list_strategies, builder_objective, StrategyProfile,
@@ -90,14 +91,22 @@ NBA_DEMO = [
     {"id":15,"name":"Min SG","team":"HOU","salary":3000,"roster_position":"SG","projected_fp":11.0,"ceiling":19,"edge_score":22,"risk_score":0.5,"ownership":1},
 ]
 
-def _generate_lineups(pool: list, strategy: str, count: int, locks: list, excludes: list, randomness: float) -> list:
+def _generate_lineups(pool: list, strategy: str, count: int, locks: list, excludes: list, randomness: float, platform: str = "draftkings") -> list:
     profile = get_strategy(strategy)
     eligible = [p for p in pool if p["id"] not in excludes]
     eligible.sort(key=lambda p: builder_objective(p, profile, randomness), reverse=True)
 
+    # Platform-specific rules
+    if platform.lower() == "fanduel":
+        cap = FD_CAP
+        size = 9
+        required_slots = ["PG", "PG", "SG", "SG", "SF", "SF", "PF", "PF", "C"]
+    else:
+        cap = DK_CAP
+        size = 8
+        required_slots = None  # DK is flex-based
+
     lineups = []
-    cap = 50000
-    size = 8
     for i in range(min(count, 50)):
         selected = []
         used_salary = 0
@@ -168,7 +177,7 @@ async def build_lineups(body: LineupRequest, user: User = Depends(get_current_us
         raise HTTPException(422, detail="; ".join(errs))
 
     lineups = _generate_lineups(NBA_DEMO, body.strategy, body.lineup_count,
-                                body.locked_player_ids, body.excluded_player_ids, body.randomness)
+                                body.locked_player_ids, body.excluded_player_ids, body.randomness, body.platform)
     profile = get_strategy(body.strategy)
     run_id = f"run:{uuid.uuid4().hex[:12]}"
     explained = []
@@ -195,7 +204,7 @@ async def build_portfolio(body: PortfolioRequest, user: User = Depends(get_curre
         raise HTTPException(403, f"Lineup limit: {limits['max_lineups']}")
 
     lineups = _generate_lineups(NBA_DEMO, body.strategy, body.lineup_count,
-                                body.locked_player_ids, body.excluded_player_ids, body.randomness)
+                                body.locked_player_ids, body.excluded_player_ids, body.randomness, body.platform)
     portfolio = PortfolioEngine.build_portfolio(lineups, body.strategy)
     pid = f"portfolio:{uuid.uuid4().hex[:12]}"
     return wrap_data({"portfolio_id": pid, **portfolio}, source="builder_engine")

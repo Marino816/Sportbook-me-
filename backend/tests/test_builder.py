@@ -184,3 +184,68 @@ class TestBuilderAPI:
     async def test_auth_required(self, client):
         r = await client.post("/builder/lineups", json={"slate_id":1})
         assert r.status_code == 401
+
+
+# ── FANDUEL NBA TESTS ────────────────────────────────────────
+
+class TestFanDuel:
+    """FanDuel NBA validates against correct rules: $60k cap, 9 slots, exact positions."""
+
+    async def test_fanduel_valid_lineup(self, client):
+        t = await _login(client, "fdv@test.com")
+        r = await client.post("/builder/lineups", json={"slate_id":1,"platform":"fanduel","strategy":"balanced"}, headers={"Authorization":f"Bearer {t}"})
+        assert r.status_code == 200
+        lineups = r.json()["data"]["lineups"]
+        assert len(lineups) == 1
+        assert lineups[0]["total_salary"] <= 60000
+
+    async def test_fanduel_lineup_count(self, client):
+        t = await _login(client, "fdc@test.com"); await _promote("fdc@test.com")
+        r = await client.post("/builder/lineups", json={"slate_id":1,"platform":"fanduel","strategy":"balanced","lineup_count":3}, headers={"Authorization":f"Bearer {t}"})
+        assert r.status_code == 200
+        assert len(r.json()["data"]["lineups"]) == 3
+
+    async def test_fanduel_validate_platform(self):
+        from builder.engine import BuilderValidator
+        assert BuilderValidator.validate_platform("fanduel") is None
+
+    async def test_fanduel_salary_cap_enforcement(self):
+        from builder.engine import BuilderValidator
+        errs = BuilderValidator.validate_roster(
+            [{"salary":65000}], "fanduel", []
+        )
+        assert any("salar" in e.lower() for e in errs)
+
+    async def test_fanduel_roster_size_enforcement(self):
+        from builder.engine import BuilderValidator
+        errs = BuilderValidator.validate_roster(
+            [{"salary":1000} for _ in range(5)], "fanduel", []
+        )
+        assert any("9" in e for e in errs)
+
+    async def test_fanduel_lock_exclude_conflict(self, client):
+        t = await _login(client, "fdlc@test.com")
+        r = await client.post("/builder/validate", json={"slate_id":1,"platform":"fanduel","locked_player_ids":[1],"excluded_player_ids":[1]}, headers={"Authorization":f"Bearer {t}"})
+        assert r.status_code == 200
+        assert not r.json()["data"]["valid"]
+
+    async def test_fanduel_portfolio(self, client):
+        t = await _login(client, "fdport@test.com"); await _promote("fdport@test.com")
+        r = await client.post("/builder/portfolios", json={"slate_id":1,"platform":"fanduel","strategy":"cash","lineup_count":3}, headers={"Authorization":f"Bearer {t}"})
+        assert r.status_code == 200
+        assert r.json()["data"]["lineup_count"] == 3
+
+    async def test_fanduel_free_limit(self, client):
+        t = await _login(client, "fdfree@test.com")
+        r = await client.post("/builder/lineups", json={"slate_id":1,"platform":"fanduel","lineup_count":5}, headers={"Authorization":f"Bearer {t}"})
+        assert r.status_code == 403
+
+    async def test_fanduel_pro_gets_20(self, client):
+        t = await _login(client, "fdpro@test.com"); await _promote("fdpro@test.com")
+        r = await client.post("/builder/lineups", json={"slate_id":1,"platform":"fanduel","strategy":"aggressive","lineup_count":10}, headers={"Authorization":f"Bearer {t}"})
+        assert r.status_code == 200
+
+    async def test_fanduel_invalid_sport_rejected(self):
+        from builder.engine import BuilderValidator
+        err = BuilderValidator.validate_sport("nfl")
+        assert err is not None
