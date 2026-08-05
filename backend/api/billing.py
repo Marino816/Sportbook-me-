@@ -15,6 +15,19 @@ from api.auth import get_current_user, require_admin
 router = APIRouter()
 
 
+def _get_canonical_frontend_url() -> str:
+    """Return a single canonical frontend URL for Stripe redirects.
+    
+    Uses PUBLIC_FRONTEND_URL if set, otherwise extracts the first origin
+    from the comma-separated CORS FRONTEND_URL allowlist.
+    """
+    canonical = os.getenv("PUBLIC_FRONTEND_URL", "").strip()
+    if canonical:
+        return canonical
+    raw = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    return raw.split(",")[0].strip()
+
+
 class CheckoutRequest(BaseModel):
     plan: str
 
@@ -27,7 +40,7 @@ async def create_checkout(
 ):
     """Initiate a Stripe Checkout session for a chosen plan."""
     try:
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        frontend_url = _get_canonical_frontend_url()
         success_url = f"{frontend_url}/billing?success=true"
         cancel_url = f"{frontend_url}/billing?canceled=true"
         
@@ -47,7 +60,7 @@ async def create_portal(
         raise HTTPException(status_code=400, detail="No active Stripe customer found.")
         
     try:
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        frontend_url = _get_canonical_frontend_url()
         return_url = f"{frontend_url}/billing"
         portal_url = StripeService.create_portal_session(user.stripe_customer_id, return_url)
         return wrap_data({"url": portal_url})
