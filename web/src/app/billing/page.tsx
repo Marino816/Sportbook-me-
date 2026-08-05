@@ -95,7 +95,7 @@ export default function BillingPage() {
           <div>
             <div className={cn(
               "inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-bold mb-4 uppercase italic tracking-tighter",
-              sub?.plan === "Elite Stack" ? "bg-orange-500/20 text-orange-500" : "bg-primary/20 text-primary border border-primary/20"
+              sub?.plan?.startsWith("Elite") ? "bg-orange-500/20 text-orange-500" : "bg-primary/20 text-primary border border-primary/20"
             )}>
               <Zap className="size-4 fill-current" /> {sub?.plan}
             </div>
@@ -137,7 +137,7 @@ export default function BillingPage() {
 
       <h3 className="text-xl font-bold mb-6">Upgrade Plan</h3>
       
-      <div className="grid md:grid-cols-3 gap-6 mb-12">
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
         {/* Pro Arena Monthly */}
         <div className={cn(
           "glass p-6 rounded-2xl border border-border flex flex-col h-full transition-all duration-300",
@@ -227,6 +227,38 @@ export default function BillingPage() {
             <Feature check text="150-Max Multi-Generation" highlight />
             <Feature check text="DraftKings & FanDuel CSVs" highlight />
             <Feature check text="Optimizer Rules & Late Swap" highlight />
+          </ul>
+        </div>
+
+        {/* Elite Stack Annual */}
+        <div className={cn(
+            "p-6 rounded-2xl border border-orange-500/30 bg-orange-500/5 relative flex flex-col h-full transition-all duration-300",
+            sub?.plan === "Elite Stack Annual" && "border-orange-500 bg-orange-500/10 scale-[1.02]"
+        )}>
+          <div className="absolute top-0 right-4 -translate-y-1/2 bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
+            Save $710
+          </div>
+          <h3 className="text-lg font-semibold mb-1 text-orange-400">Elite Stack Annual</h3>
+          <div className="text-3xl font-bold mb-1 text-white">$249<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
+          <p className="text-xs text-orange-400/80 mb-4">$59.84/mo equivalent</p>
+
+          <button
+             disabled={sub?.plan === "Elite Stack Annual" || !!actionLoading}
+             onClick={() => handleCheckout("Elite Stack Annual")}
+             className={cn(
+                "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-6",
+                sub?.plan === "Elite Stack Annual"
+                    ? "bg-secondary text-muted-foreground cursor-not-allowed"
+                    : "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20"
+             )}
+          >
+            {actionLoading === "Elite Stack Annual" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Elite Stack Annual" ? "Current Plan" : "Go Annual")}
+          </button>
+
+          <ul className="space-y-3 flex-1 text-sm">
+            <Feature check text="All Elite Stack features" highlight />
+            <Feature check text="$710/yr savings" highlight />
+            <Feature check text="Priority strategy calls" highlight />
           </ul>
         </div>
       </div>
