@@ -4,6 +4,7 @@
  * Typed request/response contracts for Scout, Analyst, Builder, Coach,
  * Mission Control, and AI Assistant endpoints.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { getStoredToken } from "./api";
 
 const TOKEN_KEY = "sbme_dfs_token";
