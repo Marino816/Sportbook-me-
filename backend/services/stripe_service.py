@@ -12,6 +12,7 @@ WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 # Plan ID mapping (Default to test if not set)
 PLAN_PRICE_MAP = {
     "Pro Arena": os.getenv("STRIPE_PRO_PRICE_ID", "price_pro_test"),
+    "Pro Arena Annual": os.getenv("STRIPE_PRO_ANNUAL_PRICE_ID", "price_pro_annual_test"),
     "Elite Stack": os.getenv("STRIPE_ELITE_PRICE_ID", "price_elite_test"),
 }
 

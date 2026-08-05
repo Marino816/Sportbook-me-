@@ -137,51 +137,83 @@ export default function BillingPage() {
 
       <h3 className="text-xl font-bold mb-6">Upgrade Plan</h3>
       
-      <div className="grid md:grid-cols-2 gap-8 mb-12">
-        {/* Pro Plan */}
+      <div className="grid md:grid-cols-3 gap-6 mb-12">
+        {/* Pro Arena Monthly */}
         <div className={cn(
-          "glass p-8 rounded-2xl border border-border flex flex-col h-full transition-all duration-300",
+          "glass p-6 rounded-2xl border border-border flex flex-col h-full transition-all duration-300",
           sub?.plan === "Pro Arena" && "border-primary bg-primary/5 scale-[1.02]"
         )}>
-          <h3 className="text-xl font-medium mb-2">Pro Arena</h3>
-          <div className="text-3xl font-bold mb-6">$29<span className="text-base text-muted-foreground font-normal">/mo</span></div>
-          
-          <button 
+          <h3 className="text-lg font-semibold mb-2">Pro Arena</h3>
+          <div className="text-3xl font-bold mb-4">$39<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
+
+          <button
             disabled={sub?.plan === "Pro Arena" || !!actionLoading}
             onClick={() => handleCheckout("Pro Arena")}
             className={cn(
-              "w-full py-3 font-bold rounded-lg transition-all mb-8 shadow-lg",
-              sub?.plan === "Pro Arena" 
-                ? "bg-secondary text-muted-foreground cursor-not-allowed" 
+              "w-full py-3 font-bold rounded-lg transition-all mb-6 shadow-lg",
+              sub?.plan === "Pro Arena"
+                ? "bg-secondary text-muted-foreground cursor-not-allowed"
                 : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/20"
             )}
           >
-            {actionLoading === "Pro Arena" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Pro Arena" ? "Current Plan" : "Upgrade to Pro")}
+            {actionLoading === "Pro Arena" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Pro Arena" ? "Current Plan" : "Subscribe Monthly")}
           </button>
-          
-          <ul className="space-y-4 flex-1">
+
+          <ul className="space-y-3 flex-1 text-sm">
             <Feature check text="Full Projs + Ownership" />
             <Feature check text="20 Lineup Max Generator" />
             <Feature check text="Basic CSV Exports" />
           </ul>
         </div>
-        
-        {/* Elite Plan */}
+
+        {/* Pro Arena Annual */}
         <div className={cn(
-            "p-8 rounded-2xl border border-primary bg-primary/5 shadow-xl shadow-primary/10 relative flex flex-col h-full transition-all duration-300",
+          "p-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 relative flex flex-col h-full transition-all duration-300",
+          sub?.plan === "Pro Arena Annual" && "border-emerald-500 bg-emerald-500/10 scale-[1.02]"
+        )}>
+          <div className="absolute top-0 right-4 -translate-y-1/2 bg-emerald-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
+            Best Value
+          </div>
+          <h3 className="text-lg font-semibold mb-1 text-emerald-400">Pro Arena Annual</h3>
+          <div className="text-3xl font-bold mb-1 text-white">$149<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
+          <p className="text-xs text-emerald-400/80 mb-4">Save $330 vs monthly</p>
+
+          <button
+            disabled={sub?.plan === "Pro Arena Annual" || !!actionLoading}
+            onClick={() => handleCheckout("Pro Arena Annual")}
+            className={cn(
+              "w-full py-3 font-bold rounded-lg transition-all mb-6 shadow-lg",
+              sub?.plan === "Pro Arena Annual"
+                ? "bg-secondary text-muted-foreground cursor-not-allowed"
+                : "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20"
+            )}
+          >
+            {actionLoading === "Pro Arena Annual" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Pro Arena Annual" ? "Current Plan" : "Subscribe Annually")}
+          </button>
+
+          <ul className="space-y-3 flex-1 text-sm">
+            <Feature check text="All Pro Arena features" />
+            <Feature check text="2 months free" highlight />
+            <Feature check text="Priority support" highlight />
+          </ul>
+        </div>
+
+        {/* Elite Stack */}
+        <div className={cn(
+            "p-6 rounded-2xl border border-primary bg-primary/5 shadow-xl shadow-primary/10 relative flex flex-col h-full transition-all duration-300",
             sub?.plan === "Elite Stack" && "border-orange-500/50 bg-orange-500/5 shadow-orange-500/10 scale-[1.02]"
         )}>
-          <div className="absolute top-0 right-8 -translate-y-1/2 bg-gradient-to-r from-orange-400 to-primary text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
-            Recommended
+          <div className="absolute top-0 right-4 -translate-y-1/2 bg-gradient-to-r from-orange-400 to-primary text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
+            Pro
           </div>
-          <h3 className="text-xl font-medium mb-2 text-primary">Elite Stack</h3>
-          <div className="text-3xl font-bold mb-6 text-white">$79<span className="text-base text-muted-foreground font-normal">/mo</span></div>
-          
-          <button 
+          <h3 className="text-lg font-semibold mb-1 text-primary">Elite Stack</h3>
+          <div className="text-3xl font-bold mb-4 text-white">$79<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
+
+          <button
              disabled={sub?.plan === "Elite Stack" || !!actionLoading}
              onClick={() => handleCheckout("Elite Stack")}
              className={cn(
-                "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-8",
+                "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-6",
                 sub?.plan === "Elite Stack"
                     ? "bg-secondary text-muted-foreground cursor-not-allowed"
                     : "bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/20"
@@ -189,8 +221,8 @@ export default function BillingPage() {
           >
             {actionLoading === "Elite Stack" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Elite Stack" ? "Current Plan" : "Upgrade to Elite")}
           </button>
-          
-          <ul className="space-y-4 flex-1">
+
+          <ul className="space-y-3 flex-1 text-sm">
             <Feature check text="All Pro Tools + Elite Signals" highlight />
             <Feature check text="150-Max Multi-Generation" highlight />
             <Feature check text="DraftKings & FanDuel CSVs" highlight />
