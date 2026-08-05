@@ -45,7 +45,7 @@ export function AdminSidebar() {
           <Zap className="size-5 text-black fill-black" />
         </div>
         <div>
-          <h2 className="text-white font-black text-lg italic tracking-tight uppercase leading-none">APEX ENGINE</h2>
+          <h2 className="text-white font-black text-lg italic tracking-tight uppercase leading-none">SB-ME INTELLIGENCE</h2>
           <span className="text-[10px] text-[#A1A1A1] font-bold tracking-widest block mt-1 uppercase">ADMIN TERMINAL</span>
         </div>
       </div>

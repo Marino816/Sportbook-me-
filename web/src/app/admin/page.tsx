@@ -97,7 +97,7 @@ export default function AdminDashboard() {
       {/* Top Header */}
       <header className="h-20 border-b border-[#1E2028] px-8 flex items-center justify-between">
         <div className="flex items-center gap-8 flex-1">
-          <h1 className="text-xl font-black italic tracking-tight">Apex DFS AI</h1>
+          <h1 className="text-xl font-black italic tracking-tight">Sportsbook Me DFS AI</h1>
           <div className="relative max-w-md w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[#A1A1A1]" />
             <input 
