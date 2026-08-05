@@ -21,11 +21,15 @@ async def lifespan(app: FastAPI):
             "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
         )
 
-    # NOTE: Database table creation is intentionally omitted here.
-    # Running Base.metadata.create_all() during lifespan causes the app to hang
-    # when the database connection is slow or unavailable at boot time, resulting
-    # in 502 errors across all workers. Use Alembic migrations or a separate
-    # management command to manage schema changes.
+    # QA staging account bootstrap (idempotent, skipped unless configured)
+    try:
+        from models.database import SessionLocal
+        from scripts.bootstrap_qa import bootstrap_qa_account
+        async with SessionLocal() as db:
+            await bootstrap_qa_account(db)
+    except Exception:
+        logging.exception("QA bootstrap failed (non-fatal)")
+
     yield
     # Shutdown
     logging.info("Shutting down Sportsbook ME DFS AI API...")
