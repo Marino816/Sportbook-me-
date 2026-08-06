@@ -139,3 +139,18 @@ class TestEdgeCases:
         }
         assert invoice_subscription_id(inv) == "sub_test"
         assert invoice_period_start(inv) is None  # No lines.data
+        assert invoice_period_end(inv) is None
+
+    def test_lines_period_preferred_over_top_level(self):
+        """Top-level period is invoice timestamp (start==end). Line-item is billing period."""
+        inv = {
+            "period_start": 1785971340,
+            "period_end": 1785971340,  # Same as start — invoice timestamp, not billing
+            "lines": {
+                "data": [{
+                    "period": {"start": 1785971340, "end": 1788649740},  # Billing period (~31 days)
+                }]
+            }
+        }
+        assert invoice_period_start(inv) == 1785971340
+        assert invoice_period_end(inv) == 1788649740  # Should be line-item end, not top-level
