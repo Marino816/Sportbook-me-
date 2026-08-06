@@ -11,6 +11,7 @@ from services.stripe_dahlia import (
     invoice_period_end,
     subscription_price_id,
     subscription_price_unit_amount,
+    subscription_current_period_end,
 )
 
 
@@ -117,6 +118,27 @@ class TestDahliaSubscriptionExtraction:
     def test_unit_amount(self):
         amt = subscription_price_unit_amount(DAHLIA_SUBSCRIPTION)
         assert amt == 3999
+
+    def test_current_period_end_top_level(self):
+        ts = subscription_current_period_end(DAHLIA_SUBSCRIPTION)
+        assert ts == 1767225600
+
+    def test_current_period_end_nested_dahlia(self):
+        """dahlia: period is at items.data[0].current_period_end"""
+        sub = {
+            "items": {"data": [{"current_period_end": 1788649740}]}
+        }
+        assert subscription_current_period_end(sub) == 1788649740
+
+    def test_current_period_end_prefers_top_level(self):
+        sub = {
+            "current_period_end": 1767225600,
+            "items": {"data": [{"current_period_end": 9999999999}]},
+        }
+        assert subscription_current_period_end(sub) == 1767225600
+
+    def test_current_period_end_missing(self):
+        assert subscription_current_period_end({}) is None
 
 
 class TestEdgeCases:
