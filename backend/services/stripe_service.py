@@ -11,6 +11,7 @@ from services.stripe_dahlia import (
     subscription_price_id,
     subscription_price_unit_amount,
 )
+from services.stripe_convert import stripe_to_dict
 
 # Fetch from environment (Production Safety)
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -76,31 +77,36 @@ class StripeService:
         except (ValueError, stripe.error.SignatureVerificationError) as e:
             raise ValueError(f"Invalid Webhook: {e}")
 
+        # Normalize to plain dict — StripeObject does not support .get()
+        event_dict = stripe_to_dict(event)
+
         # Idempotency Check — StripeEvent.event_id has a UNIQUE constraint
+        event_id = event_dict["id"]
+        event_type = event_dict["type"]
         existing_event = db.query(StripeEvent).filter(
-            StripeEvent.event_id == event['id']
+            StripeEvent.event_id == event_id
         ).first()
         if existing_event:
-            print(f"Duplicate Webhook: {event['id']}. Skipping.")
+            print(f"Duplicate Webhook: {event_id}. Skipping.")
             return
 
         # Record Event (idempotency ledger)
-        new_event = StripeEvent(event_id=event['id'], event_type=event['type'])
+        new_event = StripeEvent(event_id=event_id, event_type=event_type)
         db.add(new_event)
         db.flush()  # Flush to lock the ID before processing
 
-        data_object = event['data']['object']
+        data_object = event_dict["data"]["object"]
 
-        if event['type'] == 'checkout.session.completed':
+        if event_type == "checkout.session.completed":
             StripeService._handle_checkout_completed(data_object, db)
-        elif event['type'] in (
-            'customer.subscription.updated',
-            'customer.subscription.deleted',
+        elif event_type in (
+            "customer.subscription.updated",
+            "customer.subscription.deleted",
         ):
             StripeService._handle_subscription_updated(data_object, db)
-        elif event['type'] == 'invoice.payment_succeeded':
+        elif event_type == "invoice.payment_succeeded":
             StripeService._handle_payment_succeeded(data_object, db)
-        elif event['type'] == 'invoice.payment_failed':
+        elif event_type == "invoice.payment_failed":
             StripeService._handle_payment_failed(data_object, db)
 
         db.commit()
