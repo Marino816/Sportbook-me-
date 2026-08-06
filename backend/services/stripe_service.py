@@ -213,7 +213,7 @@ class StripeService:
     def _sync_subscription(stripe_id: str, user: User, db: Session):
         """Core sync logic: Map Stripe subscription data to our database."""
         try:
-            subscription = stripe.Subscription.retrieve(stripe_id)
+            subscription = stripe_to_dict(stripe.Subscription.retrieve(stripe_id))
             plan_id = subscription_price_id(subscription)
 
             # Map back price ID to our plan names
