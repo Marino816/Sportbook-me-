@@ -4,6 +4,13 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from models.domain import User, Subscription, StripeEvent, RevenueLog
+from services.stripe_dahlia import (
+    invoice_subscription_id,
+    invoice_period_start,
+    invoice_period_end,
+    subscription_price_id,
+    subscription_price_unit_amount,
+)
 
 # Fetch from environment (Production Safety)
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -144,7 +151,7 @@ class StripeService:
         customer_id = invoice.get("customer")
         amount_paid = invoice.get("amount_paid", 0) / 100
         invoice_id = invoice.get("id")
-        subscription_id = invoice.get("subscription")
+        subscription_id = invoice_subscription_id(invoice)
 
         user = db.query(User).filter(
             User.stripe_customer_id == customer_id
@@ -155,8 +162,8 @@ class StripeService:
                 RevenueLog.stripe_invoice_id == invoice_id
             ).first()
             if not existing:
-                period_start_ts = invoice.get("period_start")
-                period_end_ts = invoice.get("period_end")
+                period_start_ts = invoice_period_start(invoice)
+                period_end_ts = invoice_period_end(invoice)
                 log = RevenueLog(
                     user_id=user.id,
                     subscription_id=user.active_subscription_id,  # May be None if checkout hasn't completed yet
@@ -201,14 +208,15 @@ class StripeService:
         """Core sync logic: Map Stripe subscription data to our database."""
         try:
             subscription = stripe.Subscription.retrieve(stripe_id)
-            plan_id = subscription['items']['data'][0]['price']['id']
+            plan_id = subscription_price_id(subscription)
 
             # Map back price ID to our plan names
             plan_name = "Starter"
-            for name, pid in PLAN_PRICE_MAP.items():
-                if pid == plan_id:
-                    plan_name = name
-                    break
+            if plan_id:
+                for name, pid in PLAN_PRICE_MAP.items():
+                    if pid == plan_id:
+                        plan_name = name
+                        break
 
             # Find or create local subscription
             local_sub = db.query(Subscription).filter(
@@ -221,17 +229,16 @@ class StripeService:
                 db.add(local_sub)
 
             local_sub.plan_name = plan_name
-            local_sub.status = subscription['status']
-            local_sub.cancel_at_period_end = subscription['cancel_at_period_end']
+            local_sub.status = subscription.get("status", "active")
+            local_sub.cancel_at_period_end = subscription.get("cancel_at_period_end", False)
             local_sub.current_period_end = datetime.fromtimestamp(
-                subscription['current_period_end'], tz=timezone.utc
+                subscription["current_period_end"], tz=timezone.utc
             )
-            local_sub.mrr_value = (
-                subscription['items']['data'][0]['price']['unit_amount'] / 100
-            )
+            unit_amount = subscription_price_unit_amount(subscription)
+            local_sub.mrr_value = (unit_amount / 100) if unit_amount else 0
 
             # Sync trial_end if present
-            trial_end_ts = subscription.get('trial_end')
+            trial_end_ts = subscription.get("trial_end")
             if trial_end_ts:
                 local_sub.trial_end = datetime.fromtimestamp(
                     trial_end_ts, tz=timezone.utc
@@ -239,9 +246,9 @@ class StripeService:
 
             # Update user relation
             user.active_subscription_id = local_sub.id
-            user.is_pro = local_sub.status in ['active', 'trialing']
+            user.is_pro = local_sub.status in ["active", "trialing"]
 
         except Exception as e:
             print(f"Subscription Sync Error: {e}")
-            db.rollback()
-            raise  # Re-raise so outer webhook handler rolls back entire transaction
+            # Do NOT rollback here — re-raise and let outer handler manage transaction
+            raise
