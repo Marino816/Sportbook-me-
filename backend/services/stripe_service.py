@@ -121,7 +121,7 @@ class StripeService:
         if user:
             user.stripe_customer_id = customer_id
             StripeService._sync_subscription(subscription_id, user, db)
-            db.commit()
+            # Do NOT commit here — outer handler commits at end of webhook processing
 
     @staticmethod
     def _handle_subscription_updated(
@@ -136,7 +136,7 @@ class StripeService:
         ).first()
         if user:
             StripeService._sync_subscription(subscription_id, user, db)
-            db.commit()
+            # Do NOT commit here — outer handler commits at end of webhook processing
 
     @staticmethod
     def _handle_payment_succeeded(invoice: Dict[str, Any], db: Session):
@@ -159,7 +159,7 @@ class StripeService:
                 period_end_ts = invoice.get("period_end")
                 log = RevenueLog(
                     user_id=user.id,
-                    subscription_id=user.active_subscription_id,
+                    subscription_id=user.active_subscription_id,  # May be None if checkout hasn't completed yet
                     amount=amount_paid,
                     currency=invoice.get("currency", "usd"),
                     stripe_invoice_id=invoice_id,
@@ -244,3 +244,4 @@ class StripeService:
         except Exception as e:
             print(f"Subscription Sync Error: {e}")
             db.rollback()
+            raise  # Re-raise so outer webhook handler rolls back entire transaction
