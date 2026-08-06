@@ -44,38 +44,45 @@ def invoice_subscription_id(invoice: Dict[str, Any]) -> Optional[str]:
 def invoice_period_start(invoice: Dict[str, Any]) -> Optional[int]:
     """Extract period_start from an invoice in dahlia API format.
 
-    dahlia: invoice.lines.data[0].period.start
-    pre-dahlia: invoice.period_start
+    Prefers line-item period (actual billing period) over top-level
+    (which may be the invoice timestamp, not the subscription window).
     """
-    ts = invoice.get("period_start")
-    if ts:
-        return ts
+    # dahlia: line-item period first (actual billing cycle)
     lines = invoice.get("lines", {})
     if isinstance(lines, dict):
         data = lines.get("data", [])
         if data and isinstance(data[0], dict):
             period = data[0].get("period", {})
-            if isinstance(period, dict):
-                return period.get("start")
+            if isinstance(period, dict) and period.get("start"):
+                return period["start"]
+
+    # pre-dahlia fallback: top-level
+    ts = invoice.get("period_start")
+    if ts:
+        return ts
+
     return None
 
 
 def invoice_period_end(invoice: Dict[str, Any]) -> Optional[int]:
     """Extract period_end from an invoice in dahlia API format.
 
-    dahlia: invoice.lines.data[0].period.end
-    pre-dahlia: invoice.period_end
+    Prefers line-item period (actual billing period) over top-level.
     """
-    ts = invoice.get("period_end")
-    if ts:
-        return ts
+    # dahlia: line-item period first (actual billing cycle)
     lines = invoice.get("lines", {})
     if isinstance(lines, dict):
         data = lines.get("data", [])
         if data and isinstance(data[0], dict):
             period = data[0].get("period", {})
-            if isinstance(period, dict):
-                return period.get("end")
+            if isinstance(period, dict) and period.get("end"):
+                return period["end"]
+
+    # pre-dahlia fallback: top-level
+    ts = invoice.get("period_end")
+    if ts:
+        return ts
+
     return None
 
 
