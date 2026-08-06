@@ -43,6 +43,7 @@ app = FastAPI(
 
 from api import router as api_router
 from api import admin, stats, sports, billing, auth, ai_routes, scout_routes, analyst_routes, builder_routes, coach_routes, mc_routes, assistant_routes, admin_health
+from services.logging import RequestLogMiddleware, configure_structured_logging
 
 # Allow CORS for Next.js / Expo frontend
 # Supports: production, staging, and local dev
@@ -60,6 +61,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestLogMiddleware)
+
+configure_structured_logging()
 
 @app.get("/health")
 def health_check():
