@@ -132,3 +132,23 @@ async def trigger_manual_sync(
     # For dev, we run synchronously so the caller gets immediate feedback.
     task_result = sync_daily_slate.apply()  # Synchronous execution for feedback
     return wrap_data({"task_id": str(task_result.id), "status": "success"})
+
+
+@router.post("/beta/toggle/{user_id}")
+async def toggle_beta_access(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: User = _admin,
+):
+    """Admin: toggle beta access for a user. Invite-only closed beta control."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    target_user = result.scalars().first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    target_user.is_beta = not target_user.is_beta
+    await db.commit()
+    return wrap_data({
+        "user_id": target_user.id,
+        "email": target_user.email,
+        "is_beta": target_user.is_beta,
+    })

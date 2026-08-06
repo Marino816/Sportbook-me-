@@ -1,51 +1,46 @@
-# Changelog
+# Changelog — Sportsbook Me DFS AI
 
-All notable changes to Sportsbook Me DFS AI.
-
-## v1.0-beta — August 4, 2026
+## v1.1-beta (August 2026)
 
 ### Added
-- User registration endpoint (`POST /api/auth/register`)
-- User login endpoint (`POST /api/auth/login`)
-- Current user endpoint (`GET /api/auth/me`)
-- JWT authentication with HS256, 24-hour token expiry
-- Role-based access control (`user` / `admin` roles)
-- Backend `require_admin` dependency enforcing admin-only endpoints
-- Frontend admin route guard (non-admin → dashboard redirect)
-- Protected route middleware for optimizer, billing, and admin
-- AuthProvider React context with `useAuth()` hook
-- localStorage token persistence with auto-injection
-- Auth-aware navigation (sign in / join vs user card + logout)
-
-### Infrastructure
-- Railway backend deployment (FastAPI + Gunicorn + Uvicorn)
-- Railway PostgreSQL staging database
-- Railway Redis staging service
-- Railway Celery worker service
-- Vercel frontend Preview deployment (Next.js 15)
-- Alembic migration infrastructure (3 revisions)
-- Docker Compose for local development
-
-### Changed
-- Celery worker task definition repaired (corrupted REDIS_URL)
-- Admin sync import path fixed (`worker.tasks.sync_daily_slate`)
-- Billing database session split (async for FastAPI, sync for Stripe webhooks)
-- Optimizer contract normalized (`locked_player_ids` / `excluded_player_ids`)
-- CORS supports multiple comma-separated origins
-- SECRET_KEY guard prevents startup with dev default in production
+- Stripe billing: 4 plans (Pro Arena $39.99/mo, $149.99/yr; Elite Stack $79.99/mo, $249.99/yr)
+- Stripe webhook handling: 6 events, signature verification, idempotency
+- RevenueLog for payment tracking with dedup
+- Stripe API 2026-03-25.dahlia compatibility
+- StripeObject → dict normalization layer
+- Subscription gating across 7 SB-Me modules
+- QA staging account bootstrap (idempotent, production-disabled)
+- `/admin/launch-center` operational dashboard
+- `/admin/health` live component monitoring
+- Canonical frontend URL helper for Stripe redirects
+- is_beta field: admin-managed closed beta flag
+- BetaBanner component for invite-only phase
+- Closed beta documentation (BETA_TEST_PLAN, KNOWN_ISSUES, PRODUCTION_CHECKLIST)
 
 ### Fixed
-- Alembic env.py converted to async engine for PostgreSQL/asyncpg compatibility
-- bcrypt pinned to 4.2.1 for passlib compatibility
-- Password validation enforces minimum 8 characters
-- DateTime columns converted to `TIMESTAMP WITH TIME ZONE` (5 columns)
-- JWT `sub` claim converted from int to string (JWT spec compliance)
-- OAuth2PasswordBearer replaced with HTTPBearer for stable token extraction
-- admin events endpoint join ambiguity resolved
-- AmbiguousForeignKeysError in admin events query
+- Stripe webhook double-commit (b1b7b8c)
+- RevenueLog nullable columns (daf10664307c)
+- Stripe redirect URLs using comma-separated CORS list (5c5f748)
+- subscription.current_period_end KeyError in dahlia API (9d06d7f)
+- StripeObject → dict normalization for webhook handlers (8e945de)
+- stripe.Subscription.retrieve() normalization (837e7cf)
+
+### Removed
+- Brand references to "Apex" (replaced with "Sportsbook Me DFS AI" / "SB-Me")
 
 ---
 
-Notable: the initial pre-audit repository had a corrupted `tasks.py` that prevented
-Celery from importing, and `admin.py` referenced a non-existent import path.
-Both were repaired in the initial hardening phase before auth was added.
+## v1.0-beta
+
+### Added
+- User registration and login (JWT, bcrypt)
+- RBAC (admin/user roles)
+- Admin dashboard
+- Projections page
+- Optimizer page (DK/FD NBA)
+- Backtesting page
+- Billing page (Stripe integration code)
+- Scout, Analyst, Builder, Coach, Assistant, Mission Control (SB-Me Intelligence)
+- 7 SB-Me modules, 43 database tables, 12 Alembic migrations
+- PostgreSQL + Redis on Railway
+- Vercel frontend deployment
