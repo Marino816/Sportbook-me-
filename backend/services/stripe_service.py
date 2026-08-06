@@ -10,6 +10,7 @@ from services.stripe_dahlia import (
     invoice_period_end,
     subscription_price_id,
     subscription_price_unit_amount,
+    subscription_current_period_end,
 )
 from services.stripe_convert import stripe_to_dict
 
@@ -237,9 +238,13 @@ class StripeService:
             local_sub.plan_name = plan_name
             local_sub.status = subscription.get("status", "active")
             local_sub.cancel_at_period_end = subscription.get("cancel_at_period_end", False)
-            local_sub.current_period_end = datetime.fromtimestamp(
-                subscription["current_period_end"], tz=timezone.utc
-            )
+
+            # current_period_end: may be top-level or nested in dahlia
+            period_end_ts = subscription_current_period_end(subscription)
+            if period_end_ts:
+                local_sub.current_period_end = datetime.fromtimestamp(
+                    period_end_ts, tz=timezone.utc
+                )
             unit_amount = subscription_price_unit_amount(subscription)
             local_sub.mrr_value = (unit_amount / 100) if unit_amount else 0
 

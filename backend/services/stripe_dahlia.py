@@ -111,3 +111,20 @@ def subscription_price_unit_amount(subscription: Dict[str, Any]) -> Optional[int
             if isinstance(price, dict):
                 return price.get("unit_amount")
     return None
+
+
+def subscription_current_period_end(subscription: Dict[str, Any]) -> Optional[int]:
+    """Extract current_period_end from a Stripe Subscription.
+
+    dahlia: subscription.items.data[0].current_period_end
+    pre-dahlia: subscription.current_period_end
+    """
+    ts = subscription.get("current_period_end")
+    if ts:
+        return ts
+    items = subscription.get("items", {})
+    if isinstance(items, dict):
+        data = items.get("data", [])
+        if data and isinstance(data[0], dict):
+            return data[0].get("current_period_end")
+    return None
