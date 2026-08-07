@@ -1,30 +1,20 @@
 {
+  "name": "sbme-mobile",
+  "version": "1.1.0",
+  "description": "Sportsbook Me DFS AI — Mobile Platform (iOS + Android)",
+  "main": "expo-router/entry",
+  "scheme": "sbmedfsai",
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
-    "version": "1.0.0",
+    "name": "SB-Me DFS AI",
+    "slug": "sbme-mobile",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "userInterfaceStyle": "automatic",
+    "splash": { "backgroundColor": "#0a0a0a", "resizeMode": "contain" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "ai.sbmedfsai.mobile", "infoPlist": { "NSFaceIDUsageDescription": "Face ID is used to securely log in" } },
+    "android": { "adaptiveIcon": { "backgroundColor": "#0a0a0a" }, "package": "ai.sbmedfsai.mobile" },
+    "plugins": ["expo-router", "expo-secure-store", "expo-local-authentication"],
+    "experiments": { "typedRoutes": true }
   }
 }
