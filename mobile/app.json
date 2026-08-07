@@ -1,20 +1,50 @@
 {
-  "name": "SPORTBOOK ME",
-  "version": "1.1.0",
-  "description": "SPORTBOOK ME Mobile — Powered by 🧠 SB ME Intelligent AI™",
-  "main": "expo-router/entry",
-  "scheme": "sportbookme",
   "expo": {
     "name": "SPORTBOOK ME",
     "slug": "sportbook-me-mobile",
     "version": "1.1.0",
+    "description": "SPORTBOOK ME Mobile — Powered by SB ME Intelligent AI",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": { "backgroundColor": "#000000", "resizeMode": "contain" },
-    "ios": { "supportsTablet": true, "bundleIdentifier": "com.sportbookme.app", "infoPlist": { "NSFaceIDUsageDescription": "Face ID is used to securely log in to SPORTBOOK ME" } },
-    "android": { "adaptiveIcon": { "backgroundColor": "#000000" }, "package": "com.sportbookme.app" },
-    "plugins": ["expo-router", "expo-secure-store", "expo-local-authentication"],
-    "experiments": { "typedRoutes": true }
+    "scheme": "sportbookme",
+    "splash": {
+      "backgroundColor": "#000000",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sportbookme.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Face ID is used to securely log in to SPORTBOOK ME"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#000000"
+      },
+      "package": "com.sportbookme.app",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "e572f3e5-ae3d-4484-975c-6aa5e62d355a"
+      }
+    },
+    "owner": "sportbookme816"
   }
 }
