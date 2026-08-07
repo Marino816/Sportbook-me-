@@ -15,6 +15,7 @@ export default function TabLayout() {
       <Tabs.Screen name="optimizer" options={{ title: "Optimizer", tabBarLabel: "Optimizer" }} />
       <Tabs.Screen name="subscription" options={{ title: "Billing", tabBarLabel: "Billing" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarLabel: "Profile" }} />
+      <Tabs.Screen name="settings" options={{ title: "Settings", tabBarLabel: "Settings" }} />
     </Tabs>
   );
 }
