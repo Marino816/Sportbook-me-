@@ -1,5 +1,5 @@
 /**
- * SBM Intelligent AI Model — Mobile API client extension.
+ * SB ME Intelligent AI Model — Mobile API client extension.
  * Integrates with backend /assistant endpoints.
  */
 

@@ -14,7 +14,7 @@ const QUICK_ACTIONS = [
 const STRATEGY_MODES = ["Cash", "Tournament", "Single Entry", "Nuclear", "Bankroll"];
 
 export default function AIChatScreen() {
-  const [messages, setMessages] = useState<AIMessage[]>([{ role: "assistant", content: "Welcome to SBM Intelligent AI. How can I help with your DFS research today? Ask me about lineups, projections, injuries, or strategy." }]);
+  const [messages, setMessages] = useState<AIMessage[]>([{ role: "assistant", content: "Welcome to SB ME Intelligent AI. How can I help with your DFS research today? Ask me about lineups, projections, injuries, or strategy." }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("Tournament");
@@ -79,7 +79,7 @@ export default function AIChatScreen() {
 
       {/* Input */}
       <View style={s.inputRow}>
-        <TextInput style={s.input} placeholder="Ask SBM Intelligent AI..." placeholderTextColor="#666" value={input} onChangeText={setInput} onSubmitEditing={() => handleSend()} returnKeyType="send" />
+        <TextInput style={s.input} placeholder="Ask SB ME Intelligent AI..." placeholderTextColor="#666" value={input} onChangeText={setInput} onSubmitEditing={() => handleSend()} returnKeyType="send" />
         <TouchableOpacity style={s.sendBtn} onPress={() => handleSend()} disabled={loading}>
           <Text style={s.sendText}>Send</Text>
         </TouchableOpacity>
