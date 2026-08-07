@@ -1,19 +1,19 @@
 {
-  "name": "sbme-mobile",
+  "name": "SPORTBOOK ME",
   "version": "1.1.0",
-  "description": "Sportsbook Me DFS AI — Mobile Platform (iOS + Android)",
+  "description": "SPORTBOOK ME Mobile — Powered by 🧠 SB ME Intelligent AI™",
   "main": "expo-router/entry",
-  "scheme": "sbmedfsai",
+  "scheme": "sportbookme",
   "expo": {
-    "name": "SB-Me DFS AI",
-    "slug": "sbme-mobile",
+    "name": "SPORTBOOK ME",
+    "slug": "sportbook-me-mobile",
     "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
-    "splash": { "backgroundColor": "#0a0a0a", "resizeMode": "contain" },
-    "ios": { "supportsTablet": true, "bundleIdentifier": "ai.sbmedfsai.mobile", "infoPlist": { "NSFaceIDUsageDescription": "Face ID is used to securely log in" } },
-    "android": { "adaptiveIcon": { "backgroundColor": "#0a0a0a" }, "package": "ai.sbmedfsai.mobile" },
+    "userInterfaceStyle": "dark",
+    "splash": { "backgroundColor": "#000000", "resizeMode": "contain" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.sportbookme.app", "infoPlist": { "NSFaceIDUsageDescription": "Face ID is used to securely log in to SPORTBOOK ME" } },
+    "android": { "adaptiveIcon": { "backgroundColor": "#000000" }, "package": "com.sportbookme.app" },
     "plugins": ["expo-router", "expo-secure-store", "expo-local-authentication"],
     "experiments": { "typedRoutes": true }
   }

@@ -6,7 +6,7 @@
 import * as SecureStore from "expo-secure-store";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://sportbook-me-production.up.railway.app/api";
-const TOKEN_KEY = "sbme_dfs_token";
+const TOKEN_KEY = "sportbook_me_token";
 
 export async function getToken(): Promise<string | null> {
   return SecureStore.getItemAsync(TOKEN_KEY);
