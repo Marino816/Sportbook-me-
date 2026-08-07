@@ -105,4 +105,15 @@ Quick Actions: Build Best Lineup, Cash Lineup, GPP Lineup, Slate Summary, Compar
 
 ✅ **HERMES-016B COMPLETE**
 
+## Distribution
+
+| Channel | URL |
+|---------|-----|
+| iOS (TestFlight) | https://testflight.apple.com/join/XXXXXXXX |
+| Android APK | https://downloads.sportbookme.ai/android/latest.apk |
+| Android (Play Store) | https://play.google.com/apps/testing/com.sportbookme.app |
+| Expo Preview | https://expo.dev/preview/XXXXXXXX |
+| Demo Video | https://sbmedfsai.com/demo |
+| Documentation | https://docs.sbmedfsai.com/mobile |
+
 Powered by 🧠 SB ME Intelligent AI™
