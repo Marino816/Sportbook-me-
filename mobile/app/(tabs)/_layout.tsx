@@ -11,6 +11,7 @@ export default function TabLayout() {
       tabBarInactiveTintColor: "#666",
     }}>
       <Tabs.Screen name="dashboard" options={{ title: "Dashboard", tabBarLabel: "Home" }} />
+      <Tabs.Screen name="ai-chat" options={{ title: "SBM AI", tabBarLabel: "AI" }} />
       <Tabs.Screen name="optimizer" options={{ title: "Optimizer", tabBarLabel: "Optimizer" }} />
       <Tabs.Screen name="subscription" options={{ title: "Billing", tabBarLabel: "Billing" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarLabel: "Profile" }} />
