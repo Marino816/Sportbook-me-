@@ -82,12 +82,20 @@ export async function buildLineups(params: {
   platform: string;
   strategy?: string;
   count?: number;
+  slate_id?: number;
   locked?: string[];
   excluded?: string[];
 }) {
   return apiFetch("/builder/lineups", {
     method: "POST",
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      slate_id: params.slate_id || 1,
+      platform: params.platform,
+      strategy: params.strategy || "balanced",
+      lineup_count: params.count || 1,
+      locked_player_ids: params.locked || [],
+      excluded_player_ids: params.excluded || [],
+    }),
   });
 }
 
