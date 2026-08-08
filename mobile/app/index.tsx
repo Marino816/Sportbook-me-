@@ -2,7 +2,7 @@ import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import { Link, router } from "expo-router";
 import * as LocalAuthentication from "expo-local-authentication";
-import { login, getToken } from "../../lib/api";
+import { login, getToken } from "../lib/api";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
