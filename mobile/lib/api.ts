@@ -38,14 +38,11 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 // ── Auth ──
 export async function login(email: string, password: string) {
-  const form = new URLSearchParams();
-  form.append("username", email);
-  form.append("password", password);
   const token = await getToken();
   const res = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: form.toString(),
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ email: email, password: password }),
   });
   if (!res.ok) throw new Error("Invalid credentials");
   const data = await res.json();
