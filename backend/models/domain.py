@@ -11,6 +11,7 @@ class User(Base):
     role = Column(String, default="user")  # "user" | "admin"
     is_pro = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    is_beta = Column(Boolean, default=False)  # Closed beta access flag
     stripe_customer_id = Column(String, nullable=True)
     active_subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

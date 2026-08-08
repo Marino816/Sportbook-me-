@@ -16,7 +16,7 @@ celery
 gunicorn
 asyncpg
 stripe
-passlib[bcrypt]
-bcrypt==4.3.0
+passlib[bcrypt]==1.7.4
+bcrypt>=4.0.0,<4.1
 python-jose[cryptography]
 python-multipart
