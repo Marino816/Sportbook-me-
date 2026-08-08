@@ -46,8 +46,8 @@ export async function login(email: string, password: string) {
   });
   if (!res.ok) throw new Error("Invalid credentials");
   const data = await res.json();
-  await setToken(data.data.access_token);
-  return data.data;
+  await setToken(data.access_token);
+  return data;
 }
 
 export async function register(email: string, password: string) {
