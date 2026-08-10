@@ -9,6 +9,11 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
+revision: str = "c35715bf960d"
+down_revision: Union[str, None] = "6f72f33251ea"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
 
 def upgrade() -> None:
     op.add_column("projections", sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True))
