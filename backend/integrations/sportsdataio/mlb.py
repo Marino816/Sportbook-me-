@@ -23,13 +23,19 @@ async def ingest_players(db: AsyncSession) -> int:
     data = fetch("/scores/json/Players")
     count = 0
     for p in data:
-        if p.get("Status") != "Active":
+        name = (p.get("FirstName", "") + " " + p.get("LastName", "")).strip()
+        team = p.get("Team", "")
+        if not name:
             continue
+        status = p.get("Status", "")
+        if status not in ("Active", "Probable", "Day-To-Day"):
+            continue  # skip minors, injured, etc. for DFS optimizer
+
         await upsert_player(
             db,
-            provider_id=p["PlayerID"],
-            name=p["Name"],
-            team=p.get("Team", ""),
+            provider_id=p.get("PlayerID", 0),
+            name=name,
+            team=team,
             position=p.get("Position"),
         )
         count += 1
