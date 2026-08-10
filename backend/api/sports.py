@@ -55,3 +55,23 @@ async def calculate_payout(stake: float, odds: int):
         payout = stake * (1 + 100 / abs(odds))
     
     return {"payout": round(payout, 2)}
+
+
+@router.get("/slates")
+async def get_slates(sport: str = "MLB", db: AsyncSession = Depends(get_db)):
+    """Return slates from database with proper IDs for mobile selection."""
+    from models.domain import Slate
+    result = await db.execute(
+        select(Slate).where(Slate.sport == sport.upper()).order_by(Slate.date.desc())
+    )
+    slates = result.scalars().all()
+    return wrap_data([
+        {
+            "slate_id": s.id,
+            "sport": s.sport,
+            "site": s.site,
+            "date": str(s.date),
+            "is_main_slate": s.is_main_slate,
+        }
+        for s in slates
+    ], source="database")

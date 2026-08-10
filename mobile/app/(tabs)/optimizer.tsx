@@ -23,14 +23,16 @@ export default function OptimizerScreen() {
       setFetchingSlates(true);
       try {
         const token = await getToken();
-        const res = await fetch(`${API_URL}/sports/lobby?sport=${sport.toUpperCase()}`, {
+        const res = await fetch(`${API_URL}/sports/slates?sport=${sport.toUpperCase()}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json();
         const items = data.data || data;
         if (Array.isArray(items) && items.length > 0) {
           setSlates(items);
-          setSlateId(null); // reset selection
+          // Auto-select first slate by scanning for DK/FD
+          const dk = items.find((s: any) => s.platform === "draftkings" || s.site === "DraftKings");
+          setSlateId(dk ? (dk.slate_id || dk.id || 0) : (items[0].slate_id || items[0].id || 0));
         } else {
           setSlates([]);
           setSlateId(0);
