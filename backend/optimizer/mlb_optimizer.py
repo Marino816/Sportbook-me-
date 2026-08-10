@@ -69,6 +69,13 @@ def _normalize_mlb_pos(pos_str: str, platform: str = "draftkings") -> str:
 #  Core Optimizer
 # ══════════════════════════════════════════════════════════════
 
+# Slot ordering for display
+SLOT_ORDER = {
+    "draftkings": ["P","P","C","1B","2B","3B","SS","OF","OF","OF"],
+    "fanduel": ["P","C1B","2B","3B","SS","OF","OF","OF","UTIL"],
+}
+
+
 class MLBOptimizer:
     """
     OR-Tools CP-SAT optimizer for MLB DFS.
@@ -250,8 +257,12 @@ class MLBOptimizer:
                 assigned = pos
             p["roster_slot"] = assigned
 
-        # Sort: pitchers first, then positional
-        selected.sort(key=lambda p: (0 if p.get("roster_slot") == "P" else 1))
+        # Sort by canonical slot order + add slot_index
+        order = SLOT_ORDER.get(self.platform, SLOT_ORDER["draftkings"])
+        slot_index = {s: i for i, s in enumerate(order)}
+        for p in selected:
+            p["slot_index"] = slot_index.get(p.get("roster_slot", "?"), 99)
+        selected.sort(key=lambda p: p.get("slot_index", 99))
 
         # Stack summary
         team_counts = {}
