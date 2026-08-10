@@ -67,7 +67,7 @@ async def ingest_dfs_projections(db: AsyncSession, date_str: str) -> dict:
             dk_fp = p.get("FantasyPointsDraftKings", 0.0) or 0.0
             await upsert_projection(
                 db, slate_dk.id, player.id, dk_sal, dk_pos,
-                dk_fp, dk_fp * 1.3, dk_fp * 0.5, 5.0, (dk_fp * 1000 / dk_sal) if dk_sal else 0,
+                dk_fp, dk_fp * 1.3, dk_fp * 0.5, None, (dk_fp * 1000 / dk_sal) if dk_sal else None,
             )
             result["dk_players"] += 1
             result["projections"] += 1
@@ -79,7 +79,7 @@ async def ingest_dfs_projections(db: AsyncSession, date_str: str) -> dict:
             fd_fp = p.get("FantasyPointsFanDuel", 0.0) or 0.0
             await upsert_projection(
                 db, slate_fd.id, player.id, fd_sal, fd_pos,
-                fd_fp, fd_fp * 1.3, fd_fp * 0.5, 5.0, (fd_fp * 1000 / fd_sal) if fd_sal else 0,
+                fd_fp, fd_fp * 1.1, fd_fp * 0.5, None, (fd_fp * 1000 / fd_sal) if fd_sal else None,
             )
             result["fd_players"] += 1
             result["projections"] += 1

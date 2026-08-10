@@ -119,6 +119,83 @@ NBA_DEMO = [
     {"id":15,"name":"Min SG","team":"HOU","salary":3000,"roster_position":"SG","projected_fp":11.0,"ceiling":19,"edge_score":22,"risk_score":0.5,"ownership":1},
 ]
 
+def _fill_mlb_roster(pool, selected, used_salary, used_ids, used_teams, cap):
+    """Fill MLB DraftKings roster with positional enforcement.
+    
+    DK MLB Classic: 2 P, 1 C, 1 1B, 1 2B, 1 3B, 1 SS, 3 OF = 10 players, $50K cap.
+    """
+    size = 10
+    # Normalize positions: SP/RP → P, map to MLB slots
+    def normalize_pos(pos_str):
+        p = str(pos_str).upper()
+        if p in ("SP", "RP", "P"): return "P"
+        if p in ("C"): return "C"
+        if p in ("1B"): return "1B"
+        if p in ("2B"): return "2B"
+        if p in ("3B"): return "3B"
+        if p in ("SS"): return "SS"
+        if p in ("OF", "LF", "RF", "CF"): return "OF"
+        return p  # return as-is for unknown
+    
+    # Slot requirements: (slot_name, count_needed)
+    slots = [("P", 2), ("C", 1), ("1B", 1), ("2B", 1), ("3B", 1), ("SS", 1), ("OF", 3)]
+    slot_filled = {s: 0 for s, _ in slots}
+    
+    for slot_name, needed in slots:
+        while slot_filled[slot_name] < needed:
+            # Find best available player at this position
+            candidates = [
+                p for p in pool
+                if normalize_pos(p.get("roster_position", "")) == slot_name
+                and p["id"] not in used_ids
+                and p["salary"] > 0
+            ]
+            # Sort by value (projected_fp / salary)
+            candidates.sort(
+                key=lambda p: (p.get("projected_fp", 0) or 0) / max(p["salary"], 100),
+                reverse=True
+            )
+            
+            picked = None
+            for p in candidates:
+                if used_salary + p["salary"] > cap:
+                    continue
+                tn = used_teams.get(p.get("team", ""), 0)
+                if tn >= 5:
+                    continue
+                picked = p
+                break
+            
+            if picked is None:
+                # Can't fill this slot — try picking best available any position
+                # as long as we don't exceed the total size
+                break
+            
+            selected.append(picked)
+            used_salary += picked["salary"]
+            used_ids.add(picked["id"])
+            used_teams[picked.get("team", "")] = used_teams.get(picked.get("team", ""), 0) + 1
+            slot_filled[slot_name] += 1
+    
+    # Fill remaining slots to reach 10 players (utility/flex spots)
+    remaining = [p for p in pool if p["id"] not in used_ids and p["salary"] > 0]
+    remaining.sort(key=lambda p: (p.get("projected_fp", 0) or 0) / max(p["salary"], 100), reverse=True)
+    for p in remaining:
+        if len(selected) >= size:
+            break
+        if used_salary + p["salary"] > cap:
+            continue
+        tn = used_teams.get(p.get("team", ""), 0)
+        if tn >= 5:
+            continue
+        selected.append(p)
+        used_salary += p["salary"]
+        used_ids.add(p["id"])
+        used_teams[p.get("team", "")] = tn + 1
+    
+    return selected, used_salary, used_ids, used_teams
+
+
 def _generate_lineups(pool: list, strategy: str, count: int, locks: list, excludes: list, randomness: float, platform: str = "draftkings", is_mlb: bool = False) -> list:
     profile = get_strategy(strategy)
     eligible = [p for p in pool if p["id"] not in excludes]
@@ -141,35 +218,42 @@ def _generate_lineups(pool: list, strategy: str, count: int, locks: list, exclud
 
     lineups = []
     import random
+    forbidden_ids = set()  # Cross-lineup uniqueness pool
     for i in range(min(count, 50)):
-        # Diversification: shuffle eligible pool for variety
-        working = eligible.copy()
+        working = [p for p in eligible if p["id"] not in forbidden_ids]
+        if len(working) < size:
+            working = eligible.copy()  # fallback if too many excluded
         random.shuffle(working)
         selected = []
         used_salary = 0
         used_ids = set()
         used_teams = {}
+
         # Lock players first
         for pid in locks:
             p = next((x for x in working if x["id"] == pid), None)
             if p and p["id"] not in used_ids:
                 selected.append(p); used_salary += p["salary"]; used_ids.add(p["id"])
                 used_teams[p.get("team","")] = used_teams.get(p.get("team",""), 0) + 1
-        # Greedy fill — sort by value for MLB, salary for NBA
+
         if is_mlb:
-            working.sort(key=lambda x: x.get("value", 0) or 0, reverse=True)
+            # Position-enforced MLB fill
+            selected, used_salary, used_ids, used_teams = _fill_mlb_roster(
+                working, selected, used_salary, used_ids, used_teams, cap
+            )
         else:
+            # NBA: flex-based greedy fill
             working.sort(key=lambda x: x["salary"])
-        for p in working:
-            if len(selected) >= size: break
-            if p["id"] in used_ids: continue
-            tn = used_teams.get(p.get("team",""), 0)
-            if tn >= 5: continue
-            if used_salary + p["salary"] > cap: continue
-            selected.append(p)
-            used_salary += p["salary"]
-            used_ids.add(p["id"])
-            used_teams[p.get("team","")] = tn + 1
+            for p in working:
+                if len(selected) >= size: break
+                if p["id"] in used_ids: continue
+                tn = used_teams.get(p.get("team",""), 0)
+                if tn >= 4: continue
+                if used_salary + p["salary"] > cap: continue
+                selected.append(p)
+                used_salary += p["salary"]
+                used_ids.add(p["id"])
+                used_teams[p.get("team","")] = tn + 1
 
         if len(selected) < size:
             continue
@@ -182,6 +266,8 @@ def _generate_lineups(pool: list, strategy: str, count: int, locks: list, exclud
             "total_salary": used_salary, "remaining_salary": cap - used_salary,
             "players": selected,
         })
+        # Cross-lineup uniqueness: exclude all selected players from future lineups
+        forbidden_ids.update(used_ids)
         if randomness > 0:
             import random; random.shuffle(eligible)
     return lineups

@@ -67,8 +67,8 @@ async def upsert_projection(
     projected_fp: float,
     ceiling: float,
     floor: float,
-    ownership: float,
-    value: float,
+    ownership: float = None,
+    value: float = None,
 ) -> None:
     """Upsert a projection record — delete old, insert new for idempotency."""
     # Remove stale projection for this player on this slate
