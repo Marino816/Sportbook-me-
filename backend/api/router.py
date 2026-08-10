@@ -46,9 +46,14 @@ async def run_optimizer(
 ):
     """Run the DFS Optimizer Engine with SaaS feature gating for multi-lineup generation."""
     # Enforce Subscription Limits
-    max_lineups = 1 # Default for Free users
+    max_lineups = 1  # Default for Free users
+
+    # Admin and QA bootstrap accounts get full access for testing
+    is_admin = user.role == "admin"
     
-    if user.is_pro and user.active_subscription_id:
+    if is_admin:
+        max_lineups = 150
+    elif user.is_pro and user.active_subscription_id:
         # Query matching subscription for tier check
         sub_result = await db.execute(select(Subscription).where(Subscription.id == user.active_subscription_id))
         sub = sub_result.scalars().first()
@@ -67,15 +72,49 @@ async def run_optimizer(
         )
 
     projections_dicts = await get_slate_projections(request.slate_id, db)
-    
-    # Needs minimum 8 players to make an NBA lineup
+
+    # Determine sport from slate for roster requirements
+    from models.domain import Slate as SlateModel
+    slate_result = await db.execute(select(SlateModel).where(SlateModel.id == request.slate_id))
+    slate = slate_result.scalars().first()
+    sport = slate.sport.upper() if slate else "NBA"
+    min_players = 10 if sport == "MLB" else 8  # MLB DK Classic = 10, NBA = 8
+
     if isinstance(projections_dicts, dict) and "data" in projections_dicts:
         projections_list = projections_dicts["data"]
     else:
         projections_list = projections_dicts
 
-    if len(projections_list) < 8:
-        raise HTTPException(status_code=400, detail="Not enough players in projection pool to build a slate.")
+    if len(projections_list) < min_players:
+        raise HTTPException(status_code=400, detail=f"Not enough players in projection pool ({len(projections_list)}/{min_players} needed for {sport}).")
+
+    # MLB uses the builder's platform-aware roster generator
+    if sport == "MLB":
+        from api.builder_routes import _generate_lineups, get_strategy as builder_strategy
+        platform = request.settings.get("platform", "draftkings") if isinstance(request.settings, dict) else getattr(request.settings, 'platform', 'draftkings')
+        strategy = request.settings.get("strategy", "balanced") if isinstance(request.settings, dict) else getattr(request.settings, 'strategy', 'balanced')
+        pool = projections_list
+        lineups = _generate_lineups(pool, strategy, requested_lineups, [], [], 0.0, platform)
+        # Format response
+        formatted = []
+        for lu in lineups:
+            formatted.append({
+                "total_salary": lu.get("salary", 0),
+                "projected_score": lu.get("projected_fp", 0),
+                "players": [{
+                    "id": p["id"],
+                    "name": p.get("name", ""),
+                    "team": p.get("team", ""),
+                    "salary": p.get("salary", 0),
+                    "roster_position": p.get("roster_position", ""),
+                    "projected_fp": p.get("projected_fp", 0),
+                    "ownership": p.get("ownership", 0),
+                    "value": p.get("value", 0),
+                } for p in lu.get("players", [])],
+            })
+        return wrap_data({"lineups": formatted, "source": "sportsdataio", "sport": sport, "platform": platform}, source="builder_engine")
+
+    # NBA path — DFSOptimizer
 
     df = pd.DataFrame(projections_list)
     if 'id' not in df.columns and 'player_id' in df.columns:
