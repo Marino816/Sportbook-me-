@@ -61,6 +61,8 @@ class Projection(Base):
     leverage = Column(Float)
     value = Column(Float)
     is_locked = Column(Boolean, default=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=True)
+    source = Column(String, default="seed", nullable=True)  # "seed", "api", "model_v7"
 
     player = relationship("Player")
     slate = relationship("Slate")

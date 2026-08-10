@@ -207,8 +207,10 @@ async def build_lineups(body: LineupRequest, user: User = Depends(get_current_us
     pool = await _load_projections(body.slate_id, db)
     source = "live"
     if not pool:
-        pool = NBA_DEMO
-        source = "demo"
+        raise HTTPException(
+            status_code=503,
+            detail="Live projections are not available for this slate yet. Data is being refreshed — please check back shortly.",
+        )
 
     lineups = _generate_lineups(pool, body.strategy, body.lineup_count,
                                 body.locked_player_ids, body.excluded_player_ids, body.randomness, body.platform)

@@ -131,12 +131,6 @@ export default function OptimizerScreen() {
         </View>
 
         {/* Data Source Label */}
-        {dataSource === "demo" && lineups.length > 0 && (
-          <View style={s.demoBadge}>
-            <Text style={s.demoText}>⚠ Demo Data — Not live {sport.toUpperCase()} projections</Text>
-          </View>
-        )}
-
         <TouchableOpacity style={s.btn} onPress={handleBuild} disabled={loading || fetchingSlates}>
           <Text style={s.btnText}>{loading ? "Building..." : "Build Lineups"}</Text>
         </TouchableOpacity>
