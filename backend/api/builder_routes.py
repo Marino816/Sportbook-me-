@@ -130,6 +130,12 @@ MLB_SLOTS = [("P", 2), ("C", 1), ("1B", 1), ("2B", 1), ("3B", 1), ("SS", 1), ("O
 MLB_CAP = 50000
 MLB_SIZE = 10
 
+# FanDuel MLB: 9 players, $35K cap
+FD_MLB_CAP = 35000
+FD_MLB_SIZE = 9
+# FanDuel MLB slots: 1 P, 1 C/1B (combined), 1 2B, 1 3B, 1 SS, 3 OF, 1 UTIL
+FD_MLB_SLOTS = [("P", 1), ("C1B", 1), ("2B", 1), ("3B", 1), ("SS", 1), ("OF", 3), ("UTIL", 1)]
+
 # ── strategy → behaviour config ──────────────────────────────────
 STRATEGY_CONFIG = {
     "balanced":   {"min_unique": 2, "max_exposure_pct": None, "diversify": True},
@@ -140,34 +146,48 @@ STRATEGY_CONFIG = {
 }
 
 
-def _normalize_mlb_pos(pos_str: str) -> str:
-    """Map SportsDataIO position to DK MLB slot."""
+def _normalize_mlb_pos(pos_str: str, platform: str = "draftkings") -> str:
+    """Map SportsDataIO position to roster slot. FD combines C/1B into one slot."""
     p = str(pos_str).upper()
     if p in ("SP", "RP", "P"):           return "P"
+    if platform == "fanduel":
+        if p in ("C", "1B"):             return "C1B"
     if p in ("C"):                       return "C"
     if p in ("1B"):                      return "1B"
     if p in ("2B"):                      return "2B"
     if p in ("3B"):                      return "3B"
     if p in ("SS"):                      return "SS"
-    if p in ("OF", "LF", "RF", "CF"):    return "OF"
+    if p in ("OF", "LF", "RF", "CF", "DH"):  return "OF"
     return p
 
 
-def _validate_mlb_lineup(selected: list, cap: int, size: int) -> str | None:
+def _validate_mlb_lineup(selected: list, cap: int, size: int, platform: str = "draftkings") -> str | None:
     """Validate a built MLB lineup. Returns None if valid, else error string."""
+    slots = FD_MLB_SLOTS if platform == "fanduel" else MLB_SLOTS
     if len(selected) != size:
         return f"wrong player count: {len(selected)} (expected {size})"
-    slot_count = {s: 0 for s, _ in MLB_SLOTS}
+    slot_count = {s: 0 for s, _ in slots}
     ids = set()
     for p in selected:
         if p["id"] in ids:
             return f"duplicate player {p['name']}"
         ids.add(p["id"])
-        slot = _normalize_mlb_pos(p.get("roster_position", ""))
-        slot_count[slot] = slot_count.get(slot, 0) + 1
-    for slot, need in MLB_SLOTS:
-        if slot_count.get(slot, 0) != need:
-            return f"slot {slot}: {slot_count.get(slot, 0)} (need {need})"
+        slot = _normalize_mlb_pos(p.get("roster_position", ""), platform)
+        # Required non-UTIL slots: count only up to the needed amount
+        required_set = {s for s, _ in slots if s != "UTIL"}
+        if slot in required_set:
+            need = dict(slots).get(slot, 0)
+            if slot_count.get(slot, 0) < need:
+                slot_count[slot] = slot_count.get(slot, 0) + 1
+            elif "UTIL" in dict(slots):
+                slot_count["UTIL"] = slot_count.get("UTIL", 0) + 1
+        elif "UTIL" in dict(slots) and slot != "P":
+            slot_count["UTIL"] = slot_count.get("UTIL", 0) + 1
+    for slot, need in slots:
+            if slot == "UTIL":
+                continue  # UTIL is any non-P hitter; count validated by total size
+            if slot_count.get(slot, 0) != need:
+                return f"slot {slot}: {slot_count.get(slot, 0)} (need {need})"
     salary = sum(p.get("salary", 0) for p in selected)
     if salary > cap:
         return f"salary {salary} > cap {cap}"
@@ -192,18 +212,22 @@ def _build_mlb_candidates(pool: list[dict], slot_name: str, used_ids: set) -> li
 def _fill_mlb_roster(
     pool: list[dict],
     locked: list[dict],
-    used_ids_in: set,    # ignored — local ids used
-    used_teams_in: dict, # ignored — local teams used
+    used_ids_in: set,
+    used_teams_in: dict,
     cap: int,
     config: dict,
+    platform: str = "draftkings",
 ) -> tuple[list[dict], int, set, dict] | None:
     """
     Position-enforced MLB roster fill with budget-aware selection.
-    Each slot fill reserves enough remaining budget for unfilled slots
-    by estimating minimum cost.
+    Uses platform-specific slots (DK=10, FD=9) and salary cap.
 
     Returns (selected, used_salary, used_ids, used_teams) or None.
     """
+    is_fd = platform == "fanduel"
+    slots = FD_MLB_SLOTS if is_fd else MLB_SLOTS
+    size = FD_MLB_SIZE if is_fd else MLB_SIZE
+
     selected: list[dict] = []
     used_sal = 0
     ids: set = set()
@@ -228,42 +252,52 @@ def _fill_mlb_roster(
     for p in locked:
         _try_add(p)
 
-    # Build ordered slot list — track remaining fills per position
-    remaining = {s: n for s, n in MLB_SLOTS}
+    # Track remaining fills per position
+    remaining = {s: n for s, n in slots}
 
-    for slot_name, needed in MLB_SLOTS:
+    for slot_name, needed in slots:
         for _ in range(needed):
-            # Build list of remaining slots (counts still needed)
             remaining_now = [(s, n) for s, n in remaining.items() if n > 0]
             remaining_now[0] = (remaining_now[0][0], remaining_now[0][1] - 1)
             slots_for_min = [(s, n) for s, n in remaining_now if n > 0]
 
             min_budget_needed = 0
             for s_slot, s_n in slots_for_min:
-                cheapest = sorted(
-                    [p for p in pool if _normalize_mlb_pos(p.get("roster_position", "")) == s_slot
-                     and p["id"] not in ids and p.get("salary", 0) > 0],
-                    key=lambda p: p.get("salary", 0),
-                )[:s_n]
-                min_budget_needed += sum(p.get("salary", 0) for p in cheapest)
+                if s_slot == "UTIL":
+                    # UTIL accepts any non-pitcher — use cheapest hitter
+                    cheapest_hitter = sorted(
+                        [p for p in pool if _normalize_mlb_pos(p.get("roster_position", ""), platform) != "P"
+                         and p["id"] not in ids and p.get("salary", 0) > 0],
+                        key=lambda p: p.get("salary", 0),
+                    )[:1]
+                    min_budget_needed += sum(p.get("salary", 0) for p in cheapest_hitter)
+                else:
+                    cheapest = sorted(
+                        [p for p in pool if _normalize_mlb_pos(p.get("roster_position", ""), platform) == s_slot
+                         and p["id"] not in ids and p.get("salary", 0) > 0],
+                        key=lambda p: p.get("salary", 0),
+                    )[:s_n]
+                    min_budget_needed += sum(p.get("salary", 0) for p in cheapest)
 
             candidates = [
                 p for p in pool
-                if _normalize_mlb_pos(p.get("roster_position", "")) == slot_name
+                if (
+                    # UTIL: any non-pitcher (including C, 1B, C1B, 2B, 3B, SS, OF)
+                    (slot_name == "UTIL" and _normalize_mlb_pos(p.get("roster_position", ""), platform) != "P")
+                    or _normalize_mlb_pos(p.get("roster_position", ""), platform) == slot_name
+                )
                 and p["id"] not in ids
                 and p.get("salary", 0) > 0
                 and used_sal + p.get("salary", 0) + min_budget_needed <= cap
             ]
             if not candidates:
-                return None  # can't fill this slot without busting budget for remaining
+                return None
 
-            # Sort by value
             candidates.sort(
                 key=lambda p: (p.get("projected_fp", 0) or 0) / max(p.get("salary", 1), 100),
                 reverse=True,
             )
 
-            # Diversification: pick among top candidates
             if config.get("diversify") and len(candidates) > 2:
                 top_k = min(5, len(candidates))
                 candidates = candidates[:top_k]
@@ -277,21 +311,20 @@ def _fill_mlb_roster(
             if picked is None:
                 return None
 
-            # Decrement remaining count
             remaining[slot_name] -= 1
 
-    # Fill remaining to 10 (shouldn't need more since 10 slots are filled)
-    remaining = [p for p in pool if p["id"] not in ids and p.get("salary", 0) > 0]
-    remaining.sort(
+    # Fill remaining to reach full size (UTIL spot for FD)
+    remaining_players = [p for p in pool if p["id"] not in ids and p.get("salary", 0) > 0]
+    remaining_players.sort(
         key=lambda p: (p.get("projected_fp", 0) or 0) / max(p.get("salary", 1), 100),
         reverse=True,
     )
-    for p in remaining:
-        if len(selected) >= MLB_SIZE:
+    for p in remaining_players:
+        if len(selected) >= size:
             break
         _try_add(p)
 
-    if len(selected) < MLB_SIZE:
+    if len(selected) < size:
         return None
     return selected, used_sal, ids, teams
 
@@ -302,22 +335,24 @@ def _gen_unique_lineups(
     count: int,
     locks: list[int],
     excludes: list[int],
-    cap: int,
+    platform: str = "draftkings",
 ) -> list[dict]:
     """
-    Generate count unique MLB lineups with:
-    - strategy-based min_unique players
-    - per-player max_exposure enforcement
-    - no complete exclusion — players allowed across lineups
+    Generate count unique MLB lineups with platform-specific rules.
+    DK: 10 players, $50K, 2P/C/1B/2B/3B/SS/3OF
+    FD: 9 players, $35K, P/C1B/2B/3B/SS/3OF/UTIL
     """
+    is_fd = platform == "fanduel"
+    cap = FD_MLB_CAP if is_fd else MLB_CAP
+    size = FD_MLB_SIZE if is_fd else MLB_SIZE
+
     cfg = STRATEGY_CONFIG.get(strategy, STRATEGY_CONFIG["balanced"])
     min_unique = cfg["min_unique"]
     max_exp_pct = cfg["max_exposure_pct"]
 
     eligible = [p for p in pool if p["id"] not in excludes]
-    # Exclude zero-projection players
     eligible = [p for p in eligible if (p.get("projected_fp", 0) or 0) > 0]
-    if len(eligible) < MLB_SIZE:
+    if len(eligible) < size:
         return []
 
     # Lock players
@@ -338,7 +373,7 @@ def _gen_unique_lineups(
                 p for p in eligible
                 if player_use.get(p["id"], 0) < max_uses
             ]
-            if len(eligible_this) < MLB_SIZE:
+            if len(eligible_this) < size:
                 eligible_this = eligible.copy()
         else:
             eligible_this = eligible.copy()
@@ -349,7 +384,7 @@ def _gen_unique_lineups(
         used_teams = {}
 
         result = _fill_mlb_roster(
-            eligible_this, locked, used_ids, used_teams, cap, cfg,
+            eligible_this, locked, used_ids, used_teams, cap, cfg, platform,
         )
         if result is None:
             continue
@@ -357,7 +392,7 @@ def _gen_unique_lineups(
         selected, used_sal, ids, teams = result
 
         # Validate
-        err = _validate_mlb_lineup(selected, cap, MLB_SIZE)
+        err = _validate_mlb_lineup(selected, cap, size, platform)
         if err:
             continue
 
@@ -367,7 +402,7 @@ def _gen_unique_lineups(
             for prior in lineups:
                 prior_ids = {p["id"] for p in prior["players"]}
                 overlap = len(ids & prior_ids)
-                if (MLB_SIZE - overlap) < min_unique:
+                if (size - overlap) < min_unique:
                     ok = False
                     break
             if not ok:
@@ -396,7 +431,10 @@ def _gen_unique_lineups(
                     "name": p.get("name", ""),
                     "team": p.get("team", ""),
                     "eligible_positions": p.get("roster_position", ""),
-                    "roster_slot": _normalize_mlb_pos(p.get("roster_position", "")),
+                    "roster_slot": (
+                        "UTIL" if is_fd and j == size - 1 and _normalize_mlb_pos(p.get("roster_position", ""), platform) != "P"
+                        else _normalize_mlb_pos(p.get("roster_position", ""), platform)
+                    ),
                     "salary": p.get("salary", 0),
                     "projected_fp": p.get("projected_fp", 0),
                     "ceiling": p.get("ceiling"),
@@ -404,7 +442,7 @@ def _gen_unique_lineups(
                     "ownership": p.get("ownership"),  # null when unavailable
                     "value": p.get("value"),
                 }
-                for p in selected
+                for j, p in enumerate(selected)
             ],
         }
         lineups.append(lineup)
@@ -440,7 +478,7 @@ def _generate_lineups(
 
     # MLB path — full position-enforced engine
     if is_mlb:
-        return _gen_unique_lineups(eligible, strategy, count, locks, excludes, MLB_CAP)
+        return _gen_unique_lineups(eligible, strategy, count, locks, excludes, platform)
 
     # ── NBA path (unchanged) ──────────────────────────────────────
     platform_lower = platform.lower()
