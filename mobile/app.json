@@ -26,6 +26,8 @@
       "package": "com.sportbookme.app",
       "permissions": [
         "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ]
     },
@@ -45,6 +47,12 @@
         "projectId": "e572f3e5-ae3d-4484-975c-6aa5e62d355a"
       }
     },
-    "owner": "sportbookme816"
+    "owner": "sportbookme816",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/e572f3e5-ae3d-4484-975c-6aa5e62d355a"
+    }
   }
 }
