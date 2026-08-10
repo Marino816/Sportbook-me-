@@ -396,7 +396,7 @@ def _gen_unique_lineups(
                     "name": p.get("name", ""),
                     "team": p.get("team", ""),
                     "eligible_positions": p.get("roster_position", ""),
-                    "assigned_slot": _normalize_mlb_pos(p.get("roster_position", "")),
+                    "roster_slot": _normalize_mlb_pos(p.get("roster_position", "")),
                     "salary": p.get("salary", 0),
                     "projected_fp": p.get("projected_fp", 0),
                     "ceiling": p.get("ceiling"),

@@ -41,44 +41,44 @@ class TestMLBOptimizer:
         """B: exactly 2 P."""
         from api.builder_routes import _gen_unique_lineups
         lu = _gen_unique_lineups(TEST_POOL, "balanced", 1, [], [], 50000)
-        slots = [p["assigned_slot"] for p in lu[0]["players"]]
+        slots = [p["roster_slot"] for p in lu[0]["players"]]
         assert slots.count("P") == 2
 
     def test_exactly_one_catcher(self):
         """C: exactly 1 C."""
         from api.builder_routes import _gen_unique_lineups
         lu = _gen_unique_lineups(TEST_POOL, "balanced", 1, [], [], 50000)
-        slots = [p["assigned_slot"] for p in lu[0]["players"]]
+        slots = [p["roster_slot"] for p in lu[0]["players"]]
         assert slots.count("C") == 1
 
     def test_exactly_one_1b(self):
         from api.builder_routes import _gen_unique_lineups
         lu = _gen_unique_lineups(TEST_POOL, "balanced", 1, [], [], 50000)
-        slots = [p["assigned_slot"] for p in lu[0]["players"]]
+        slots = [p["roster_slot"] for p in lu[0]["players"]]
         assert slots.count("1B") == 1
 
     def test_exactly_one_2b(self):
         from api.builder_routes import _gen_unique_lineups
         lu = _gen_unique_lineups(TEST_POOL, "balanced", 1, [], [], 50000)
-        slots = [p["assigned_slot"] for p in lu[0]["players"]]
+        slots = [p["roster_slot"] for p in lu[0]["players"]]
         assert slots.count("2B") == 1
 
     def test_exactly_one_3b(self):
         from api.builder_routes import _gen_unique_lineups
         lu = _gen_unique_lineups(TEST_POOL, "balanced", 1, [], [], 50000)
-        slots = [p["assigned_slot"] for p in lu[0]["players"]]
+        slots = [p["roster_slot"] for p in lu[0]["players"]]
         assert slots.count("3B") == 1
 
     def test_exactly_one_ss(self):
         from api.builder_routes import _gen_unique_lineups
         lu = _gen_unique_lineups(TEST_POOL, "balanced", 1, [], [], 50000)
-        slots = [p["assigned_slot"] for p in lu[0]["players"]]
+        slots = [p["roster_slot"] for p in lu[0]["players"]]
         assert slots.count("SS") == 1
 
     def test_exactly_three_of(self):
         from api.builder_routes import _gen_unique_lineups
         lu = _gen_unique_lineups(TEST_POOL, "balanced", 1, [], [], 50000)
-        slots = [p["assigned_slot"] for p in lu[0]["players"]]
+        slots = [p["roster_slot"] for p in lu[0]["players"]]
         assert slots.count("OF") == 3
 
     def test_salary_under_cap(self):

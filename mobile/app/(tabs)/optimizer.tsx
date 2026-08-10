@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert, Modal } from "react-native";
 import { getToken } from "../../lib/api";
 
 const API_URL = "https://sportbook-me-production.up.railway.app/api";
+const BUILD = "3bef82f";  // debug: visible on Optimizer screen
 
 export default function OptimizerScreen() {
   const [sport, setSport] = useState("mlb");
@@ -193,7 +194,7 @@ export default function OptimizerScreen() {
             {selected.players?.map((p: any, j: number) => (
               <View key={j} style={s.playerCard}>
                 <View style={s.playerTop}>
-                  <Text style={s.playerPos}>{p.assigned_slot || p.roster_position || "?"}</Text>
+                  <Text style={s.playerPos}>{p.roster_slot || p.assigned_slot || p.roster_position || "?"}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={s.playerName}>{p.name || `Player ${p.id}`}</Text>
                     <Text style={s.playerTeam}>{p.team || "?"}</Text>
