@@ -112,7 +112,7 @@ def generate_matchups():
     random.shuffle(teams)
     games = []
     for i in range(0, len(teams) - 1, 2):
-        start_time = datetime.now(timezone.utc).replace(hour=23, minute=5) - timedelta(
+        start_time = datetime.now(timezone.utc).replace(tzinfo=None, hour=23, minute=5) - timedelta(
             hours=random.randint(0, 6)
         )
         games.append({
@@ -125,12 +125,14 @@ def generate_matchups():
 
 async def seed_mlb(force: bool = False):
     session = SessionLocal()
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.strftime("%Y-%m-%d")
+    today_naive = now_utc.replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)  # Slate.date is naive
 
     try:
         # ── Check existing ──
         result = await session.execute(
-            select(Slate).where(Slate.sport == "MLB", Slate.date >= datetime.now(timezone.utc))
+            select(Slate).where(Slate.sport == "MLB", Slate.date >= today_naive)
         )
         existing_slate = result.scalars().first()
         if existing_slate and not force:
@@ -143,7 +145,7 @@ async def seed_mlb(force: bool = False):
             slate = Slate(
                 sport="MLB",
                 site=site,
-                date=datetime.now(timezone.utc).replace(hour=23, minute=0),
+                date=now_utc.replace(tzinfo=None, hour=23, minute=0, second=0, microsecond=0),
                 is_main_slate=True,
             )
             session.add(slate)
