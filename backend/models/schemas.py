@@ -41,7 +41,8 @@ class OptimizerSettings(BaseModel):
 
     All player-ID fields reference the canonical player ID in the players table.
     """
-
+    platform: str = "draftkings"  # draftkings / fanduel
+    strategy: str = "balanced"    # balanced / cash / gpp / aggressive / nuclear
     num_lineups: int = 20
     min_uniqueness: int = 2
     max_exposure: float = 1.0
