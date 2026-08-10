@@ -146,6 +146,14 @@ STRATEGY_CONFIG = {
 }
 
 
+def _normalize_platform(raw: str) -> str:
+    """Normalize platform string to canonical lowercase form."""
+    p = str(raw).lower().strip()
+    if p in ("fanduel", "fan_duel", "fd"): return "fanduel"
+    if p in ("draftkings", "dk"): return "draftkings"
+    return p
+
+
 def _normalize_mlb_pos(pos_str: str, platform: str = "draftkings") -> str:
     """Map SportsDataIO position to roster slot. FD combines C/1B into one slot."""
     p = str(pos_str).upper()
@@ -342,6 +350,7 @@ def _gen_unique_lineups(
     DK: 10 players, $50K, 2P/C/1B/2B/3B/SS/3OF
     FD: 9 players, $35K, P/C1B/2B/3B/SS/3OF/UTIL
     """
+    platform = _normalize_platform(platform)
     is_fd = platform == "fanduel"
     cap = FD_MLB_CAP if is_fd else MLB_CAP
     size = FD_MLB_SIZE if is_fd else MLB_SIZE
@@ -472,6 +481,7 @@ def _generate_lineups(
 
     NBA path uses the original greedy flex-based approach.
     """
+    platform = _normalize_platform(platform)
     profile = get_strategy(strategy)
     eligible = [p for p in pool if p["id"] not in excludes]
     eligible.sort(key=lambda p: builder_objective(p, profile, randomness), reverse=True)

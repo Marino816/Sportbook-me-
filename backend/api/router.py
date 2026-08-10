@@ -92,8 +92,8 @@ async def run_optimizer(
 
     # MLB uses the builder's platform-aware roster generator
     if sport == "MLB":
-        from api.builder_routes import _generate_lineups, get_strategy as builder_strategy
-        platform = request.settings.get("platform", "draftkings") if isinstance(request.settings, dict) else getattr(request.settings, 'platform', 'draftkings')
+        from api.builder_routes import _generate_lineups, _normalize_platform, get_strategy as builder_strategy
+        platform = _normalize_platform(request.settings.get("platform", "draftkings") if isinstance(request.settings, dict) else getattr(request.settings, 'platform', 'draftkings'))
         strategy = request.settings.get("strategy", "balanced") if isinstance(request.settings, dict) else getattr(request.settings, 'strategy', 'balanced')
         pool = projections_list
         lineups = _generate_lineups(pool, strategy, requested_lineups, [], [], 0.0, platform, is_mlb=True)
