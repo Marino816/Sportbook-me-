@@ -109,11 +109,11 @@ export default function OptimizerScreen() {
           ) : slates.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
               {slates.map((sl: any, i: number) => (
-                <TouchableOpacity key={i} style={[s.slateChip, slateId === (sl.id || i) && s.slateChipActive]}
-                  onPress={() => { setSlateId(sl.id || i); }}>
-                  <Text style={slateId === (sl.id || i) ? s.slateChipTextActive : s.slateChipText}>
-                    {sl.name || sl.label || `Slate #${i + 1}`}
-                  </Text>
+                <TouchableOpacity key={i} style={[s.slateChip, slateId === (sl.slate_id || sl.id) && s.slateChipActive]}
+                                    onPress={() => setSlateId(sl.slate_id || sl.id)}>
+                                  <Text style={slateId === (sl.slate_id || sl.id) ? s.slateChipTextActive : s.slateChipText}>
+                                    {sl.label || sl.site || sl.platform || ("Slate #" + (i + 1))}
+                                  </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>

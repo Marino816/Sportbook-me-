@@ -77,7 +77,9 @@ async def run_optimizer(
     from models.domain import Slate as SlateModel
     slate_result = await db.execute(select(SlateModel).where(SlateModel.id == request.slate_id))
     slate = slate_result.scalars().first()
-    sport = slate.sport.upper() if slate else "NBA"
+    if not slate:
+        raise HTTPException(status_code=400, detail=f"Slate {request.slate_id} not found.")
+    sport = slate.sport.upper()
     min_players = 10 if sport == "MLB" else 8  # MLB DK Classic = 10, NBA = 8
 
     if isinstance(projections_dicts, dict) and "data" in projections_dicts:

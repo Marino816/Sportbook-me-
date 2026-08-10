@@ -72,6 +72,7 @@ async def get_slates(sport: str = "MLB", db: AsyncSession = Depends(get_db)):
             "site": s.site,
             "date": str(s.date),
             "is_main_slate": s.is_main_slate,
+            "label": f"{s.sport} • {s.site} — Main" if s.is_main_slate else f"{s.sport} • {s.site}",
         }
         for s in slates
     ], source="database")
