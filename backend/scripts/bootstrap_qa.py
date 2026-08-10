@@ -64,11 +64,12 @@ async def bootstrap_qa_account(db: AsyncSession) -> None:
         user = result.scalars().first()
 
         if user:
-            user.hashed_password = password_hash
+            # EXISTING user: update role/status only — NEVER overwrite password
+            if user.role != "admin":
+                user.role = "admin"
             user.is_active = True
             user.is_pro = True
-            user.role = "admin"
-            logger.info("QA account updated (existing).")
+            logger.info("QA account refreshed (role/status only, password untouched).")
         else:
             user = User(
                 email=email,
