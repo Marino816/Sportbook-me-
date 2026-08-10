@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert, Modal } from "react-native";
 import { getToken } from "../../lib/api";
 
@@ -17,8 +17,11 @@ export default function OptimizerScreen() {
   const [selected, setSelected] = useState<any>(null);
   const [dataSource, setDataSource] = useState<string>("");
 
-  // Fetch available slates on sport change
+  // Fetch available slates — filter by sport AND platform, reset stale state
   useEffect(() => {
+    setSlates([]);
+    setSlateId(null);
+    setLineups([]);
     (async () => {
       setFetchingSlates(true);
       try {
@@ -27,23 +30,33 @@ export default function OptimizerScreen() {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json();
-        const items = data.data || data;
-        if (Array.isArray(items) && items.length > 0) {
-          setSlates(items);
-          // Auto-select first slate by scanning for DK/FD
-          const dk = items.find((s: any) => s.platform === "draftkings" || s.site === "DraftKings");
-          setSlateId(dk ? (dk.slate_id || dk.id || 0) : (items[0].slate_id || items[0].id || 0));
+        const items: any[] = (data.data || data) || [];
+        // Filter to current platform
+        const siteKey = platform === "draftkings" ? "DraftKings" : "FanDuel";
+        const filtered = items.filter((s: any) =>
+          (s.site || "").toLowerCase() === siteKey.toLowerCase() ||
+          (s.platform || "").toLowerCase() === platform
+        );
+        if (filtered.length > 0) {
+          setSlates(filtered);
+          // Auto-select first match
+          setSlateId(filtered[0].slate_id || filtered[0].id || null);
         } else {
           setSlates([]);
-          setSlateId(0);
+          setSlateId(null);
         }
       } catch {
         setSlates([]);
+        setSlateId(null);
       } finally { setFetchingSlates(false); }
     })();
-  }, [sport]);
+  }, [sport, platform]);
 
   async function handleBuild() {
+    if (!slateId || slateId <= 0) {
+      Alert.alert("Select a Slate", "No slate selected. Please choose a slate above.");
+      return;
+    }
     setLoading(true);
     setLineups([]);
     try {
@@ -55,7 +68,7 @@ export default function OptimizerScreen() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          slate_id: slateId || 0,
+          slate_id: slateId,
           settings: {
             platform: platform,
             strategy: strategy,
@@ -180,7 +193,7 @@ export default function OptimizerScreen() {
             {selected.players?.map((p: any, j: number) => (
               <View key={j} style={s.playerCard}>
                 <View style={s.playerTop}>
-                  <Text style={s.playerPos}>{p.roster_position || "?"}</Text>
+                  <Text style={s.playerPos}>{p.assigned_slot || p.roster_position || "?"}</Text>
                   <View style={{ flex: 1 }}>
                     <Text style={s.playerName}>{p.name || `Player ${p.id}`}</Text>
                     <Text style={s.playerTeam}>{p.team || "?"}</Text>
@@ -189,8 +202,8 @@ export default function OptimizerScreen() {
                 </View>
                 <View style={s.playerStats}>
                   <Text style={s.pStat}>Proj: <Text style={s.pStatBold}>{fmtPoints(p.projected_fp)}</Text></Text>
-                  {p.value != null && <Text style={s.pStat}>Value: <Text style={s.pStatBold}>{p.value.toFixed(1)}</Text></Text>}
-                  {p.ownership != null && <Text style={s.pStat}>Own: <Text style={s.pStatBold}>{p.ownership.toFixed(1)}%</Text></Text>}
+                  {p.value != null && p.value > 0 && <Text style={s.pStat}>Value: <Text style={s.pStatBold}>{p.value.toFixed(1)}</Text></Text>}
+                  {p.ownership != null && p.ownership > 0 ? <Text style={s.pStat}>Own: <Text style={s.pStatBold}>{p.ownership.toFixed(1)}%</Text></Text> : <Text style={s.pStat}>Own: <Text style={s.pStatBold}>N/A</Text></Text>}
                 </View>
               </View>
             ))}

@@ -315,6 +315,8 @@ def _gen_unique_lineups(
     max_exp_pct = cfg["max_exposure_pct"]
 
     eligible = [p for p in pool if p["id"] not in excludes]
+    # Exclude zero-projection players
+    eligible = [p for p in eligible if (p.get("projected_fp", 0) or 0) > 0]
     if len(eligible) < MLB_SIZE:
         return []
 
