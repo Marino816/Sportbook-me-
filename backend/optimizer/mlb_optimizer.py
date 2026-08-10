@@ -284,26 +284,35 @@ class MLBOptimizer:
     def generate(self, count: int = 1) -> list[dict]:
         """
         Generate count lineups with uniqueness + exposure enforcement.
+        Iterative CP-SAT solving — each solution adds no-good constraints.
         """
         lineups = []
         forbidden_global = set()
-        player_exposure = {}  # player_id -> count used
+        player_exposure = {}
 
-        for i in range(count):
-            seed = i * 100 + random.randint(0, 99)
-            lineup = self.build_lineup(forbidden_ids=forbidden_global, random_seed=seed)
+        for i in range(count * 3):  # allow up to 3x retries
+            if len(lineups) >= count:
+                break
+
+            lineup = self.build_lineup(
+                forbidden_ids=forbidden_global,
+                random_seed=i * 137 + random.randint(0, 99),
+            )
             if lineup is None:
-                # Retry with relaxed constraints
-                lineup = self.build_lineup(forbidden_ids=set(), random_seed=seed + 500)
+                # Retry with completely relaxed forbidden_ids
+                lineup = self.build_lineup(
+                    forbidden_ids=set(),
+                    random_seed=i * 137 + random.randint(100, 999),
+                )
                 if lineup is None:
                     continue
 
-            # Check uniqueness against previous
+            new_ids = {p.get("id") for p in lineup["players"]}
+
+            # Check uniqueness against all prior lineups
             ok = True
             for prior in lineups:
-                prior_ids = {p.get("id") for p in prior["players"]}
-                new_ids = {p.get("id") for p in lineup["players"]}
-                overlap = len(new_ids & prior_ids)
+                overlap = len(new_ids & {p.get("id") for p in prior["players"]})
                 if (self.config["player_count"] - overlap) < self.strat["min_unique"]:
                     ok = False
                     break
@@ -312,8 +321,8 @@ class MLBOptimizer:
 
             # Exposure check
             if self.strat["max_exposure_pct"]:
-                max_uses = max(1, int(count * self.strat["max_exposure_pct"] / 100.0))
-                new_ids = {p.get("id") for p in lineup["players"]}
+                import math
+                max_uses = max(1, math.ceil(count * self.strat["max_exposure_pct"] / 100.0))
                 skip = False
                 for pid in new_ids:
                     if player_exposure.get(pid, 0) >= max_uses:
@@ -330,13 +339,28 @@ class MLBOptimizer:
             lineup["data_source"] = "sportsdataio"
             lineup["data_mode"] = "TRIAL_SCRAMBLED"
             lineup["min_uniqueness"] = self.strat["min_unique"]
+            lineup["requested_lineup_count"] = count
+            lineup["generated_lineup_count"] = len(lineups) + 1
             lineups.append(lineup)
 
             # Track exposure
-            for pid in {p.get("id") for p in lineup["players"]}:
+            for pid in new_ids:
                 player_exposure[pid] = player_exposure.get(pid, 0) + 1
 
-            # Cross-lineup uniqueness: exclude core players
-            forbidden_global.update({p.get("id") for p in lineup["players"][:6]})
+            # Cross-lineup: block only a few core players (not all)
+            # to allow player reuse across lineups
+            core_players = sorted(new_ids, key=lambda pid: (
+                player_exposure.get(pid, 0), pid
+            ))[:min(3, len(new_ids))]
+            forbidden_global.update(core_players)
+
+        # Add generation metadata to each lineup
+        for lu in lineups:
+            lu["requested_lineup_count"] = count
+            lu["generated_lineup_count"] = len(lineups)
+            if len(lineups) < count:
+                lu["generation_warning"] = (
+                    f"Only {len(lineups)}/{count} feasible lineups found"
+                )
 
         return lineups
