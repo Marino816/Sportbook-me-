@@ -476,7 +476,7 @@ def _generate_lineups(
     """
     Generate lineups for the given platform.
 
-    MLB path uses position-enforced _gen_unique_lineups with
+    MLB path uses MLBOptimizer (OR-Tools CP-SAT constrained optimization)
     strategy-based diversification and exposure control.
 
     NBA path uses the original greedy flex-based approach.
@@ -486,9 +486,11 @@ def _generate_lineups(
     eligible = [p for p in pool if p["id"] not in excludes]
     eligible.sort(key=lambda p: builder_objective(p, profile, randomness), reverse=True)
 
-    # MLB path — full position-enforced engine
+    # MLB path — MLBOptimizer (OR-Tools CP-SAT)
     if is_mlb:
-        return _gen_unique_lineups(eligible, strategy, count, locks, excludes, platform)
+        from optimizer.mlb_optimizer import MLBOptimizer
+        opt = MLBOptimizer(eligible, platform=platform, strategy=strategy)
+        return opt.generate(count=count)
 
     # ── NBA path (unchanged) ──────────────────────────────────────
     platform_lower = platform.lower()
