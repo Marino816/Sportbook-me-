@@ -119,40 +119,52 @@ NBA_DEMO = [
     {"id":15,"name":"Min SG","team":"HOU","salary":3000,"roster_position":"SG","projected_fp":11.0,"ceiling":19,"edge_score":22,"risk_score":0.5,"ownership":1},
 ]
 
-def _generate_lineups(pool: list, strategy: str, count: int, locks: list, excludes: list, randomness: float, platform: str = "draftkings") -> list:
+def _generate_lineups(pool: list, strategy: str, count: int, locks: list, excludes: list, randomness: float, platform: str = "draftkings", is_mlb: bool = False) -> list:
     profile = get_strategy(strategy)
     eligible = [p for p in pool if p["id"] not in excludes]
     eligible.sort(key=lambda p: builder_objective(p, profile, randomness), reverse=True)
 
     # Platform-specific rules
-    if platform.lower() == "fanduel":
+    platform_lower = platform.lower()
+    if is_mlb:
+        cap = DK_CAP  # $50,000
+        size = 10
+        required_slots = ["P", "C", "1B", "2B", "3B", "SS", "OF", "OF", "OF", "P"]
+    elif platform_lower == "fanduel":
         cap = FD_CAP
         size = 9
         required_slots = ["PG", "PG", "SG", "SG", "SF", "SF", "PF", "PF", "C"]
     else:
         cap = DK_CAP
         size = 8
-        required_slots = None  # DK is flex-based
+        required_slots = None  # DK NBA is flex-based
 
     lineups = []
+    import random
     for i in range(min(count, 50)):
+        # Diversification: shuffle eligible pool for variety
+        working = eligible.copy()
+        random.shuffle(working)
         selected = []
         used_salary = 0
         used_ids = set()
         used_teams = {}
         # Lock players first
         for pid in locks:
-            p = next((x for x in eligible if x["id"] == pid), None)
+            p = next((x for x in working if x["id"] == pid), None)
             if p and p["id"] not in used_ids:
                 selected.append(p); used_salary += p["salary"]; used_ids.add(p["id"])
                 used_teams[p.get("team","")] = used_teams.get(p.get("team",""), 0) + 1
-        # Greedy: pick from cheap to expensive, filling 8 slots under cap
-        cheap_first = sorted(eligible, key=lambda x: x["salary"])
-        for p in cheap_first:
+        # Greedy fill — sort by value for MLB, salary for NBA
+        if is_mlb:
+            working.sort(key=lambda x: x.get("value", 0) or 0, reverse=True)
+        else:
+            working.sort(key=lambda x: x["salary"])
+        for p in working:
             if len(selected) >= size: break
             if p["id"] in used_ids: continue
             tn = used_teams.get(p.get("team",""), 0)
-            if tn >= 4: continue
+            if tn >= 5: continue
             if used_salary + p["salary"] > cap: continue
             selected.append(p)
             used_salary += p["salary"]

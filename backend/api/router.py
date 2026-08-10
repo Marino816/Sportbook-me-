@@ -94,23 +94,15 @@ async def run_optimizer(
         platform = request.settings.get("platform", "draftkings") if isinstance(request.settings, dict) else getattr(request.settings, 'platform', 'draftkings')
         strategy = request.settings.get("strategy", "balanced") if isinstance(request.settings, dict) else getattr(request.settings, 'strategy', 'balanced')
         pool = projections_list
-        lineups = _generate_lineups(pool, strategy, requested_lineups, [], [], 0.0, platform)
-        # Format response
+        lineups = _generate_lineups(pool, strategy, requested_lineups, [], [], 0.0, platform, is_mlb=True)
+        # Format response using actual builder field names
         formatted = []
         for lu in lineups:
             formatted.append({
-                "total_salary": lu.get("salary", 0),
-                "projected_score": lu.get("projected_fp", 0),
-                "players": [{
-                    "id": p["id"],
-                    "name": p.get("name", ""),
-                    "team": p.get("team", ""),
-                    "salary": p.get("salary", 0),
-                    "roster_position": p.get("roster_position", ""),
-                    "projected_fp": p.get("projected_fp", 0),
-                    "ownership": p.get("ownership", 0),
-                    "value": p.get("value", 0),
-                } for p in lu.get("players", [])],
+                "total_salary": lu.get("total_salary", 0),
+                "projected_score": lu.get("projected_score", 0),
+                "remaining_salary": lu.get("remaining_salary", 0),
+                "players": lu.get("players", []),
             })
         return wrap_data({"lineups": formatted, "source": "sportsdataio", "sport": sport, "platform": platform}, source="builder_engine")
 
