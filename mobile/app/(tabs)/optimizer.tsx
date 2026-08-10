@@ -67,13 +67,13 @@ export default function OptimizerScreen() {
       </ScrollView>
 
       {/* Lineup Detail Modal */}
-      <Modal visible={!!selected} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={!!selected} animationType="slide">
         {selected && (
           <ScrollView style={s.modal} contentContainerStyle={s.modalContent}>
             <View style={s.modalHeader}>
               <Text style={s.modalTitle}>Lineup Details</Text>
               <TouchableOpacity onPress={() => setSelected(null)}>
-                <Text style={s.closeBtn}>✕</Text>
+                <Text style={s.closeBtn}>✕ Back</Text>
               </TouchableOpacity>
             </View>
 
@@ -90,8 +90,8 @@ export default function OptimizerScreen() {
                 <View style={s.playerTop}>
                   <Text style={s.playerPos}>{p.roster_position || "?"}</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.playerName}>{p.player?.first_name} {p.player?.last_name}</Text>
-                    <Text style={s.playerTeam}>{p.player?.team} vs {p.player?.opponent}</Text>
+                    <Text style={s.playerName}>{p.name || `Player ${p.id}`}</Text>
+                    <Text style={s.playerTeam}>{p.team || "?"}</Text>
                   </View>
                   <Text style={s.playerSal}>${(p.salary || 0).toLocaleString()}</Text>
                 </View>
