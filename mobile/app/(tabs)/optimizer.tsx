@@ -131,6 +131,10 @@ export default function OptimizerScreen() {
         </View>
 
         {/* Data Source Label */}
+        <View style={s.demoBadge}>
+            <Text style={s.demoText}>SportsDataIO Trial — Scrambled Integration Data</Text>
+          </View>
+
         <TouchableOpacity style={s.btn} onPress={handleBuild} disabled={loading || fetchingSlates}>
           <Text style={s.btnText}>{loading ? "Building..." : "Build Lineups"}</Text>
         </TouchableOpacity>

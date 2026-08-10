@@ -116,7 +116,7 @@ class SystemStatus(Base):
     is_healthy = Column(Boolean, default=True)
     last_sync_time = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_sync_result = Column(String) # 'Success', 'Timeout', 'Rate-Limited', etc.
-    data_source_mode = Column(String, default="live") # 'live', 'cached', 'demo'
+    data_source_mode = Column(String, default="TRIAL_SCRAMBLED")  # "TRIAL_SCRAMBLED", "LIVE_PRODUCTION", "UNAVAILABLE"
 
 class StripeEvent(Base):
     """Event ledger for Stripe webhooks to ensure idempotency."""
