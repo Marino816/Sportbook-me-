@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import get_db
-from models.domain import User
+from models.domain import User, Projection, Player
 from api.auth import get_current_user
 from api.utils import wrap_data
 from ai.projection_service import log_audit_record
@@ -72,7 +72,35 @@ class PortfolioRequest(BaseModel):
     exposure_rules: List[dict] = []
     randomness: float = 0.0
 
-# ── NBA Demo Pool ────────────────────────────────────────────
+# ── Projection Loader ──────────────────────────────────────────
+async def _load_projections(slate_id: int, db: AsyncSession) -> list[dict]:
+    """Load projections from database. Returns empty list if none found."""
+    from sqlalchemy import select as sa_select
+    result = await db.execute(
+        sa_select(Projection, Player)
+        .join(Player, Projection.player_id == Player.id)
+        .where(Projection.slate_id == slate_id)
+        .order_by(Projection.projected_fp.desc())
+    )
+    rows = result.all()
+    if not rows:
+        return []
+    return [
+        {
+            "id": proj.player_id,
+            "name": player.name,
+            "team": player.team,
+            "salary": proj.salary,
+            "roster_position": proj.roster_position,
+            "projected_fp": proj.projected_fp,
+            "ceiling": proj.ceiling,
+            "floor": proj.floor,
+            "ownership": proj.ownership,
+            "value": proj.value,
+            "leverage": proj.leverage,
+        }
+        for proj, player in rows
+    ]
 NBA_DEMO = [
     {"id":1,"name":"Luka Doncic","team":"DAL","salary":11000,"roster_position":"PG","projected_fp":55.4,"ceiling":65,"edge_score":78,"risk_score":0.1,"ownership":25},
     {"id":2,"name":"Stephen Curry","team":"GSW","salary":10500,"roster_position":"PG","projected_fp":52.1,"ceiling":60,"edge_score":72,"risk_score":0.15,"ownership":18},
@@ -176,7 +204,13 @@ async def build_lineups(body: LineupRequest, user: User = Depends(get_current_us
     if errs:
         raise HTTPException(422, detail="; ".join(errs))
 
-    lineups = _generate_lineups(NBA_DEMO, body.strategy, body.lineup_count,
+    pool = await _load_projections(body.slate_id, db)
+    source = "live"
+    if not pool:
+        pool = NBA_DEMO
+        source = "demo"
+
+    lineups = _generate_lineups(pool, body.strategy, body.lineup_count,
                                 body.locked_player_ids, body.excluded_player_ids, body.randomness, body.platform)
     profile = get_strategy(body.strategy)
     run_id = f"run:{uuid.uuid4().hex[:12]}"
