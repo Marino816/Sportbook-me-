@@ -20,7 +20,7 @@ export default function ProfileScreen() {
     ]);
   }
 
-  if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#4ade80" /></View>;
+  if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#c9a84c" /></View>;
 
   const plan = user?.plan || (user?.is_pro === true ? "Pro" : "Free");
   const role = user?.role || "user";
@@ -55,16 +55,16 @@ export default function ProfileScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a", padding: 20 },
-  center: { flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center" },
-  card: { backgroundColor: "#1a1a1a", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333", marginBottom: 12 },
+  container: { flex: 1, backgroundColor: "#060b1a", padding: 20 },
+  center: { flex: 1, backgroundColor: "#060b1a", justifyContent: "center", alignItems: "center" },
+  card: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333", marginBottom: 12 },
   label: { fontSize: 12, color: "#666", textTransform: "uppercase" },
   value: { fontSize: 16, color: "#fff", marginTop: 4, fontWeight: "600" },
   linkCard: {
-    backgroundColor: "#4ade8022", borderRadius: 12, padding: 16, marginBottom: 10,
-    borderWidth: 1, borderColor: "#4ade8044",
+    backgroundColor: "#c9a84c22", borderRadius: 12, padding: 16, marginBottom: 10,
+    borderWidth: 1, borderColor: "#c9a84c44",
   },
-  linkText: { color: "#4ade80", fontSize: 15, fontWeight: "600" },
+  linkText: { color: "#c9a84c", fontSize: 15, fontWeight: "600" },
   logout: { marginTop: 24, backgroundColor: "#333", borderRadius: 12, padding: 16, alignItems: "center" },
   logoutText: { color: "#ff4444", fontWeight: "700", fontSize: 16 },
 });

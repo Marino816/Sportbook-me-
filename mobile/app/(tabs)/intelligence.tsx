@@ -6,10 +6,10 @@ import { getToken } from "../../lib/api";
 const API_URL = "https://sportbook-me-production.up.railway.app/api";
 
 const SIGNAL_COLORS: Record<string, string> = {
-  VERY_BULLISH: "#22c55e",
-  BULLISH: "#4ade80",
+  VERY_BULLISH: "#c9a84c",
+  BULLISH: "#c9a84c",
   NEUTRAL: "#888",
-  BEARISH: "#f87171",
+  BEARISH: "#ef4444",
   VERY_BEARISH: "#ef4444",
   UNAVAILABLE: "#666",
 };
@@ -46,7 +46,7 @@ export default function IntelligenceScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [slateId]));
 
-  if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#4ade80" /></View>;
+  if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#c9a84c" /></View>;
 
   if (data?.error) {
     return (
@@ -107,7 +107,7 @@ export default function IntelligenceScreen() {
             {p.fantasy_market_line != null && ` · Market ${p.fantasy_market_line}`}
           </Text>
           {p.fantasy_market_edge != null && (
-            <Text style={[s.edge, { color: p.fantasy_market_edge > 0 ? "#4ade80" : p.fantasy_market_edge < 0 ? "#f87171" : "#888" }]}>
+            <Text style={[s.edge, { color: p.fantasy_market_edge > 0 ? "#c9a84c" : p.fantasy_market_edge < 0 ? "#ef4444" : "#888" }]}>
               Edge: {p.fantasy_market_edge > 0 ? "+" : ""}{p.fantasy_market_edge}
             </Text>
           )}
@@ -126,19 +126,19 @@ export default function IntelligenceScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a1a", padding: 16 },
-  center: { flex: 1, backgroundColor: "#0a0a1a", justifyContent: "center", alignItems: "center" },
-  statusBar: { backgroundColor: "#111133", borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: "#222244" },
+  container: { flex: 1, backgroundColor: "#060b1a", padding: 16 },
+  center: { flex: 1, backgroundColor: "#060b1a", justifyContent: "center", alignItems: "center" },
+  statusBar: { backgroundColor: "#0a0f24", borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: "#222244" },
   statusText: { color: "#aaa", fontSize: 12 },
   statusSub: { color: "#666", fontSize: 11, marginTop: 4 },
-  section: { color: "#4ade80", fontSize: 16, fontWeight: "700", marginBottom: 10, marginTop: 8 },
-  gameCard: { backgroundColor: "#14142b", borderRadius: 10, padding: 14, marginBottom: 10 },
+  section: { color: "#c9a84c", fontSize: 16, fontWeight: "700", marginBottom: 10, marginTop: 8 },
+  gameCard: { backgroundColor: "#0a0f24", borderRadius: 10, padding: 14, marginBottom: 10 },
   gameTitle: { color: "#fff", fontWeight: "600", fontSize: 15 },
   gameRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
   gameStat: { color: "#aaa", fontSize: 13 },
   envBadge: { fontWeight: "700", fontSize: 13 },
   movement: { color: "#60a5fa", fontSize: 12, marginTop: 4 },
-  playerCard: { backgroundColor: "#14142b", borderRadius: 10, padding: 12, marginBottom: 8 },
+  playerCard: { backgroundColor: "#0a0f24", borderRadius: 10, padding: 12, marginBottom: 8 },
   playerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   playerName: { color: "#fff", fontWeight: "600", fontSize: 14, flex: 1 },
   signalBadge: { fontWeight: "700", fontSize: 13 },
@@ -147,7 +147,7 @@ const s = StyleSheet.create({
   missing: { color: "#fbbf24", fontSize: 11, marginTop: 3 },
   reasons: { color: "#888", fontSize: 11, marginTop: 3, fontStyle: "italic" },
   empty: { color: "#666", textAlign: "center", marginTop: 40, fontSize: 14 },
-  errorText: { color: "#f87171", fontSize: 16, textAlign: "center" },
-  retryBtn: { marginTop: 16, backgroundColor: "#4ade8022", paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
-  retryText: { color: "#4ade80", fontWeight: "600" },
+  errorText: { color: "#ef4444", fontSize: 16, textAlign: "center" },
+  retryBtn: { marginTop: 16, backgroundColor: "#c9a84c22", paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
+  retryText: { color: "#c9a84c", fontWeight: "600" },
 });

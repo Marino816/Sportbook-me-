@@ -118,7 +118,7 @@ export default function OptimizerScreen() {
         <View style={s.card}>
           <Text style={s.label}>SLATE</Text>
           {fetchingSlates ? (
-            <ActivityIndicator color="#4ade80" style={{ marginTop: 8 }} />
+            <ActivityIndicator color="#c9a84c" style={{ marginTop: 8 }} />
           ) : slates.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
               {slates.map((sl: any, i: number) => (
@@ -154,7 +154,7 @@ export default function OptimizerScreen() {
           <Text style={s.btnText}>{loading ? "Building..." : "Build Lineups"}</Text>
         </TouchableOpacity>
 
-        {loading && <ActivityIndicator size="large" color="#4ade80" style={{ marginTop: 16 }} />}
+        {loading && <ActivityIndicator size="large" color="#c9a84c" style={{ marginTop: 16 }} />}
 
         {lineups.map((l, i) => (
           <TouchableOpacity key={i} style={s.lineupCard} onPress={() => setSelected(l)} activeOpacity={0.7}>
@@ -186,9 +186,9 @@ export default function OptimizerScreen() {
               <View style={s.detailRow}><Text style={s.detailLabel}>Platform</Text><Text style={s.detailVal}>{platform.toUpperCase()}</Text></View>
               <View style={s.detailRow}><Text style={s.detailLabel}>Strategy</Text><Text style={s.detailVal}>{strategy}</Text></View>
               <View style={s.detailRow}><Text style={s.detailLabel}>Total Salary</Text><Text style={s.detailVal}>${(selected.total_salary || 0).toLocaleString()}</Text></View>
-              <View style={s.detailRow}><Text style={s.detailLabel}>Projected</Text><Text style={[s.detailVal, { color: "#4ade80" }]}>{fmtPoints(selected.projected_score)} pts</Text></View>
+              <View style={s.detailRow}><Text style={s.detailLabel}>Projected</Text><Text style={[s.detailVal, { color: "#c9a84c" }]}>{fmtPoints(selected.projected_score)} pts</Text></View>
               <View style={s.detailRow}><Text style={s.detailLabel}>Players</Text><Text style={s.detailVal}>{selected.players?.length || 0}</Text></View>
-              <View style={s.detailRow}><Text style={s.detailLabel}>Data Source</Text><Text style={[s.detailVal, { color: dataSource === "live" ? "#4ade80" : "#ffaa00" }]}>{dataSource || "demo"}</Text></View>
+              <View style={s.detailRow}><Text style={s.detailLabel}>Data Source</Text><Text style={[s.detailVal, { color: dataSource === "live" ? "#c9a84c" : "#ffaa00" }]}>{dataSource || "demo"}</Text></View>
             </View>
             {selected.players?.map((p: any, j: number) => (
               <View key={j} style={s.playerCard}>
@@ -221,47 +221,47 @@ export default function OptimizerScreen() {
 }
 
 const s = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: "#0a0a0a" },
+  flex: { flex: 1, backgroundColor: "#060b1a" },
   scroll: { flex: 1 }, container: { padding: 20, gap: 16 },
   row: { flexDirection: "row", gap: 12 },
-  chip: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#333", alignItems: "center" },
-  chipActive: { borderColor: "#4ade80", backgroundColor: "#4ade8020" },
-  chipText: { color: "#888", fontWeight: "600" }, chipTextActive: { color: "#4ade80", fontWeight: "700" },
-  card: { backgroundColor: "#1a1a1a", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333" },
+  chip: { flex: 1, padding: 12, borderRadius: 12, backgroundColor: "#0a0f24", borderWidth: 1, borderColor: "#333", alignItems: "center" },
+  chipActive: { borderColor: "#c9a84c", backgroundColor: "#c9a84c20" },
+  chipText: { color: "#888", fontWeight: "600" }, chipTextActive: { color: "#c9a84c", fontWeight: "700" },
+  card: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333" },
   label: { fontSize: 12, color: "#666", textTransform: "uppercase", marginBottom: 6 },
   input: { backgroundColor: "#111", color: "#fff", borderRadius: 10, padding: 12, fontSize: 16, borderWidth: 1, borderColor: "#333" },
-  btn: { backgroundColor: "#4ade80", borderRadius: 12, padding: 16, alignItems: "center" },
+  btn: { backgroundColor: "#c9a84c", borderRadius: 12, padding: 16, alignItems: "center" },
   btnText: { color: "#000", fontWeight: "700", fontSize: 16 },
   noSlate: { color: "#ffaa00", fontSize: 13, marginTop: 4 },
-  slateChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#333", marginRight: 8 },
-  slateChipActive: { borderColor: "#4ade80", backgroundColor: "#4ade8020" },
+  slateChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: "#0a0f24", borderWidth: 1, borderColor: "#333", marginRight: 8 },
+  slateChipActive: { borderColor: "#c9a84c", backgroundColor: "#c9a84c20" },
   slateChipText: { color: "#888", fontSize: 12, fontWeight: "600" },
-  slateChipTextActive: { color: "#4ade80" },
+  slateChipTextActive: { color: "#c9a84c" },
   demoBadge: { backgroundColor: "#332200", borderRadius: 10, padding: 10, borderWidth: 1, borderColor: "#ffaa0040" },
   demoText: { color: "#ffaa00", fontSize: 12, textAlign: "center" },
-  lineupCard: { backgroundColor: "#1a1a1a", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333" },
+  lineupCard: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333" },
   lineupHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  lineupNum: { fontSize: 16, fontWeight: "700", color: "#4ade80" },
+  lineupNum: { fontSize: 16, fontWeight: "700", color: "#c9a84c" },
   arrow: { fontSize: 20, color: "#666" },
   lineupStats: { flexDirection: "row", gap: 16 },
   stat: { fontSize: 13, color: "#888" }, statBold: { color: "#fff", fontWeight: "600" },
-  modal: { flex: 1, backgroundColor: "#0a0a0a" },
+  modal: { flex: 1, backgroundColor: "#060b1a" },
   modalContent: { padding: 20, gap: 16, paddingBottom: 60 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  modalTitle: { fontSize: 22, fontWeight: "900", color: "#4ade80", fontStyle: "italic" },
+  modalTitle: { fontSize: 22, fontWeight: "900", color: "#c9a84c", fontStyle: "italic" },
   closeBtn: { fontSize: 16, color: "#888", padding: 8 },
-  detailCard: { backgroundColor: "#1a1a1a", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333", gap: 8 },
+  detailCard: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333", gap: 8 },
   detailRow: { flexDirection: "row", justifyContent: "space-between" },
   detailLabel: { fontSize: 13, color: "#888" }, detailVal: { fontSize: 14, fontWeight: "600", color: "#fff" },
-  playerCard: { backgroundColor: "#1a1a1a", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#333" },
+  playerCard: { backgroundColor: "#0a0f24", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#333" },
   playerTop: { flexDirection: "row", alignItems: "center", gap: 12 },
-  playerPos: { fontSize: 13, fontWeight: "700", color: "#4ade80", width: 28 },
+  playerPos: { fontSize: 13, fontWeight: "700", color: "#c9a84c", width: 28 },
   playerName: { fontSize: 15, fontWeight: "600", color: "#fff" },
   playerTeam: { fontSize: 12, color: "#888", marginTop: 2 },
-  playerSal: { fontSize: 14, fontWeight: "600", color: "#4ade80" },
+  playerSal: { fontSize: 14, fontWeight: "600", color: "#c9a84c" },
   playerStats: { flexDirection: "row", gap: 20, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderColor: "#333" },
   pStat: { fontSize: 12, color: "#888" }, pStatBold: { color: "#ccc", fontWeight: "600" },
-  explainCard: { backgroundColor: "#0d2818", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#4ade8030" },
-  explainTitle: { fontSize: 12, fontWeight: "700", color: "#4ade80", textTransform: "uppercase", marginBottom: 8 },
+  explainCard: { backgroundColor: "#0d2818", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#c9a84c30" },
+  explainTitle: { fontSize: 12, fontWeight: "700", color: "#c9a84c", textTransform: "uppercase", marginBottom: 8 },
   explainText: { fontSize: 14, color: "#ccc", lineHeight: 22 },
 });

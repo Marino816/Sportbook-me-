@@ -21,19 +21,19 @@ export default function SettingsScreen() {
 
       <View style={s.section}>
         <Text style={s.label}>NOTIFICATIONS</Text>
-        <View style={s.row}><Text style={s.rowLabel}>Push Notifications</Text><Switch value={notifications} onValueChange={setNotifications} trackColor={{ false: "#333", true: "#4ade80" }} /></View>
-        <View style={s.row}><Text style={s.rowLabel}>Slate Reminders</Text><Switch value={notifications} onValueChange={setNotifications} trackColor={{ false: "#333", true: "#4ade80" }} /></View>
-        <View style={s.row}><Text style={s.rowLabel}>Injury Alerts</Text><Switch value={notifications} onValueChange={setNotifications} trackColor={{ false: "#333", true: "#4ade80" }} /></View>
+        <View style={s.row}><Text style={s.rowLabel}>Push Notifications</Text><Switch value={notifications} onValueChange={setNotifications} trackColor={{ false: "#333", true: "#c9a84c" }} /></View>
+        <View style={s.row}><Text style={s.rowLabel}>Slate Reminders</Text><Switch value={notifications} onValueChange={setNotifications} trackColor={{ false: "#333", true: "#c9a84c" }} /></View>
+        <View style={s.row}><Text style={s.rowLabel}>Injury Alerts</Text><Switch value={notifications} onValueChange={setNotifications} trackColor={{ false: "#333", true: "#c9a84c" }} /></View>
       </View>
 
       <View style={s.section}>
         <Text style={s.label}>SECURITY</Text>
-        <View style={s.row}><Text style={s.rowLabel}>Biometric Login</Text><Switch value={biometric} onValueChange={setBiometric} trackColor={{ false: "#333", true: "#4ade80" }} /></View>
+        <View style={s.row}><Text style={s.rowLabel}>Biometric Login</Text><Switch value={biometric} onValueChange={setBiometric} trackColor={{ false: "#333", true: "#c9a84c" }} /></View>
       </View>
 
       <View style={s.section}>
         <Text style={s.label}>APPEARANCE</Text>
-        <View style={s.row}><Text style={s.rowLabel}>Dark Mode</Text><Switch value={darkMode} onValueChange={setDarkMode} trackColor={{ false: "#333", true: "#4ade80" }} /></View>
+        <View style={s.row}><Text style={s.rowLabel}>Dark Mode</Text><Switch value={darkMode} onValueChange={setDarkMode} trackColor={{ false: "#333", true: "#c9a84c" }} /></View>
       </View>
 
       <View style={s.section}>
@@ -48,8 +48,8 @@ export default function SettingsScreen() {
 }
 
 const s = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#0a0a0a" }, container: { padding: 20, gap: 24 },
-  title: { fontSize: 24, fontWeight: "900", color: "#4ade80", fontStyle: "italic" },
+  scroll: { flex: 1, backgroundColor: "#060b1a" }, container: { padding: 20, gap: 24 },
+  title: { fontSize: 24, fontWeight: "900", color: "#c9a84c", fontStyle: "italic" },
   section: { gap: 4 },
   label: { fontSize: 11, color: "#666", letterSpacing: 1, marginBottom: 4 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderColor: "#222" },

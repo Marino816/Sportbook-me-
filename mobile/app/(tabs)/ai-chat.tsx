@@ -65,7 +65,7 @@ export default function AIChatScreen() {
             )}
           </View>
         ))}
-        {loading && <ActivityIndicator style={{ marginVertical: 12 }} color="#4ade80" />}
+        {loading && <ActivityIndicator style={{ marginVertical: 12 }} color="#c9a84c" />}
       </ScrollView>
 
       {/* Quick Actions */}
@@ -89,18 +89,18 @@ export default function AIChatScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a" },
+  container: { flex: 1, backgroundColor: "#060b1a" },
   modeBar: { maxHeight: 44, borderBottomWidth: 1, borderColor: "#222" },
   modeContent: { paddingHorizontal: 12, gap: 8, alignItems: "center" },
-  modeChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#333" },
-  modeActive: { borderColor: "#4ade80", backgroundColor: "#4ade8020" },
+  modeChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "#0a0f24", borderWidth: 1, borderColor: "#333" },
+  modeActive: { borderColor: "#c9a84c", backgroundColor: "#c9a84c20" },
   modeText: { color: "#888", fontSize: 12, fontWeight: "600" },
-  modeTextActive: { color: "#4ade80" },
+  modeTextActive: { color: "#c9a84c" },
   messages: { flex: 1 },
   messagesContent: { padding: 16, gap: 12 },
   bubble: { maxWidth: "85%", borderRadius: 16, padding: 14 },
-  userBubble: { alignSelf: "flex-end", backgroundColor: "#4ade80" },
-  aiBubble: { alignSelf: "flex-start", backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#333" },
+  userBubble: { alignSelf: "flex-end", backgroundColor: "#c9a84c" },
+  aiBubble: { alignSelf: "flex-start", backgroundColor: "#0a0f24", borderWidth: 1, borderColor: "#333" },
   bubbleText: { fontSize: 15, lineHeight: 21 },
   userText: { color: "#000" },
   aiText: { color: "#fff" },
@@ -108,10 +108,10 @@ const s = StyleSheet.create({
   meta: { fontSize: 10, color: "#666", marginTop: 4 },
   quickBar: { maxHeight: 48, borderTopWidth: 1, borderColor: "#222" },
   quickContent: { paddingHorizontal: 12, gap: 8, alignItems: "center" },
-  quickChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#333" },
+  quickChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: "#0a0f24", borderWidth: 1, borderColor: "#333" },
   quickText: { color: "#888", fontSize: 11 },
   inputRow: { flexDirection: "row", padding: 12, gap: 8, borderTopWidth: 1, borderColor: "#222" },
-  input: { flex: 1, backgroundColor: "#1a1a1a", color: "#fff", borderRadius: 24, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, borderWidth: 1, borderColor: "#333" },
-  sendBtn: { backgroundColor: "#4ade80", borderRadius: 24, paddingHorizontal: 20, justifyContent: "center" },
+  input: { flex: 1, backgroundColor: "#0a0f24", color: "#fff", borderRadius: 24, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, borderWidth: 1, borderColor: "#333" },
+  sendBtn: { backgroundColor: "#c9a84c", borderRadius: 24, paddingHorizontal: 20, justifyContent: "center" },
   sendText: { color: "#000", fontWeight: "700", fontSize: 14 },
 });

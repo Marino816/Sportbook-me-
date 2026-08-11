@@ -61,16 +61,16 @@ export default function AIPreferencesScreen() {
 }
 
 const s = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#0a0a0a" }, container: { padding: 20, gap: 24 },
-  title: { fontSize: 24, fontWeight: "900", color: "#4ade80", fontStyle: "italic" },
+  scroll: { flex: 1, backgroundColor: "#060b1a" }, container: { padding: 20, gap: 24 },
+  title: { fontSize: 24, fontWeight: "900", color: "#c9a84c", fontStyle: "italic" },
   subtitle: { fontSize: 14, color: "#888", lineHeight: 20 },
   section: { gap: 8 },
   label: { fontSize: 12, color: "#666", textTransform: "uppercase", letterSpacing: 1 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#333" },
-  chipActive: { borderColor: "#4ade80", backgroundColor: "#4ade8020" },
+  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: "#0a0f24", borderWidth: 1, borderColor: "#333" },
+  chipActive: { borderColor: "#c9a84c", backgroundColor: "#c9a84c20" },
   chipText: { color: "#888", fontSize: 13, fontWeight: "600" },
-  chipTextActive: { color: "#4ade80" },
+  chipTextActive: { color: "#c9a84c" },
   reset: { marginTop: 8, padding: 16, borderRadius: 12, backgroundColor: "#333", alignItems: "center" },
   resetText: { color: "#ff4444", fontWeight: "600" },
 });

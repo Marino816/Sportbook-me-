@@ -110,10 +110,10 @@ export default function LineupsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a1a", padding: 16 },
+  container: { flex: 1, backgroundColor: "#060b1a", padding: 16 },
   header: { fontSize: 22, fontWeight: "700", color: "#fff", marginBottom: 12 },
   empty: { color: "#888", textAlign: "center", marginTop: 40, fontSize: 15 },
-  histCard: { backgroundColor: "#14142b", borderRadius: 10, padding: 14, marginBottom: 10 },
+  histCard: { backgroundColor: "#0a0f24", borderRadius: 10, padding: 14, marginBottom: 10 },
   histRow: { flexDirection: "row", justifyContent: "space-between" },
   histSport: { color: "#fff", fontWeight: "600", fontSize: 15 },
   delBtn: { fontSize: 16 },
@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
   meta: { color: "#888", fontSize: 13, marginBottom: 16 },
   backBtn: { marginBottom: 12 },
   backText: { color: "#7c5cfc", fontSize: 15 },
-  card: { backgroundColor: "#14142b", borderRadius: 10, padding: 14, marginBottom: 12 },
+  card: { backgroundColor: "#0a0f24", borderRadius: 10, padding: 14, marginBottom: 12 },
   cardTitle: { color: "#fff", fontWeight: "600", fontSize: 15 },
   cardSal: { color: "#aaa", fontSize: 13, marginBottom: 8 },
   pRow: { flexDirection: "row", paddingVertical: 3, borderBottomWidth: 0.5, borderBottomColor: "#222" },

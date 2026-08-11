@@ -60,10 +60,10 @@ export default function DashboardScreen() {
     router.push("/(tabs)/ai-chat" as any);
   }
 
-  if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#4ade80" /></View>;
+  if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#c9a84c" /></View>;
 
   return (
-    <ScrollView style={s.scroll} contentContainerStyle={s.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#4ade80" />}>
+    <ScrollView style={s.scroll} contentContainerStyle={s.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#c9a84c" />}>
       {/* AI Greeting */}
       <Text style={s.greeting}>{greeting}, {user?.email?.split("@")[0] || "Player"}.</Text>
       <Text style={s.subtitle}>🧠 SB ME Intelligent AI™ is ready.</Text>
@@ -96,7 +96,7 @@ export default function DashboardScreen() {
         </View>
         <View style={s.cardRow}>
           <Text style={s.cardLabel}>Status</Text>
-          <Text style={[s.cardValue, { color: sub?.has_access ? "#4ade80" : "#ff4444" }]}>{sub?.has_access ? "Active" : "Inactive"}</Text>
+          <Text style={[s.cardValue, { color: sub?.has_access ? "#c9a84c" : "#ff4444" }]}>{sub?.has_access ? "Active" : "Inactive"}</Text>
         </View>
       </View>
 
@@ -113,19 +113,19 @@ export default function DashboardScreen() {
 }
 
 const s = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#0a0a0a" }, container: { padding: 20, gap: 20, paddingBottom: 40 },
-  center: { flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center" },
-  greeting: { fontSize: 22, fontWeight: "900", color: "#fff", marginTop: 8 }, subtitle: { fontSize: 14, color: "#4ade80", fontStyle: "italic" },
-  aiCard: { backgroundColor: "#0d2818", borderRadius: 16, padding: 18, borderWidth: 1, borderColor: "#4ade8030" },
-  aiTitle: { fontSize: 12, color: "#4ade80", textTransform: "uppercase", fontWeight: "700", marginBottom: 8, letterSpacing: 1 },
+  scroll: { flex: 1, backgroundColor: "#060b1a" }, container: { padding: 20, gap: 20, paddingBottom: 40 },
+  center: { flex: 1, backgroundColor: "#060b1a", justifyContent: "center", alignItems: "center" },
+  greeting: { fontSize: 22, fontWeight: "900", color: "#fff", marginTop: 8 }, subtitle: { fontSize: 14, color: "#c9a84c", fontStyle: "italic" },
+  aiCard: { backgroundColor: "#0d2818", borderRadius: 16, padding: 18, borderWidth: 1, borderColor: "#c9a84c30" },
+  aiTitle: { fontSize: 12, color: "#c9a84c", textTransform: "uppercase", fontWeight: "700", marginBottom: 8, letterSpacing: 1 },
   aiTip: { fontSize: 14, color: "#ccc", lineHeight: 22 },
   section: { fontSize: 12, color: "#666", textTransform: "uppercase", letterSpacing: 1, fontWeight: "700" },
   quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  quickBtn: { flexBasis: "47%", flexGrow: 1, backgroundColor: "#1a1a1a", borderRadius: 14, padding: 16, borderWidth: 1, borderColor: "#333", minWidth: 150 },
+  quickBtn: { flexBasis: "47%", flexGrow: 1, backgroundColor: "#0a0f24", borderRadius: 14, padding: 16, borderWidth: 1, borderColor: "#333", minWidth: 150 },
   quickLabel: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  card: { backgroundColor: "#1a1a1a", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333", gap: 10 },
+  card: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333", gap: 10 },
   cardRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   cardLabel: { fontSize: 13, color: "#888" }, cardValue: { fontSize: 16, fontWeight: "700", color: "#fff" },
   cardValSm: { fontSize: 14, color: "#ccc" },
-  footer: { textAlign: "center", color: "#4ade8030", fontSize: 11, marginTop: 8 },
+  footer: { textAlign: "center", color: "#c9a84c30", fontSize: 11, marginTop: 8 },
 });
