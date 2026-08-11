@@ -146,7 +146,7 @@ async def get_slate_intelligence(
                     if game["props"]:
                         player_data = {"playerID": str(proj.player_id), "name": player.name, "position": proj.roster_position}
                         builder = SGOIntelligenceBuilder()
-                        dp = builder.build_player_intelligence(player_data, game["props"])
+                        dp = builder.build_player_intelligence(player_data, game["props"], {})
                         if dp.fantasy_market_line is not None:
                             pi.fantasy_market_line = dp.fantasy_market_line
                             pi.fantasy_market_edge = round(pi.base_projection - dp.fantasy_market_line, 1)

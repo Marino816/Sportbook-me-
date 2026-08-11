@@ -20,6 +20,7 @@ export default function TabLayout() {
       <Tabs.Screen name="subscription" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="ai-preferences" options={{ href: null }} />
+      <Tabs.Screen name="intelligence" options={{ href: null, title: "Market Intelligence" }} />
     </Tabs>
   );
 }
