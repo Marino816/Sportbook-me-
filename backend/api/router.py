@@ -108,26 +108,29 @@ async def run_optimizer(
                 "players": lu.get("players", []),
             })
 
-        # Save to lineup history
-        try:
-            hist = LineupHistory(
-                user_id=user.id,
-                sport=sport,
-                platform=platform,
-                slate_id=request.slate_id,
-                strategy=strategy,
-                lineup_count=len(formatted),
-                player_count=formatted[0]["players"].__len__() if formatted else 0,
-                total_salary=formatted[0]["total_salary"] if formatted else 0,
-                projected_score=formatted[0]["projected_score"] if formatted else 0,
-                data_mode="TRIAL_SCRAMBLED",
-                lineups_json=formatted,
-            )
-            db.add(hist)
-            await db.commit()
-        except Exception as e:
-            import logging
-            logging.warning(f"Lineup history save failed (non-critical): {e}")
+        # Save to lineup history (non-critical)
+        history_saved = False
+        if formatted:
+            try:
+                hist = LineupHistory(
+                    user_id=user.id,
+                    sport=sport,
+                    platform=platform,
+                    slate_id=request.slate_id,
+                    strategy=strategy,
+                    lineup_count=len(formatted),
+                    player_count=len(formatted[0].get("players", [])),
+                    total_salary=int(formatted[0].get("total_salary", 0)),
+                    projected_score=float(formatted[0].get("projected_score", 0)),
+                    data_mode="TRIAL_SCRAMBLED",
+                    lineups_json=formatted,
+                )
+                db.add(hist)
+                await db.commit()
+                history_saved = True
+            except Exception as e:
+                import logging
+                logging.warning(f"Lineup history save failed: {type(e).__name__}: {e}")
 
         return wrap_data({
                     "lineups": formatted,
@@ -136,6 +139,7 @@ async def run_optimizer(
                     "platform": platform,
                     "requested_lineups": requested_lineups,
                     "generated_lineups": len(formatted),
+                    "history_saved": history_saved,
                 }, source="builder_engine")
 
     # NBA path — DFSOptimizer
