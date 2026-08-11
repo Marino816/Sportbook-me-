@@ -162,11 +162,11 @@ class SportsGameOddsProvider:
         params = {"sport": sport} if sport else None
         return await self._request("GET", "/leagues", params=params, paginated=True)
 
-    async def get_events(self, league: str = None, date: str = None) -> list:
-        """List events/games with optional league/date filter."""
-        params = {}
-        if league:
-            params["league"] = league
+    async def get_events(self, league_id: str = None, date: str = None) -> list:
+        """List events with leagueID (e.g., 'MLB', 'NFL', 'NBA')."""
+        params = {"oddsAvailable": "true", "limit": "50"}
+        if league_id:
+            params["leagueID"] = league_id
         if date:
             params["date"] = date
         return await self._request("GET", "/events", params=params, paginated=True)
@@ -227,24 +227,8 @@ class SportsGameOddsProvider:
         """Get account/plan/usage info."""
         return await self._request("GET", "/account")
 
-    # ── DF S-Specific Queries ──
+    # ── Account ──
 
-    async def get_dfs_salaries(self, league: str = None) -> list:
-        """Get DK/FD DFS salary data if available."""
-        params = {"league": league} if league else None
-        try:
-            return await self._request("GET", "/dfs/salaries", params=params, paginated=True)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code in (404, 501):
-                return []
-            raise
-
-    async def get_dfs_slates(self, league: str = None) -> list:
-        """Get DFS contest/slate structures if available."""
-        params = {"league": league} if league else None
-        try:
-            return await self._request("GET", "/dfs/slates", params=params, paginated=True)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code in (404, 501):
-                return []
-            raise
+    async def get_usage(self) -> dict:
+        """Get account usage stats."""
+        return await self._request("GET", "/account/usage")
