@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Activi
 import { getToken } from "../../lib/api";
 
 const API_URL = "https://sportbook-me-production.up.railway.app/api";
-const BUILD = "3bef82f";  // debug: visible on Optimizer screen
 
 export default function OptimizerScreen() {
   const [sport, setSport] = useState("mlb");

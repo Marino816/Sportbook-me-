@@ -116,7 +116,24 @@ class SystemStatus(Base):
     is_healthy = Column(Boolean, default=True)
     last_sync_time = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     last_sync_result = Column(String) # 'Success', 'Timeout', 'Rate-Limited', etc.
-    data_source_mode = Column(String, default="TRIAL_SCRAMBLED")  # "TRIAL_SCRAMBLED", "LIVE_PRODUCTION", "UNAVAILABLE"
+    data_source_mode = Column(String, default="TRIAL_SCRAMBLED")
+
+class LineupHistory(Base):
+    """Persistent lineup history for user sessions."""
+    __tablename__ = "lineup_history"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    sport = Column(String)
+    platform = Column(String)
+    slate_id = Column(Integer)
+    strategy = Column(String)
+    lineup_count = Column(Integer, default=1)
+    player_count = Column(Integer)
+    total_salary = Column(Integer)
+    projected_score = Column(Float)
+    data_mode = Column(String, default="TRIAL_SCRAMBLED")
+    lineups_json = Column(JSON)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class StripeEvent(Base):
     """Event ledger for Stripe webhooks to ensure idempotency."""
