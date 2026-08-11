@@ -26,21 +26,14 @@ export default function OptimizerScreen() {
       setFetchingSlates(true);
       try {
         const token = await getToken();
-        const res = await fetch(`${API_URL}/sports/slates?sport=${sport.toUpperCase()}`, {
+        const res = await fetch(`${API_URL}/dfs/slates?sport=${sport.toUpperCase()}&platform=${platform}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json();
         const items: any[] = (data.data || data) || [];
-        // Filter to current platform
-        const siteKey = platform === "draftkings" ? "DraftKings" : "FanDuel";
-        const filtered = items.filter((s: any) =>
-          (s.site || "").toLowerCase() === siteKey.toLowerCase() ||
-          (s.platform || "").toLowerCase() === platform
-        );
-        if (filtered.length > 0) {
-          setSlates(filtered);
-          // Auto-select first match
-          setSlateId(filtered[0].slate_id || filtered[0].id || null);
+        setSlates(items);
+        if (items.length > 0) {
+          setSlateId(items[0].id);
         } else {
           setSlates([]);
           setSlateId(null);
@@ -122,10 +115,10 @@ export default function OptimizerScreen() {
           ) : slates.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
               {slates.map((sl: any, i: number) => (
-                <TouchableOpacity key={i} style={[s.slateChip, slateId === (sl.slate_id || sl.id) && s.slateChipActive]}
-                                    onPress={() => setSlateId(sl.slate_id || sl.id)}>
-                                  <Text style={slateId === (sl.slate_id || sl.id) ? s.slateChipTextActive : s.slateChipText}>
-                                    {sl.label || sl.site || sl.platform || ("Slate #" + (i + 1))}
+                <TouchableOpacity key={i} style={[s.slateChip, slateId === sl.id && s.slateChipActive]}
+                                    onPress={() => setSlateId(sl.id)}>
+                                  <Text style={slateId === sl.id ? s.slateChipTextActive : s.slateChipText}>
+                                    {sl.slate_name || sl.platform || ("Slate #" + (i + 1))}
                                   </Text>
                 </TouchableOpacity>
               ))}
@@ -147,7 +140,7 @@ export default function OptimizerScreen() {
 
         {/* Data Source Label */}
         <View style={s.demoBadge}>
-            <Text style={s.demoText}>SportsDataIO Trial — Scrambled Integration Data</Text>
+            <Text style={s.demoText}>SB ME Native DFS — DraftKings Contest Data</Text>
           </View>
 
         <TouchableOpacity style={s.btn} onPress={handleBuild} disabled={loading || fetchingSlates}>
