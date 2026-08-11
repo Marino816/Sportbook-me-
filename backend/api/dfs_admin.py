@@ -204,8 +204,6 @@ async def publish_slate(
     slate = result.scalars().first()
     if not slate:
         raise HTTPException(404, "Slate not found")
-    if slate.matched_count < 10:
-        raise HTTPException(400, f"Only {slate.matched_count} matched — minimum 10 required")
     slate.status = "PUBLISHED"
     slate.published_at = datetime.now(timezone.utc)
     await db.commit()
