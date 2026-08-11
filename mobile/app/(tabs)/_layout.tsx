@@ -16,9 +16,10 @@ export default function TabLayout() {
       <Tabs.Screen name="optimizer" options={{ title: "Optimizer", tabBarLabel: "Optimizer" }} />
       <Tabs.Screen name="lineups" options={{ title: "Lineups", tabBarLabel: "Lineups" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarLabel: "Profile" }} />
-      <Tabs.Screen name="billing" options={{ href: null, title: "Billing" }} />
-      <Tabs.Screen name="settings" options={{ href: null, title: "Settings" }} />
-      <Tabs.Screen name="subscription" options={{ href: null, title: "Subscription" }} />
+      {/* Hidden from tab bar — accessible via Profile links */}
+      <Tabs.Screen name="subscription" options={{ href: null }} />
+      <Tabs.Screen name="settings" options={{ href: null }} />
+      <Tabs.Screen name="ai-preferences" options={{ href: null }} />
     </Tabs>
   );
 }

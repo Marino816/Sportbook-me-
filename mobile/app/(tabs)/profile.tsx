@@ -40,7 +40,7 @@ export default function ProfileScreen() {
         <Text style={s.value}>{plan}</Text>
       </View>
 
-      <TouchableOpacity style={s.linkCard} onPress={() => router.push("/(tabs)/billing")}>
+      <TouchableOpacity style={s.linkCard} onPress={() => router.push("/(tabs)/subscription")}>
         <Text style={s.linkText}>Billing & Subscription →</Text>
       </TouchableOpacity>
       <TouchableOpacity style={s.linkCard} onPress={() => router.push("/(tabs)/settings")}>
