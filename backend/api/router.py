@@ -106,7 +106,14 @@ async def run_optimizer(
                 "remaining_salary": lu.get("remaining_salary", 0),
                 "players": lu.get("players", []),
             })
-        return wrap_data({"lineups": formatted, "source": "sportsdataio", "sport": sport, "platform": platform}, source="builder_engine")
+        return wrap_data({
+                    "lineups": formatted,
+                    "source": "sportsdataio",
+                    "sport": sport,
+                    "platform": platform,
+                    "requested_lineups": requested_lineups,
+                    "generated_lineups": len(formatted),
+                }, source="builder_engine")
 
     # NBA path — DFSOptimizer
 
