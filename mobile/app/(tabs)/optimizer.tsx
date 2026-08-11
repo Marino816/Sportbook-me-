@@ -76,7 +76,7 @@ export default function OptimizerScreen() {
       const data = await res.json();
       const result = data.data || data;
       setLineups(result.lineups || []);
-      setDataSource(result.source || "demo");
+      setDataSource(result.dfs_source || result.source || "demo");
     } catch (e: any) {
       Alert.alert("Build Failed", e.message);
     } finally { setLoading(false); }
@@ -181,7 +181,10 @@ export default function OptimizerScreen() {
               <View style={s.detailRow}><Text style={s.detailLabel}>Total Salary</Text><Text style={s.detailVal}>${(selected.total_salary || 0).toLocaleString()}</Text></View>
               <View style={s.detailRow}><Text style={s.detailLabel}>Projected</Text><Text style={[s.detailVal, { color: "#c9a84c" }]}>{fmtPoints(selected.projected_score)} pts</Text></View>
               <View style={s.detailRow}><Text style={s.detailLabel}>Players</Text><Text style={s.detailVal}>{selected.players?.length || 0}</Text></View>
-              <View style={s.detailRow}><Text style={s.detailLabel}>Data Source</Text><Text style={[s.detailVal, { color: dataSource === "live" ? "#c9a84c" : "#ffaa00" }]}>{dataSource || "demo"}</Text></View>
+              <View style={s.detailRow}><Text style={s.detailLabel}>Data Source</Text>
+              <Text style={[s.detailVal, { color: "#c9a84c" }]}>
+                {dataSource === "native" ? "DraftKings Contest Data" : dataSource}
+              </Text></View>
             </View>
             {selected.players?.map((p: any, j: number) => (
               <View key={j} style={s.playerCard}>
