@@ -1,64 +1,90 @@
-import Svg, { Path, G, Defs, LinearGradient, Stop } from "react-native-svg";
-import { View, Text, StyleSheet } from "react-native";
+import Svg, { Path, G, Defs, LinearGradient, Stop, Text as SvgText } from "react-native-svg";
+import { View, StyleSheet } from "react-native";
 
 export function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const dims = { sm: { w: 90, h: 50, fs1: 20, fs2: 12 },
-                 md: { w: 130, h: 70, fs1: 28, fs2: 16 },
-                 lg: { w: 180, h: 100, fs1: 38, fs2: 22 } }[size];
+  const dims = { sm: { w: 110, h: 60 },
+                 md: { w: 160, h: 85 },
+                 lg: { w: 220, h: 120 } }[size];
 
   return (
     <View style={s.container}>
-      <Svg width={dims.w} height={dims.h} viewBox="0 0 180 100">
+      <Svg width={dims.w} height={dims.h} viewBox="0 0 240 120">
         <Defs>
-          <LinearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-            <Stop offset="0" stopColor="#d4af37" />
+          <LinearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="#f0d060" />
+            <Stop offset="0.4" stopColor="#c9a84c" />
+            <Stop offset="0.7" stopColor="#b8922e" />
             <Stop offset="1" stopColor="#c9a84c" />
           </LinearGradient>
+          <LinearGradient id="goldShine" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#f5e6a0" />
+            <Stop offset="0.5" stopColor="#c9a84c" />
+            <Stop offset="1" stopColor="#8a6b20" />
+          </LinearGradient>
         </Defs>
-        {/* SB text */}
-        <G transform="translate(10, 65)">
+
+        {/* "SB" bold lettering with integrated upward arrow */}
+        <G transform="translate(10, 20)">
+          {/* S — curved gold */}
           <Path
-            d="M8 -2 L32 -2 L24 -20 L26 -20 L36 2 L32 2 L36 10 L32 10 L26 -4 L22 -4 L26 10 L22 10 Z"
-            fill="url(#gold)" transform="scale(1.6, 1.6) translate(0, -5)"
+            d="M5 28 L5 20 Q5 4 25 4 Q40 4 40 16 Q40 26 22 26 L5 26 Q5 32 20 32 Q35 32 40 36 Q40 42 20 42 Q5 42 5 30"
+            fill="none" stroke="url(#goldGrad)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"
+            transform="scale(1.3)"
+          />
+          {/* B — bold gold */}
+          <Path
+            d="M52 4 L52 38 M52 4 L70 4 Q82 4 82 16 Q82 26 70 26 L52 26 M52 26 L74 26 Q85 26 85 38 L85 42 L52 42"
+            fill="none" stroke="url(#goldGrad)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"
+            transform="scale(1.3)"
           />
         </G>
-        {/* Upward arrow through SB mark */}
-        <G transform="translate(10, 65)">
+
+        {/* Upward market arrow — integrated through the SB mark */}
+        <G transform="translate(100, 15)">
           <Path
-            d="M55 -15 L65 -30 L75 -15 L70 -15 L70 10 L60 10 L60 -15 Z"
-            fill="url(#gold)" transform="scale(1.6, 1.6) translate(-5, -5)"
+            d="M28 50 L38 24 L48 50 L44 50 L44 58 L32 58 L32 50 Z"
+            fill="url(#goldShine)"
+          />
+          {/* Arrow head accent lines */}
+          <Path
+            d="M28 50 L38 30 L48 50"
+            fill="none" stroke="url(#goldGrad)" strokeWidth="2"
           />
         </G>
-        {/* ME text */}
-        <G transform="translate(10, 65)">
+
+        {/* "ME" bold gold */}
+        <G transform="translate(160, 20)">
           <Path
-            d="M80 -2 L105 -2 L105 2 L85 2 L85 5 L100 5 L100 8 L85 8 L85 10 L105 10 L105 14 L80 14 Z M108 -2 L113 -2 L113 14 L108 14 Z M118 -2 L125 -2 L135 14 L130 14 L128 9 L120 9 L118 14 L113 14 Z M121 6 L126 6 L124 2 Z"
-            fill="url(#gold)" transform="scale(1.6, 1.6) translate(-5, -5)"
+            d="M2 4 L18 4 L2 22 L18 22 L2 38 L20 38"
+            fill="none" stroke="url(#goldGrad)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"
+            transform="scale(1.3)"
+          />
+          <Path
+            d="M28 4 L28 38 L44 38"
+            fill="none" stroke="url(#goldGrad)" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round"
+            transform="scale(1.3)"
           />
         </G>
-        {/* DFS.AI text below */}
-        <Text style={{ fontSize: dims.fs2, fontWeight: "700", fill: "#f0f6fc", letterSpacing: 2 }} x="28" y="85">
+
+        {/* "DFS.AI" white-gold text below */}
+        <SvgText
+          x="20" y="102"
+          fill="#d4af37"
+          fontWeight="700"
+          letterSpacing={3}
+          fontSize={16}
+        >
           DFS.AI
-        </Text>
+        </SvgText>
       </Svg>
     </View>
   );
 }
 
 export function LogoText() {
-  return (
-    <View style={s.logoRow}>
-      <Text style={s.logoSB}>SB ME</Text>
-      <View style={s.divider} />
-      <Text style={s.logoSub}>DFS.AI</Text>
-    </View>
-  );
+  return <Logo size="md" />;
 }
 
 const s = StyleSheet.create({
-  container: { alignItems: "center" },
-  logoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  logoSB: { fontSize: 24, fontWeight: "900", color: "#c9a84c", letterSpacing: 3, fontStyle: "italic" },
-  divider: { width: 1, height: 22, backgroundColor: "#c9a84c40" },
-  logoSub: { fontSize: 18, fontWeight: "700", color: "#f0f6fc", letterSpacing: 2 },
+  container: { alignItems: "center", justifyContent: "center" },
 });

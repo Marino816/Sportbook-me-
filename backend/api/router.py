@@ -101,7 +101,7 @@ async def run_optimizer(
                     "position": np.position,
                     "salary": np.salary,
                     "eligible_positions": np.eligible_positions or [np.position],
-                    "projected_fp": 1.0,  # minimum positive projection for solver compatibility
+                    "projected_fp": 0.0,  # filled by projection engine below
                     "opponent": np.opponent or "",
                     "mapping_status": np.mapping_status,
                 })
@@ -109,6 +109,18 @@ async def run_optimizer(
             if len(projections_list) >= 10:
                 is_native = True
                 dfs_source = "native"
+
+                # Compute native projections from SGO intelligence
+                try:
+                    from projection.native import compute_projections, projections_to_pool
+                    projs = compute_projections(sport, projections_list)
+                    projections_list = projections_to_pool(projs)
+                    logger.info(f"Native projections: {len(projections_list)} players, "
+                                f"{sum(1 for p in projs if p.projection_source != 'UNAVAILABLE')} projected")
+                except Exception as e:
+                    logger.warning(f"Native projection engine unavailable: {e}")
+                    # Fall through — players with 0.0 projection may be
+                    # filtered by the optimizer, which is correct behavior
     except HTTPException:
         raise
     except Exception:
