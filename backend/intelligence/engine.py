@@ -27,6 +27,25 @@ logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════
+#  Sport-Aware Environment Thresholds
+# ══════════════════════════════════════════════════════════════
+
+SPORT_ENV_THRESHOLDS = {
+    "MLB": {
+        "high": 9.0,
+        "above_avg": 8.0,
+        "neutral_low": 7.5,
+        "below_avg": 6.5,
+    },
+    "NFL": {},
+    "NBA": {},
+    "NHL": {},
+    "NCAAF": {},
+    "NCAAB": {},
+}
+
+
+# ══════════════════════════════════════════════════════════════
 #  Signal Enums
 # ══════════════════════════════════════════════════════════════
 
@@ -48,9 +67,54 @@ class GameEnvironmentSignal(str, Enum):
 
 class DataSourceStatus(str, Enum):
     LIVE = "LIVE"
-    TRIAL_SCRAMBLED = "TRIAL_SCRAMBLED"
     STALE = "STALE"
     UNAVAILABLE = "UNAVAILABLE"
+
+
+class DFSDataMode(str, Enum):
+    """SportsDataIO DFS data quality — separate from market context."""
+    TRIAL_SCRAMBLED = "TRIAL_SCRAMBLED"
+    LIVE_PRODUCTION = "LIVE_PRODUCTION"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+# ══════════════════════════════════════════════════════════════
+#  Odds Math Helpers
+# ══════════════════════════════════════════════════════════════
+
+def american_to_implied_probability(odds: int) -> float | None:
+    """
+    Convert American odds to implied probability.
+    +150 → 0.400 (40%)
+    -200 → 0.667 (66.7%)
+    """
+    if odds == 0:
+        return None
+    if odds > 0:
+        return 100.0 / (odds + 100.0)
+    return abs(odds) / (abs(odds) + 100.0)
+
+
+def implied_probability_to_american(prob: float) -> int:
+    """Convert implied probability to closest American odds."""
+    if prob <= 0 or prob >= 1:
+        return 0
+    if prob >= 0.5:
+        return round(-100.0 * prob / (1 - prob))
+    return round(100.0 * (1 - prob) / prob)
+
+
+def probability_edge(market_odds: int, fair_odds: int) -> float | None:
+    """
+    Edge as probability difference.
+    fair_implied - market_implied
+    Returns percentage points (0.05 = 5pp edge).
+    """
+    m = american_to_implied_probability(market_odds)
+    f = american_to_implied_probability(fair_odds)
+    if m is None or f is None:
+        return None
+    return round(f - m, 4)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -95,7 +159,12 @@ class PlayerIntelligence:
     # Freshness
     data_freshness_seconds: Optional[float] = None
     last_updated: Optional[datetime] = None
-    source_status: DataSourceStatus = DataSourceStatus.TRIAL_SCRAMBLED
+    # Separate provider statuses (not conflated)
+    dfs_data_mode: DFSDataMode = DFSDataMode.TRIAL_SCRAMBLED      # SportsDataIO
+    market_context_status: DataSourceStatus = DataSourceStatus.UNAVAILABLE  # SGO
+    # Explainability
+    reasons: list[str] = field(default_factory=list)
+    missing_signals: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -121,7 +190,10 @@ class PlayerIntelligence:
                 round(self.data_freshness_seconds) if self.data_freshness_seconds else None
             ),
             "last_updated": str(self.last_updated) if self.last_updated else None,
-            "source_status": self.source_status.value,
+            "dfs_data_mode": self.dfs_data_mode.value,
+            "market_context_status": self.market_context_status.value,
+            "reasons": self.reasons,
+            "missing_signals": self.missing_signals,
         }
 
 
@@ -283,8 +355,24 @@ class SignalComputer:
         pi.player_signal = SignalComputer.player_signal(pi)
         pi.game_environment = SignalComputer.game_environment(pi.game_total)
         pi.conviction_score = SignalComputer.conviction_score(pi)
-        pi.source_status = (
+        pi.market_context_status = (
             DataSourceStatus.LIVE
             if pi.fantasy_market_line is not None
-            else DataSourceStatus.TRIAL_SCRAMBLED
+            else DataSourceStatus.UNAVAILABLE
         )
+        pi.dfs_data_mode = DFSDataMode.TRIAL_SCRAMBLED
+        # Build reasons
+        pi.reasons = []
+        if pi.fantasy_market_edge is not None:
+            pi.reasons.append(
+                f"Fantasy projection edge {pi.fantasy_market_edge:+.1f} vs market line {pi.fantasy_market_line}"
+            )
+        if pi.prop_book_count > 0:
+            pi.reasons.append(f"{pi.prop_book_count} sportsbooks reporting props")
+        if pi.game_total is not None:
+            pi.reasons.append(f"Game total {pi.game_total} ({pi.game_environment.value})")
+        pi.missing_signals = [
+            m for m in ["hits", "homeRuns", "rbi", "stolenBases",
+                          "battingStrikeouts", "pitchingStrikeouts"]
+            if m not in pi.prop_signals
+        ]
