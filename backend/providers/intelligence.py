@@ -61,33 +61,14 @@ class DFSIntelligenceGame:
     bookmakers_available: list[str] = field(default_factory=list)
     weather: Optional[dict] = None
 
+from intelligence.sports import resolve_market, get_sport_markets
 
-# ── Market Parser ──
-
-KNOWN_PROP_MARKETS = {
-    "fantasyScore": ["fantasyScore", "fantasy_score", "fantasy score", "dfs points"],
-    "hits": ["hits", "total hits", "player hits"],
-    "homeRuns": ["homeRuns", "home_runs", "home runs", "homeruns", "hr"],
-    "rbi": ["rbi", "runs batted in", "rbis"],
-    "totalBases": ["totalBases", "total_bases", "total bases"],
-    "stolenBases": ["stolenBases", "stolen_bases", "stolen bases", "sb"],
-    "battingStrikeouts": ["battingStrikeouts", "batting_strikeouts", "batter strikeouts", "hitter strikeouts"],
-    "pitchingStrikeouts": ["pitchingStrikeouts", "pitching_strikeouts", "pitcher strikeouts", "strikeouts"],
-    "pitchingOuts": ["pitchingOuts", "pitching_outs", "outs recorded", "pitching outs"],
-    "pitchingHits": ["pitchingHits", "pitching_hits", "hits allowed", "pitcher hits"],
-    "pitchingEarnedRuns": ["pitchingEarnedRuns", "pitching_earned_runs", "earned runs", "er"],
-    "pitchingWalks": ["pitchingWalks", "pitching_walks", "walks allowed", "bb"],
-}
+logger = logging.getLogger(__name__)
 
 
 def _normalize_market_name(raw: str) -> Optional[str]:
-    """Map raw SGO market name to internal prop market key."""
-    r = str(raw).lower().strip()
-    for key, aliases in KNOWN_PROP_MARKETS.items():
-        for alias in aliases:
-            if alias.lower() in r:
-                return key
-    return None
+    """Map raw SGO market name to internal prop market key (sport-aware)."""
+    return resolve_market(raw)
 
 
 def _detect_bookmaker(raw: dict) -> str:
