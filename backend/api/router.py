@@ -114,13 +114,22 @@ async def run_optimizer(
                 try:
                     from projection.native import compute_projections, projections_to_pool
                     projs = compute_projections(sport, projections_list)
+                    projected_count = sum(1 for p in projs if p.projection_source != "UNAVAILABLE")
                     projections_list = projections_to_pool(projs)
-                    logger.info(f"Native projections: {len(projections_list)} players, "
-                                f"{sum(1 for p in projs if p.projection_source != 'UNAVAILABLE')} projected")
+                    logger.info(f"Native projections: {projected_count}/{len(projections_list)} projected")
+                    
+                    # If no SGO projections available, assign minimum positive
+                    # value so optimizer can produce valid rosters from salary+position.
+                    # Explicitly labeled as UNAVAILABLE in response.
+                    if projected_count == 0:
+                        for pl in projections_list:
+                            pl["projected_fp"] = 0.01
+                        logger.warning("Native DFS: 0 projections — using minimum placeholder for roster building")
                 except Exception as e:
                     logger.warning(f"Native projection engine unavailable: {e}")
-                    # Fall through — players with 0.0 projection may be
-                    # filtered by the optimizer, which is correct behavior
+                    # Same fallback
+                    for pl in projections_list:
+                        pl["projected_fp"] = 0.01
     except HTTPException:
         raise
     except Exception:
