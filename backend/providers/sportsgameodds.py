@@ -97,6 +97,7 @@ class SportsGameOddsProvider:
         await self._rate_limit()
         self.stats.requests += 1
         self.stats.last_request_at = datetime.now(timezone.utc)
+        self.stats.objects_consumed += 1  # count each API response as 1 object
 
         url = f"{path}" if path.startswith("http") else path
         for attempt in range(MAX_RETRIES):

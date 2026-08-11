@@ -103,22 +103,42 @@ class GameEnvironment:
 
 # ── Normalizer ──
 
+def _field(obj: dict, *names: str):
+    """Get value by trying multiple field names (snake_case + camelCase)."""
+    for n in names:
+        if n in obj:
+            return obj[n]
+    # Try camelCase conversion
+    for n in names:
+        cc = _camel(n)
+        if cc in obj:
+            return obj[cc]
+    return None
+
+
+def _camel(snake: str) -> str:
+    """Convert snake_case to camelCase."""
+    parts = snake.split("_")
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
 class SportsGameOddsNormalizer:
     """Convert raw SGO API responses into normalized SB ME models."""
 
     @staticmethod
     def normalize_event(raw: dict) -> NormalizedEvent:
+        eid = _field(raw, "id", "eventId", "event_id") or ""
         return NormalizedEvent(
-            id=raw.get("id", ""),
-            provider_id=raw.get("provider_id", raw.get("id", "")),
-            sport=raw.get("sport", ""),
-            league=raw.get("league", ""),
-            home_team=raw.get("home_team", raw.get("home", "")),
-            away_team=raw.get("away_team", raw.get("away", "")),
-            start_time=_parse_datetime(raw.get("start_time")),
-            status=raw.get("status", "SCHEDULED"),
-            home_score=raw.get("home_score"),
-            away_score=raw.get("away_score"),
+            id=eid,
+            provider_id=eid,
+            sport=_field(raw, "sport", "sportId", "league") or "",
+            league=_field(raw, "league", "leagueId") or "",
+            home_team=_field(raw, "homeTeamName", "home_team_name", "homeTeam") or "",
+            away_team=_field(raw, "awayTeamName", "away_team_name", "awayTeam") or "",
+            start_time=_parse_datetime(_field(raw, "startTime", "start_time", "dateTime")),
+            status=_field(raw, "status", "gameStatus", "eventStatus") or "SCHEDULED",
+            home_score=_field(raw, "homeScore", "home_score"),
+            away_score=_field(raw, "awayScore", "away_score"),
         )
 
     @staticmethod
