@@ -150,9 +150,10 @@ class MLBOptimizer:
             return set()
         return {i for i in self.hitters if self.players[i].get("team") == opp}
 
-    def build_lineup(self, forbidden_ids: set[int] = None, random_seed: int = None) -> dict | None:
+    def build_lineup(self, forbidden_ids: set[int] = None, random_seed: int = None, prior_ids: list[set[int]] = None) -> dict | None:
         """
         Build one optimal MLB lineup via CP-SAT.
+        prior_ids: list of player-id sets from previous lineups to avoid.
         Returns {players, total_salary, projected_score, ...} or None.
         """
         n = len(self.players)
@@ -220,6 +221,13 @@ class MLBOptimizer:
                     stack_vars.append(stack_var)
             if stack_vars:
                 model.Add(sum(stack_vars) >= 1)
+
+        # No-good constraints: prevent reproducing prior lineups
+        prior_ids = prior_ids or []
+        for prior_set in prior_ids:
+            prior_indices = [i for i in range(n) if self.players[i].get("id") in prior_set]
+            if prior_indices:
+                model.Add(sum(x[i] for i in prior_indices) <= total_slots - self.strat["min_unique"])
 
         # Solve
         solver = cp_model.CpSolver()
@@ -289,19 +297,21 @@ class MLBOptimizer:
         lineups = []
         player_exposure = {}
 
-        for i in range(count * 3):  # allow up to 3x retries
+        for i in range(count * 3):
             if len(lineups) >= count:
                 break
 
+            prior_sets = [{p.get("id") for p in lu["players"]} for lu in lineups]
             lineup = self.build_lineup(
                 forbidden_ids=set(),
                 random_seed=i * 137 + random.randint(0, 99),
+                prior_ids=prior_sets,
             )
             if lineup is None:
-                # Retry with different seed
                 lineup = self.build_lineup(
                     forbidden_ids=set(),
                     random_seed=i * 137 + random.randint(100, 999),
+                    prior_ids=prior_sets,
                 )
                 if lineup is None:
                     continue
