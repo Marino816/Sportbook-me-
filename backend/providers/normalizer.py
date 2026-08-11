@@ -137,19 +137,47 @@ def _camel_caps(snake: str) -> str:
     return result
 
 
+def _resolve_team_name(obj: dict) -> str:
+    """Extract team name from nested team object."""
+    names = obj.get("names", {})
+    if isinstance(names, dict):
+        return names.get("display") or names.get("full") or names.get("name") or ""
+    return obj.get("name") or obj.get("displayName") or ""
+
+
 class SportsGameOddsNormalizer:
     """Convert raw SGO API responses into normalized SB ME models."""
 
     @staticmethod
     def normalize_event(raw: dict) -> NormalizedEvent:
         eid = _field(raw, "eventID", "id", "eventId", "event_id") or ""
+
+        # Team resolution — try flat fields first, then nested teams.home/away
+        home_name = _field(raw, "homeTeamName", "homeTeam", "home_team_name") or ""
+        away_name = _field(raw, "awayTeamName", "awayTeam", "away_team_name") or ""
+        home_id = ""
+        away_id = ""
+
+        teams = raw.get("teams")
+        if isinstance(teams, dict):
+            home_obj = teams.get("home") or teams.get("homeTeam")
+            away_obj = teams.get("away") or teams.get("awayTeam")
+            if isinstance(home_obj, dict):
+                home_id = _field(home_obj, "teamID", "id", "teamId") or ""
+                if not home_name:
+                    home_name = _resolve_team_name(home_obj)
+            if isinstance(away_obj, dict):
+                away_id = _field(away_obj, "teamID", "id", "teamId") or ""
+                if not away_name:
+                    away_name = _resolve_team_name(away_obj)
+
         return NormalizedEvent(
             id=eid,
             provider_id=eid,
             sport=_field(raw, "sportID", "sport", "sportId", "league") or "",
             league=_field(raw, "leagueID", "league", "leagueId") or "",
-            home_team=_field(raw, "homeTeamName", "homeTeam", "home_team_name") or "",
-            away_team=_field(raw, "awayTeamName", "awayTeam", "away_team_name") or "",
+            home_team=home_name or home_id,
+            away_team=away_name or away_id,
             start_time=_parse_datetime(_field(raw, "startTime", "start_time", "dateTime", "gameTime")),
             status=_field(raw, "status", "gameStatus", "eventStatus") or "SCHEDULED",
             home_score=_field(raw, "homeScore", "home_score"),

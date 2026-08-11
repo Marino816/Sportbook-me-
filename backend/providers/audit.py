@@ -33,6 +33,16 @@ async def main():
                 print(f"RAW_EVENT_ID={_field(ev, 'eventID', 'id')}")
                 print(f"NORMALIZED_EVENT_ID={ne.id}")
                 print(f"HOME={ne.home_team}  AWAY={ne.away_team}")
+                # Dump raw teams structure
+                raw_teams = ev.get("teams")
+                if raw_teams:
+                    print(f"RAW_TEAMS_TYPE={type(raw_teams).__name__}")
+                    if isinstance(raw_teams, dict):
+                        home_r = raw_teams.get("home", {})
+                        away_r = raw_teams.get("away", {})
+                        print(f"RAW_TEAMS_HOME_KEYS={sorted(home_r.keys()) if isinstance(home_r, dict) else 'N/A'}")
+                        print(f"RAW_HOME_TEAM_ID={_field(home_r, 'teamID', 'id') if isinstance(home_r, dict) else 'N/A'}")
+                        print(f"RAW_AWAY_TEAM_ID={_field(away_r, 'teamID', 'id') if isinstance(away_r, dict) else 'N/A'}")
                 print(f"SPORT={ne.sport}  LEAGUE={ne.league}  STATUS={ne.status}")
 
                 # Odds inspection
