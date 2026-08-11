@@ -287,7 +287,6 @@ class MLBOptimizer:
         Iterative CP-SAT solving — each solution adds no-good constraints.
         """
         lineups = []
-        forbidden_global = set()
         player_exposure = {}
 
         for i in range(count * 3):  # allow up to 3x retries
@@ -295,11 +294,11 @@ class MLBOptimizer:
                 break
 
             lineup = self.build_lineup(
-                forbidden_ids=forbidden_global,
+                forbidden_ids=set(),
                 random_seed=i * 137 + random.randint(0, 99),
             )
             if lineup is None:
-                # Retry with completely relaxed forbidden_ids
+                # Retry with different seed
                 lineup = self.build_lineup(
                     forbidden_ids=set(),
                     random_seed=i * 137 + random.randint(100, 999),
@@ -346,13 +345,6 @@ class MLBOptimizer:
             # Track exposure
             for pid in new_ids:
                 player_exposure[pid] = player_exposure.get(pid, 0) + 1
-
-            # Cross-lineup: block only a few core players (not all)
-            # to allow player reuse across lineups
-            core_players = sorted(new_ids, key=lambda pid: (
-                player_exposure.get(pid, 0), pid
-            ))[:min(3, len(new_ids))]
-            forbidden_global.update(core_players)
 
         # Add generation metadata to each lineup
         for lu in lineups:
