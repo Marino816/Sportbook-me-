@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "@/lib/providers";
 import { AuthProvider } from "@/lib/auth";
-import { Navigation } from "@/components/Navigation";
+import { TopNav } from "@/components/TopNav";
 import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Analytics } from "@vercel/analytics/next";
@@ -33,17 +33,16 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex`}
-        style={{ background: "#0d1117" }}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
+        style={{ background: "#060b1a" }}
       >
         <Providers>
           <AuthProvider>
-            {/* Navigation is hidden on "/" by internal logic */}
-            <Navigation />
-            <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-              <ProtectedRoute>{children}</ProtectedRoute>
-            </main>
-            <DataSourceBadge />
+                      <TopNav />
+                      <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
+                        <ProtectedRoute>{children}</ProtectedRoute>
+                      </main>
+                      <DataSourceBadge />
           </AuthProvider>
         </Providers>
         <Analytics />
