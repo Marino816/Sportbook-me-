@@ -142,18 +142,54 @@ class SportsGameOddsNormalizer:
 
     @staticmethod
     def normalize_event(raw: dict) -> NormalizedEvent:
-        eid = _field(raw, "id", "eventId", "event_id") or ""
+        eid = _field(raw, "eventID", "id", "eventId", "event_id") or ""
         return NormalizedEvent(
             id=eid,
             provider_id=eid,
-            sport=_field(raw, "sport", "sportId", "league") or "",
-            league=_field(raw, "league", "leagueId") or "",
-            home_team=_field(raw, "homeTeamName", "home_team_name", "homeTeam") or "",
-            away_team=_field(raw, "awayTeamName", "away_team_name", "awayTeam") or "",
-            start_time=_parse_datetime(_field(raw, "startTime", "start_time", "dateTime")),
+            sport=_field(raw, "sportID", "sport", "sportId", "league") or "",
+            league=_field(raw, "leagueID", "league", "leagueId") or "",
+            home_team=_field(raw, "homeTeamName", "homeTeam", "home_team_name") or "",
+            away_team=_field(raw, "awayTeamName", "awayTeam", "away_team_name") or "",
+            start_time=_parse_datetime(_field(raw, "startTime", "start_time", "dateTime", "gameTime")),
             status=_field(raw, "status", "gameStatus", "eventStatus") or "SCHEDULED",
             home_score=_field(raw, "homeScore", "home_score"),
             away_score=_field(raw, "awayScore", "away_score"),
+        )
+
+    @staticmethod
+    def normalize_player(raw: dict) -> NormalizedPlayer:
+        pid = _field(raw, "playerID", "id", "playerId", "player_id") or ""
+        tid = _field(raw, "teamID", "teamId", "team_id") or ""
+        names = raw.get("names", {})
+        if isinstance(names, dict):
+            name = names.get("display") or names.get("full") or names.get("name") or ""
+        else:
+            name = str(names) if names else ""
+        return NormalizedPlayer(
+            id=pid,
+            provider_id=pid,
+            name=name or _field(raw, "name", "fullName", "playerName") or "",
+            team=tid,
+            position=_field(raw, "position", "pos") or "",
+            league=_field(raw, "leagueID", "league", "leagueId") or "",
+            sport=_field(raw, "sportID", "sport", "sportId") or "",
+        )
+
+    @staticmethod
+    def normalize_team(raw: dict) -> NormalizedTeam:
+        tid = _field(raw, "teamID", "id", "teamId", "team_id") or ""
+        names = raw.get("names", {})
+        if isinstance(names, dict):
+            name = names.get("display") or names.get("full") or names.get("name") or ""
+        else:
+            name = str(names) if names else ""
+        return NormalizedTeam(
+            id=tid,
+            provider_id=tid,
+            name=name or raw.get("name", ""),
+            abbreviation=_field(raw, "abbreviation", "abbr", "code") or "",
+            league=_field(raw, "leagueID", "league", "leagueId") or "",
+            sport=_field(raw, "sportID", "sport", "sportId") or "",
         )
 
     @staticmethod

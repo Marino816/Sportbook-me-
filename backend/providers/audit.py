@@ -5,35 +5,9 @@ Uses flexible field extraction to handle the actual SGO response schema.
 import asyncio, os, json, sys, pprint
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from providers.sportsgameodds import SportsGameOddsProvider
+from providers.normalizer import SportsGameOddsNormalizer, _field
 
 LEAGUE_IDS = ["MLB", "NFL", "NBA", "NHL", "NCAAF"]
-
-
-def _drill(obj: dict, *paths: str):
-    """Try each dotted path on dict — return first hit."""
-    for path in paths:
-        parts = path.split(".")
-        cur = obj
-        for p in parts:
-            if isinstance(cur, dict):
-                cur = cur.get(p)
-            else:
-                cur = None
-                break
-        if cur is not None:
-            return cur
-    return None
-
-
-def _ev_field(ev: dict, *names: str):
-    """Get event field by trying camelCase and snake_case variants."""
-    for n in names:
-        if n in ev: return ev[n]
-    # Try camelCase
-    for n in names:
-        cc = n[0].upper() + n[1:] if n else n
-        if cc in ev: return ev[cc]
-    return None
 
 
 async def main():
@@ -54,20 +28,12 @@ async def main():
             events = raw if isinstance(raw, list) else raw.get("data", raw.get("events", raw.get("results", [])))
             if events:
                 ev = events[0]
+                ne = SportsGameOddsNormalizer.normalize_event(ev)
                 print(f"\nTOP-LEVEL EVENT KEYS (all): {sorted(ev.keys())}")
-                # Team resolution
-                home = _ev_field(ev, "homeTeam", "home_team", "home", "homeTeamId")
-                away = _ev_field(ev, "awayTeam", "away_team", "away", "awayTeamId")
-                home_name = _ev_field(ev, "homeTeamName", "home_team_name", "home_name")
-                away_name = _ev_field(ev, "awayTeamName", "away_team_name", "away_name")
-                eid = _ev_field(ev, "id", "eventId", "event_id")
-                sport = _ev_field(ev, "sport", "sportId", "league", "leagueId")
-                status = _ev_field(ev, "status", "gameStatus", "eventStatus")
-                start = _ev_field(ev, "startTime", "start_time", "gameTime", "dateTime")
-                print(f"EVENT_ID={eid}")
-                print(f"HOME={home} ({home_name})")
-                print(f"AWAY={away} ({away_name})")
-                print(f"SPORT={sport}  STATUS={status}  START={start}")
+                print(f"RAW_EVENT_ID={_field(ev, 'eventID', 'id')}")
+                print(f"NORMALIZED_EVENT_ID={ne.id}")
+                print(f"HOME={ne.home_team}  AWAY={ne.away_team}")
+                print(f"SPORT={ne.sport}  LEAGUE={ne.league}  STATUS={ne.status}")
 
                 # Odds inspection
                 odds = ev.get("odds") or ev.get("markets") or ev.get("bookmakers") or ev.get("lines")
@@ -113,9 +79,12 @@ async def main():
             players = raw if isinstance(raw, list) else raw.get("data", raw.get("players", []))
             if players:
                 p0 = players[0]
+                np = SportsGameOddsNormalizer.normalize_player(p0)
                 print(f"PLAYER_COUNT_AVAILABLE: {len(players)}")
-                print(f"PLAYER_KEYS: {sorted(p0.keys())}")
-                print(f"SAMPLE: id={p0.get('id') or p0.get('playerId')} name={p0.get('name') or p0.get('fullName')} pos={p0.get('position')} team={p0.get('teamId')}")
+                print(f"RAW_PLAYER_KEYS: {sorted(p0.keys())}")
+                print(f"RAW_PLAYER_ID={_field(p0, 'playerID', 'id')}")
+                print(f"RAW_NAMES={json.dumps(p0.get('names',{}), default=str)[:120]}")
+                print(f"NORMALIZED: id={np.id} name={np.name} team={np.team} pos={np.position}")
         except Exception as e:
             print(f"PLAYERS: ERROR — {e}")
 
