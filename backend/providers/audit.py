@@ -109,7 +109,7 @@ async def main():
         # ── Players ──
         print("\n=== PLAYERS (MLB, limit=1) ===")
         try:
-            players = await p._request("GET", "/players?league=MLB&limit=1")
+            players = await p._request("GET", "/players?leagueID=MLB&limit=1")
             plist = players if isinstance(players, list) else players.get("data", [])
             if plist:
                 pkeys = list(plist[0].keys())[:15]

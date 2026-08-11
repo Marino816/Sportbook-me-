@@ -180,11 +180,11 @@ class SportsGameOddsProvider:
         params = {"league": league} if league else None
         return await self._request("GET", "/teams", params=params, paginated=True)
 
-    async def get_players(self, league: str = None, team: str = None) -> list:
-        """List players, optionally filtered by league/team."""
-        params = {}
-        if league:
-            params["league"] = league
+    async def get_players(self, league_id: str = None, team: str = None) -> list:
+        """List players with leagueID (e.g., 'MLB', 'NFL')."""
+        params = {"limit": "100"}
+        if league_id:
+            params["leagueID"] = league_id
         if team:
             params["team"] = team
         return await self._request("GET", "/players", params=params, paginated=True)
