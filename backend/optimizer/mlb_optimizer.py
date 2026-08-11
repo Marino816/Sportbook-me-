@@ -21,7 +21,7 @@ from ortools.sat.python import cp_model
 PLATFORM_CONFIG = {
     "draftkings": {
         "salary_cap": 50000,
-        "min_salary": 47000,
+        "min_salary": 42000,
         "player_count": 10,
         "slots": {
             "P": 2, "C": 1, "1B": 1, "2B": 1, "3B": 1, "SS": 1, "OF": 3,
@@ -29,7 +29,7 @@ PLATFORM_CONFIG = {
     },
     "fanduel": {
         "salary_cap": 35000,
-        "min_salary": 32000,
+        "min_salary": 28000,
         "player_count": 9,
         "slots": {
             "P": 1, "C1B": 1, "2B": 1, "3B": 1, "SS": 1, "OF": 3, "UTIL": 1,
