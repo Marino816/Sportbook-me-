@@ -1,0 +1,171 @@
+"""
+SB ME Normalization Layer — SportsGameOdds → Internal Models.
+
+Normalizes SGO provider responses into typed SB ME data objects
+used by the intelligence layer, AI, and optimizer context.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Optional
+
+
+@dataclass
+class NormalizedEvent:
+    id: str
+    provider_id: str
+    sport: str
+    league: str
+    home_team: str
+    away_team: str
+    start_time: Optional[datetime] = None
+    status: str = "SCHEDULED"  # SCHEDULED / LIVE / FINAL / POSTPONED
+    home_score: Optional[int] = None
+    away_score: Optional[int] = None
+
+
+@dataclass
+class NormalizedTeam:
+    id: str
+    provider_id: str
+    name: str
+    abbreviation: str = ""
+    league: str = ""
+    sport: str = ""
+
+
+@dataclass
+class NormalizedPlayer:
+    id: str
+    provider_id: str
+    name: str
+    team: str = ""
+    position: str = ""
+    league: str = ""
+    sport: str = ""
+
+
+@dataclass
+class NormalizedPlayerStat:
+    player_id: str
+    season: str = ""
+    stat_name: str = ""
+    stat_value: float = 0.0
+    games_played: int = 0
+
+
+@dataclass
+class NormalizedBookmakerLine:
+    bookmaker: str  # DraftKings, FanDuel, BetMGM, etc.
+    moneyline_home: Optional[int] = None
+    moneyline_away: Optional[int] = None
+    spread_home: Optional[float] = None
+    spread_away: Optional[float] = None
+    total_over: Optional[float] = None
+    total_under: Optional[float] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class NormalizedGameOdds:
+    event_id: str
+    books: list[NormalizedBookmakerLine] = field(default_factory=list)
+    consensus: Optional[NormalizedBookmakerLine] = None
+    fair_moneyline_home: Optional[int] = None
+    fair_moneyline_away: Optional[int] = None
+    fair_total: Optional[float] = None
+
+
+@dataclass
+class NormalizedPlayerProp:
+    player_id: str
+    bookmaker: str
+    market: str  # e.g. "hits", "strikeouts", "points"
+    line: float
+    over_price: Optional[int] = None
+    under_price: Optional[int] = None
+
+
+@dataclass
+class GameEnvironment:
+    """Aggregated game context for DFS intelligence."""
+    event_id: str
+    home_team: str
+    away_team: str
+    implied_total_home: Optional[float] = None
+    implied_total_away: Optional[float] = None
+    game_total: Optional[float] = None
+    bookmakers_available: int = 0
+    temperature: Optional[float] = None
+    wind_speed: Optional[float] = None
+    ballpark_factor: Optional[float] = None
+
+
+# ── Normalizer ──
+
+class SportsGameOddsNormalizer:
+    """Convert raw SGO API responses into normalized SB ME models."""
+
+    @staticmethod
+    def normalize_event(raw: dict) -> NormalizedEvent:
+        return NormalizedEvent(
+            id=raw.get("id", ""),
+            provider_id=raw.get("provider_id", raw.get("id", "")),
+            sport=raw.get("sport", ""),
+            league=raw.get("league", ""),
+            home_team=raw.get("home_team", raw.get("home", "")),
+            away_team=raw.get("away_team", raw.get("away", "")),
+            start_time=_parse_datetime(raw.get("start_time")),
+            status=raw.get("status", "SCHEDULED"),
+            home_score=raw.get("home_score"),
+            away_score=raw.get("away_score"),
+        )
+
+    @staticmethod
+    def normalize_bookmaker_line(raw: dict) -> NormalizedBookmakerLine:
+        return NormalizedBookmakerLine(
+            bookmaker=raw.get("bookmaker", raw.get("book", "")),
+            moneyline_home=raw.get("moneyline_home"),
+            moneyline_away=raw.get("moneyline_away"),
+            spread_home=raw.get("spread_home"),
+            spread_away=raw.get("spread_away"),
+            total_over=raw.get("total_over", raw.get("over")),
+            total_under=raw.get("total_under", raw.get("under")),
+            updated_at=_parse_datetime(raw.get("updated_at")),
+        )
+
+    @staticmethod
+    def normalize_game_odds(raw: dict, event_id: str) -> NormalizedGameOdds:
+        books_raw = raw.get("books", raw.get("bookmakers", []))
+        consensus_raw = raw.get("consensus")
+        return NormalizedGameOdds(
+            event_id=event_id,
+            books=[SportsGameOddsNormalizer.normalize_bookmaker_line(b) for b in books_raw],
+            consensus=(SportsGameOddsNormalizer.normalize_bookmaker_line(consensus_raw)
+                        if consensus_raw else None),
+            fair_moneyline_home=raw.get("fair_moneyline_home"),
+            fair_moneyline_away=raw.get("fair_moneyline_away"),
+            fair_total=raw.get("fair_total"),
+        )
+
+    @staticmethod
+    def normalize_player_prop(raw: dict) -> NormalizedPlayerProp:
+        return NormalizedPlayerProp(
+            player_id=raw.get("player_id", ""),
+            bookmaker=raw.get("bookmaker", raw.get("book", "")),
+            market=raw.get("market", ""),
+            line=float(raw.get("line", 0)),
+            over_price=raw.get("over_price"),
+            under_price=raw.get("under_price"),
+        )
+
+
+def _parse_datetime(val) -> Optional[datetime]:
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    try:
+        return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
