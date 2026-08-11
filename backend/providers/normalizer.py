@@ -104,15 +104,20 @@ class GameEnvironment:
 # ── Normalizer ──
 
 def _field(obj: dict, *names: str):
-    """Get value by trying multiple field names (snake_case + camelCase)."""
+    """Get value by trying multiple field names (snake_case + camelCase + SGO caps)."""
     for n in names:
         if n in obj:
             return obj[n]
-    # Try camelCase conversion
+    # Try camelCase (event_id → eventId)
     for n in names:
         cc = _camel(n)
         if cc in obj:
             return obj[cc]
+    # Try ALL-CAPS initialisms (event_id → eventID, id → ID)
+    for n in names:
+        cc2 = _camel_caps(n)
+        if cc2 in obj:
+            return obj[cc2]
     return None
 
 
@@ -120,6 +125,16 @@ def _camel(snake: str) -> str:
     """Convert snake_case to camelCase."""
     parts = snake.split("_")
     return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
+def _camel_caps(snake: str) -> str:
+    """Convert snake_case to camelCase with common initialisms (ID, URL, etc.)."""
+    parts = snake.split("_")
+    caps_map = {"id": "ID", "url": "URL", "dfs": "DFS"}
+    result = parts[0]
+    for p in parts[1:]:
+        result += caps_map.get(p, p.capitalize())
+    return result
 
 
 class SportsGameOddsNormalizer:
