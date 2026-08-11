@@ -6,12 +6,12 @@ import { sendAIChat, getSlateSummary, AIPreferences } from "../../lib/ai-api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const QUICK_ACTIONS = [
-  { label: "🏗️ Build Best Lineup", prompt: "Build my best GPP lineup tonight." },
-  { label: "💰 Cash Lineup", prompt: "Build my optimal cash game lineup." },
-  { label: "🎯 GPP Lineup", prompt: "Build my large-field GPP tournament lineup." },
-  { label: "📊 Slate Summary", prompt: "Explain today's slate." },
-  { label: "⚖️ Compare Players", prompt: "Compare the top two plays tonight." },
-  { label: "🧠 Ask SB ME AI", prompt: "" },
+  { label: "🏗️ Build Best Lineup", route: "optimizer" as const, strategy: "balanced" },
+  { label: "💰 Cash Lineup", route: "optimizer" as const, strategy: "cash" },
+  { label: "🎯 GPP Lineup", route: "optimizer" as const, strategy: "gpp" },
+  { label: "📊 Slate Summary", route: "ai" as const, prompt: "Explain today's slate." },
+  { label: "⚖️ Compare Players", route: "ai" as const, prompt: "Compare the top two plays tonight." },
+  { label: "🧠 Ask SB ME AI", route: "ai" as const, prompt: "" },
 ];
 
 export default function DashboardScreen() {
@@ -48,9 +48,14 @@ export default function DashboardScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function handleQuickAction(prompt: string) {
-    if (prompt) {
-      await AsyncStorage.setItem("sbm_ai_pending_prompt", prompt);
+  async function handleQuickAction(a: typeof QUICK_ACTIONS[0]) {
+    if (a.route === "optimizer") {
+      await AsyncStorage.setItem("sbm_preset_strategy", a.strategy || "balanced");
+      router.push("/(tabs)/optimizer" as any);
+      return;
+    }
+    if (a.prompt) {
+      await AsyncStorage.setItem("sbm_ai_pending_prompt", a.prompt || "");
     }
     router.push("/(tabs)/ai-chat" as any);
   }
@@ -76,7 +81,7 @@ export default function DashboardScreen() {
       <Text style={s.section}>Quick Actions</Text>
       <View style={s.quickGrid}>
         {QUICK_ACTIONS.map((a, i) => (
-          <TouchableOpacity key={i} style={s.quickBtn} onPress={() => handleQuickAction(a.prompt)}>
+          <TouchableOpacity key={i} style={s.quickBtn} onPress={() => handleQuickAction(a)}>
             <Text style={s.quickLabel}>{a.label}</Text>
           </TouchableOpacity>
         ))}

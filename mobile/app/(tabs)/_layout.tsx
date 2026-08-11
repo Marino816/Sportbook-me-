@@ -9,13 +9,16 @@ export default function TabLayout() {
       tabBarStyle: { backgroundColor: "#111", borderTopColor: "#222" },
       tabBarActiveTintColor: "#4ade80",
       tabBarInactiveTintColor: "#666",
+      tabBarLabelStyle: { fontSize: 11 },
     }}>
-      <Tabs.Screen name="dashboard" options={{ title: "Dashboard", tabBarLabel: "Home" }} />
+      <Tabs.Screen name="dashboard" options={{ title: "SB ME", tabBarLabel: "Home" }} />
       <Tabs.Screen name="ai-chat" options={{ title: "SB ME AI", tabBarLabel: "AI" }} />
       <Tabs.Screen name="optimizer" options={{ title: "Optimizer", tabBarLabel: "Optimizer" }} />
-      <Tabs.Screen name="subscription" options={{ title: "Billing", tabBarLabel: "Billing" }} />
+      <Tabs.Screen name="lineups" options={{ title: "Lineups", tabBarLabel: "Lineups" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarLabel: "Profile" }} />
-      <Tabs.Screen name="settings" options={{ title: "Settings", tabBarLabel: "Settings" }} />
+      <Tabs.Screen name="billing" options={{ href: null, title: "Billing" }} />
+      <Tabs.Screen name="settings" options={{ href: null, title: "Settings" }} />
+      <Tabs.Screen name="subscription" options={{ href: null, title: "Subscription" }} />
     </Tabs>
   );
 }
