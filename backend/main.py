@@ -42,7 +42,7 @@ app = FastAPI(
 )
 
 from api import router as api_router
-from api import admin, stats, sports, billing, auth, ai_routes, scout_routes, analyst_routes, builder_routes, coach_routes, mc_routes, assistant_routes, admin_health, operations, intelligence_routes
+from api import admin, stats, sports, billing, auth, ai_routes, scout_routes, analyst_routes, builder_routes, coach_routes, mc_routes, assistant_routes, admin_health, operations, intelligence_routes, dfs_admin, dfs_customer
 from services.logging import RequestLogMiddleware, configure_structured_logging
 
 # Allow CORS for Next.js / Expo frontend
@@ -85,6 +85,8 @@ app.include_router(assistant_routes.router, prefix="/api", tags=["SB-Me AI Assis
 app.include_router(admin_health.router, tags=["Admin Health"])
 app.include_router(operations.router, tags=["Operations Metrics"])
 app.include_router(intelligence_routes.router, prefix="/api", tags=["SB-Me Intelligence"])
+app.include_router(dfs_admin.router, prefix="/api", tags=["Admin DFS"])
+app.include_router(dfs_customer.router, prefix="/api", tags=["DFS Slates"])
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
