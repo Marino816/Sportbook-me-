@@ -73,7 +73,50 @@ async def run_optimizer(
             detail=f"Subscription limit exceeded. Your current plan allows max {max_lineups} lineups. Upgrade at /billing to generate {requested_lineups}."
         )
 
-    projections_dicts = await get_slate_projections(request.slate_id, db)
+    is_native = False
+    dfs_source = "sportsdataio"
+
+    # Try native DFS slate first
+    try:
+        from dfs.db import DFSSlate as NativeSlate, DFSPlayer as NativePlayer
+        native_result = await db.execute(
+            select(NativeSlate).where(NativeSlate.id == request.slate_id, NativeSlate.status == "PUBLISHED")
+        )
+        native_slate = native_result.scalars().first()
+        if native_slate:
+            sport = native_slate.sport.upper()
+            platform = request.settings.get("platform", native_slate.platform) if isinstance(request.settings, dict) else getattr(request.settings, 'platform', native_slate.platform)
+
+            players_result = await db.execute(
+                select(NativePlayer).where(NativePlayer.slate_id == native_slate.id)
+            )
+            native_players = players_result.scalars().all()
+
+            projections_list = []
+            for np in native_players:
+                projections_list.append({
+                    "id": np.sbme_player_id or np.provider_player_id,
+                    "name": np.player_name,
+                    "team": np.team,
+                    "position": np.position,
+                    "salary": np.salary,
+                    "eligible_positions": np.eligible_positions or [np.position],
+                    "projected_fp": 0.0,
+                    "opponent": np.opponent or "",
+                    "mapping_status": np.mapping_status,
+                })
+
+            if len(projections_list) >= 10:
+                is_native = True
+                dfs_source = "native"
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    # Legacy SportsDataIO fallback
+    if not is_native:
+        projections_dicts = await get_slate_projections(request.slate_id, db)
 
     # Determine sport from slate for roster requirements
     from models.domain import Slate as SlateModel
@@ -119,6 +162,7 @@ async def run_optimizer(
                     sport=sport,
                     platform=platform,
                     slate_id=request.slate_id,
+                    dfs_source=dfs_source,
                     strategy=strategy,
                     lineup_count=len(formatted),
                     player_count=len(formatted[0].get("players", [])),
@@ -142,6 +186,8 @@ async def run_optimizer(
                     "requested_lineups": requested_lineups,
                     "generated_lineups": len(formatted),
                     "history_saved": history_saved,
+                    "dfs_source": dfs_source,
+                    "slate_id": request.slate_id,
                 }, source="builder_engine")
 
     # NBA path — DFSOptimizer

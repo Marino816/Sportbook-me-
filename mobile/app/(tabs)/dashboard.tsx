@@ -1,131 +1,149 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
-import { router } from "expo-router";
-import { getMe, getSubscriptionStatus } from "../../lib/api";
-import { sendAIChat, getSlateSummary, AIPreferences } from "../../lib/ai-api";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { getToken } from "../../lib/api";
 
-const QUICK_ACTIONS = [
-  { label: "🏗️ Build Best Lineup", route: "optimizer" as const, strategy: "balanced" },
-  { label: "💰 Cash Lineup", route: "optimizer" as const, strategy: "cash" },
-  { label: "🎯 GPP Lineup", route: "optimizer" as const, strategy: "gpp" },
-  { label: "📊 Slate Summary", route: "ai" as const, prompt: "Explain today's slate." },
-  { label: "⚖️ Compare Players", route: "ai" as const, prompt: "Compare the top two plays tonight." },
-  { label: "🧠 Ask SB ME AI", route: "ai" as const, prompt: "" },
+const API_URL = "https://sportbook-me-production.up.railway.app/api";
+
+const ACTIONS = [
+  { id: "best", icon: "sparkles", label: "Build Best\nLineup", route: "/(tabs)/optimizer" },
+  { id: "cash", icon: "shield-checkmark", label: "Cash\nLineup", route: "/(tabs)/optimizer" },
+  { id: "gpp", icon: "rocket", label: "GPP\nLineup", route: "/(tabs)/optimizer" },
+  { id: "slate", icon: "analytics", label: "Slate\nSummary", route: "/(tabs)/optimizer" },
+  { id: "compare", icon: "git-compare", label: "Compare\nPlayers", route: "/(tabs)/optimizer" },
+  { id: "ai", icon: "chatbubble-ellipses", label: "Ask\nSB ME AI", route: "/(tabs)/ai-chat" },
 ];
 
 export default function DashboardScreen() {
-  const [greeting, setGreeting] = useState("");
+  const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [sub, setSub] = useState<any>(null);
-  const [aiTips, setAiTips] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [greeting, setGreeting] = useState("");
 
-  const load = useCallback(async () => {
-    try {
-      const [u, s] = await Promise.all([
-        getMe().catch(() => null),
-        getSubscriptionStatus().catch(() => null),
-      ]);
-      setUser(u?.data);
-      setSub(s?.data);
-
-      // AI Greeting
-      const hour = new Date().getHours();
-      const timeGreeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-      setGreeting(timeGreeting);
-
-      // AI Tips from slate summary
-      try {
-        const slate = await getSlateSummary();
-        if (slate?.data?.tips) setAiTips(slate.data.tips);
-      } catch {
-        setAiTips(["Build your first lineup to get personalized recommendations."]);
-      }
-    } catch {} finally { setLoading(false); setRefreshing(false); }
+  useEffect(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) setGreeting("Good morning");
+    else if (hour < 17) setGreeting("Good afternoon");
+    else setGreeting("Good evening");
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => {
+    (async () => {
+      const token = await getToken();
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        setUser(data.data || data);
+      } catch {}
+    })();
+  }, []));
 
-  async function handleQuickAction(a: typeof QUICK_ACTIONS[0]) {
-    if (a.route === "optimizer") {
-      await AsyncStorage.setItem("sbm_preset_strategy", a.strategy || "balanced");
-      router.push("/(tabs)/optimizer" as any);
-      return;
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const token = await getToken();
+    if (token) {
+      try {
+        const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        setUser(data.data || data);
+      } catch {}
     }
-    if (a.prompt) {
-      await AsyncStorage.setItem("sbm_ai_pending_prompt", a.prompt || "");
-    }
-    router.push("/(tabs)/ai-chat" as any);
-  }
-
-  if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#c9a84c" /></View>;
+    setRefreshing(false);
+  };
 
   return (
-    <ScrollView style={s.scroll} contentContainerStyle={s.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#c9a84c" />}>
-      {/* AI Greeting */}
-      <Text style={s.greeting}>{greeting}, {user?.email?.split("@")[0] || "Player"}.</Text>
-      <Text style={s.subtitle}>🧠 SB ME Intelligent AI™ is ready.</Text>
+    <View style={s.flex}>
+      <ScrollView style={s.scroll} contentContainerStyle={s.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#c9a84c" />}
+      >
+        {/* Logo Header */}
+        <View style={s.header}>
+          <View style={s.logoContainer}>
+            <View style={s.logoBlock}>
+              <Text style={s.logoText}>SB ME</Text>
+            </View>
+            <View style={s.logoDivider} />
+            <Text style={s.logoSub}>DFS.AI</Text>
+          </View>
+          <View style={s.headerIcons}>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/intelligence")}>
+              <Ionicons name="pulse" size={20} color="#c9a84c" />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-      {aiTips.length > 0 && (
-        <View style={s.aiCard}>
-          <Text style={s.aiTitle}>Today's Insights</Text>
-          {aiTips.map((tip, i) => (
-            <Text key={i} style={s.aiTip}>• {tip}</Text>
+        {/* Greeting */}
+        <Text style={s.greeting}>{greeting}, {user?.name || user?.email?.split("@")[0] || "Player"}.</Text>
+        <Text style={s.subtitle}>SB ME Intelligent AI™ is ready.</Text>
+
+        {/* Plan info */}
+        <View style={s.planRow}>
+          <Ionicons name="ribbon" size={16} color="#c9a84c" />
+          <Text style={s.planText}>{user?.plan || "Free"} Plan</Text>
+        </View>
+
+        {/* Quick Actions */}
+        <Text style={s.sectionTitle}>Quick Actions</Text>
+        <View style={s.actionsGrid}>
+          {ACTIONS.map((action) => (
+            <TouchableOpacity key={action.id} style={s.actionCard} onPress={() => router.push(action.route as any)}>
+              <Ionicons name={action.icon as any} size={28} color="#c9a84c" />
+              <Text style={s.actionLabel}>{action.label}</Text>
+            </TouchableOpacity>
           ))}
         </View>
-      )}
 
-      {/* Quick Actions */}
-      <Text style={s.section}>Quick Actions</Text>
-      <View style={s.quickGrid}>
-        {QUICK_ACTIONS.map((a, i) => (
-          <TouchableOpacity key={i} style={s.quickBtn} onPress={() => handleQuickAction(a)}>
-            <Text style={s.quickLabel}>{a.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Subscription Status */}
-      <Text style={s.section}>Subscription</Text>
-      <View style={s.card}>
-        <View style={s.cardRow}>
-          <Text style={s.cardLabel}>Plan</Text>
-          <Text style={s.cardValue}>{user?.plan || sub?.plan || "Free"}</Text>
+        {/* Intelligence Overview */}
+        <Text style={s.sectionTitle}>SB ME Intelligence</Text>
+        <View style={s.intelCard}>
+          <View style={s.intelRow}>
+            <Ionicons name="flame" size={16} color="#c9a84c" />
+            <Text style={s.intelLabel}>Top Plays</Text>
+            <Text style={s.intelVal}>18</Text>
+          </View>
+          <View style={s.intelRow}>
+            <Ionicons name="trending-up" size={16} color="#c9a84c" />
+            <Text style={s.intelLabel}>Best Environment</Text>
+            <Text style={s.intelVal}>LAD@SD</Text>
+          </View>
+          <View style={s.intelRow}>
+            <Ionicons name="flash" size={16} color="#c9a84c" />
+            <Text style={s.intelLabel}>Market Edge</Text>
+            <Text style={s.intelVal}>+2.3 pts</Text>
+          </View>
         </View>
-        <View style={s.cardRow}>
-          <Text style={s.cardLabel}>Status</Text>
-          <Text style={[s.cardValue, { color: sub?.has_access ? "#c9a84c" : "#ff4444" }]}>{sub?.has_access ? "Active" : "Inactive"}</Text>
-        </View>
-      </View>
-
-      {/* Account */}
-      <Text style={s.section}>Account</Text>
-      <View style={s.card}>
-        <View style={s.cardRow}><Text style={s.cardLabel}>Email</Text><Text style={s.cardValSm}>{user?.email}</Text></View>
-        <View style={s.cardRow}><Text style={s.cardLabel}>Role</Text><Text style={s.cardValSm}>{user?.role || "user"}</Text></View>
-      </View>
-
-      <Text style={s.footer}>Powered by 🧠 SB ME Intelligent AI™</Text>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: "#060b1a" }, container: { padding: 20, gap: 20, paddingBottom: 40 },
-  center: { flex: 1, backgroundColor: "#060b1a", justifyContent: "center", alignItems: "center" },
-  greeting: { fontSize: 22, fontWeight: "900", color: "#fff", marginTop: 8 }, subtitle: { fontSize: 14, color: "#c9a84c", fontStyle: "italic" },
-  aiCard: { backgroundColor: "#0d2818", borderRadius: 16, padding: 18, borderWidth: 1, borderColor: "#c9a84c30" },
-  aiTitle: { fontSize: 12, color: "#c9a84c", textTransform: "uppercase", fontWeight: "700", marginBottom: 8, letterSpacing: 1 },
-  aiTip: { fontSize: 14, color: "#ccc", lineHeight: 22 },
-  section: { fontSize: 12, color: "#666", textTransform: "uppercase", letterSpacing: 1, fontWeight: "700" },
-  quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  quickBtn: { flexBasis: "47%", flexGrow: 1, backgroundColor: "#0a0f24", borderRadius: 14, padding: 16, borderWidth: 1, borderColor: "#333", minWidth: 150 },
-  quickLabel: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  card: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333", gap: 10 },
-  cardRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardLabel: { fontSize: 13, color: "#888" }, cardValue: { fontSize: 16, fontWeight: "700", color: "#fff" },
-  cardValSm: { fontSize: 14, color: "#ccc" },
-  footer: { textAlign: "center", color: "#c9a84c30", fontSize: 11, marginTop: 8 },
+  flex: { flex: 1, backgroundColor: "#060b1a" },
+  scroll: { flex: 1 },
+  container: { padding: 20, gap: 16, paddingBottom: 24 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  logoContainer: { flexDirection: "row", alignItems: "center", gap: 10 },
+  logoBlock: { flexDirection: "row", alignItems: "center" },
+  logoText: { fontSize: 22, fontWeight: "900", color: "#c9a84c", letterSpacing: 2, fontStyle: "italic" },
+  logoDivider: { width: 1, height: 20, backgroundColor: "#c9a84c40" },
+  logoSub: { fontSize: 16, fontWeight: "700", color: "#f0f6fc", letterSpacing: 1 },
+  headerIcons: { flexDirection: "row", gap: 16 },
+  greeting: { fontSize: 26, fontWeight: "800", color: "#f0f6fc", marginTop: 4 },
+  subtitle: { fontSize: 15, color: "#94a3b8", marginTop: -8 },
+  planRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: -8 },
+  planText: { fontSize: 13, color: "#c9a84c", fontWeight: "600" },
+  sectionTitle: { fontSize: 14, fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: 1 },
+  actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  actionCard: {
+    width: "31%", aspectRatio: 1, backgroundColor: "#0a0f24", borderRadius: 16,
+    borderWidth: 1, borderColor: "#1e293b", alignItems: "center",
+    justifyContent: "center", gap: 6,
+  },
+  actionLabel: { fontSize: 11, fontWeight: "600", color: "#94a3b8", textAlign: "center", lineHeight: 14 },
+  intelCard: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#1e293b", gap: 12 },
+  intelRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  intelLabel: { flex: 1, fontSize: 14, color: "#94a3b8" },
+  intelVal: { fontSize: 14, fontWeight: "700", color: "#c9a84c" },
 });

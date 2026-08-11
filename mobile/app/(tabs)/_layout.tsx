@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
 export default function TabLayout() {
@@ -11,15 +12,50 @@ export default function TabLayout() {
       tabBarInactiveTintColor: "#475569",
       tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
     }}>
-      <Tabs.Screen name="dashboard" options={{ title: "SB ME", tabBarLabel: "Home" }} />
-      <Tabs.Screen name="ai-chat" options={{ title: "SB ME AI", tabBarLabel: "AI" }} />
-      <Tabs.Screen name="optimizer" options={{ title: "Optimizer", tabBarLabel: "Optimizer" }} />
-      <Tabs.Screen name="lineups" options={{ title: "Lineups", tabBarLabel: "Lineups" }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile", tabBarLabel: "Profile" }} />
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: "SB ME",
+          tabBarLabel: "Home",
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="ai-chat"
+        options={{
+          title: "SB ME AI",
+          tabBarLabel: "AI",
+          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubble-ellipses" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="optimizer"
+        options={{
+          title: "Optimizer",
+          tabBarLabel: "Optimizer",
+          tabBarIcon: ({ color, size }) => <Ionicons name="flame" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="lineups"
+        options={{
+          title: "Lineups",
+          tabBarLabel: "Lineups",
+          tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          tabBarLabel: "Profile",
+          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
+        }}
+      />
       <Tabs.Screen name="subscription" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="ai-preferences" options={{ href: null }} />
-      <Tabs.Screen name="intelligence" options={{ href: null, title: "Market Intelligence" }} />
+      <Tabs.Screen name="intelligence" options={{ href: null, title: "Market Intel" }} />
     </Tabs>
   );
 }
