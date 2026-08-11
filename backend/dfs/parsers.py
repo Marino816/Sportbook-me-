@@ -90,7 +90,7 @@ def parse_draftkings_csv(csv_content: str, slate_name: str = "DK Main") -> DFSSl
     positions_seen = set()
 
     for row in reader:
-        pos_raw = (row.get("Position") or row.get("Roster Position") or "").strip()
+        pos_raw = (row.get("Roster Position") or row.get("Position") or "").strip()
         name_id = (row.get("Name + ID") or row.get("Name") or "").strip()
         salary_raw = (row.get("Salary") or "0").strip().replace(",", "").replace("$", "")
         game_info = (row.get("Game Info") or "").strip()
@@ -102,8 +102,11 @@ def parse_draftkings_csv(csv_content: str, slate_name: str = "DK Main") -> DFSSl
             salary = 0
 
         name, pid = _parse_dk_id(name_id)
-        pos = DK_POSITION_MAP.get(pos_raw, pos_raw)
-        positions_seen.add(pos)
+        # Handle multi-position: "2B/3B" → ["2B", "3B"]
+        pos_parts = [p.strip() for p in pos_raw.split("/")]
+        primary_pos = DK_POSITION_MAP.get(pos_parts[0], pos_parts[0])
+        positions_seen.add(primary_pos)
+        eligible = list({DK_POSITION_MAP.get(p, p) for p in pos_parts})
         team_abbrev, opponent, game_start = _parse_game_info(game_info)
 
         if game_start and start_time is None:
@@ -119,8 +122,8 @@ def parse_draftkings_csv(csv_content: str, slate_name: str = "DK Main") -> DFSSl
             player_name=name,
             team=team or team_abbrev,
             opponent=opponent,
-            position=pos,
-            eligible_positions=[pos],
+            position=primary_pos,
+            eligible_positions=eligible if len(eligible) > 1 else [primary_pos],
             salary=salary,
             game_info=game_info,
             data_source="native",

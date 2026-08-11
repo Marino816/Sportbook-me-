@@ -89,4 +89,6 @@ app.include_router(dfs_admin.router, prefix="/api", tags=["Admin DFS"])
 app.include_router(dfs_customer.router, prefix="/api", tags=["DFS Slates"])
 
 if __name__ == "__main__":
+    import os
+    os.environ.setdefault("NODE_ENV", "production")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

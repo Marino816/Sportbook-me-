@@ -109,8 +109,30 @@ async def reconcile_slate(
     if not slate:
         raise HTTPException(404, "Slate not found")
 
-    # Load SGO players (from cache or API — stub for now)
-    sgo_players = []  # TODO: load from SGO cache
+    # Load SGO players from provider cache
+    sgo_players = []
+    try:
+        from providers.integration import SGOIntegration
+        async with SGOIntegration() as sgo:
+            sgo_raw = await sgo._provider.get_players(league_id=slate.sport)
+            for raw in sgo_raw:
+                pid = raw.get("playerID") or raw.get("id") or ""
+                names = raw.get("names", {})
+                name = (names.get("display") or names.get("full") or names.get("name")
+                        or raw.get("name") or "")
+                team = raw.get("teamID") or raw.get("team") or ""
+                position = raw.get("position") or ""
+                if pid:
+                    sgo_players.append({
+                        "playerID": str(pid),
+                        "name": name,
+                        "team": str(team),
+                        "position": position,
+                    })
+    except Exception as e:
+        logger.warning(f"SGO player load failed for reconciliation: {e}")
+        sgo_players = []
+
     matched, review, unmatched = 0, 0, 0
 
     # Load slate players
