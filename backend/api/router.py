@@ -125,8 +125,9 @@ async def run_optimizer(
             )
             db.add(hist)
             await db.commit()
-        except Exception:
-            pass  # History save is non-critical
+        except Exception as e:
+            import logging
+            logging.warning(f"Lineup history save failed (non-critical): {e}")
 
         return wrap_data({
                     "lineups": formatted,

@@ -92,7 +92,7 @@ export default function DashboardScreen() {
       <View style={s.card}>
         <View style={s.cardRow}>
           <Text style={s.cardLabel}>Plan</Text>
-          <Text style={s.cardValue}>{sub?.plan || "Free"}</Text>
+          <Text style={s.cardValue}>{user?.plan || sub?.plan || "Free"}</Text>
         </View>
         <View style={s.cardRow}>
           <Text style={s.cardLabel}>Status</Text>
