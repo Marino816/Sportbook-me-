@@ -101,7 +101,7 @@ async def run_optimizer(
                     "position": np.position,
                     "salary": np.salary,
                     "eligible_positions": np.eligible_positions or [np.position],
-                    "projected_fp": 0.0,
+                    "projected_fp": 1.0,  # minimum positive projection for solver compatibility
                     "opponent": np.opponent or "",
                     "mapping_status": np.mapping_status,
                 })

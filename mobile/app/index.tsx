@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import { Link, router } from "expo-router";
 import * as LocalAuthentication from "expo-local-authentication";
+import { LogoText } from "../components/Logo";
 import { login, getToken } from "../lib/api";
 
 export default function LoginScreen() {
@@ -33,11 +34,7 @@ export default function LoginScreen() {
     <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={s.container}>
         {/* Logo */}
-        <View style={s.logoRow}>
-          <Text style={s.logoText}>SB ME</Text>
-          <View style={s.logoDivider} />
-          <Text style={s.logoSub}>DFS.AI</Text>
-        </View>
+        <LogoText />
         <Text style={s.tagline}>AI-Powered DFS Intelligence</Text>
         <Text style={s.motto}>Optimize. Analyze. Win.</Text>
 

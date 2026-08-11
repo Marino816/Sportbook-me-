@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LogoText } from "../../components/Logo";
 import { getToken } from "../../lib/api";
 
 const API_URL = "https://sportbook-me-production.up.railway.app/api";
@@ -60,13 +61,7 @@ export default function DashboardScreen() {
       >
         {/* Logo Header */}
         <View style={s.header}>
-          <View style={s.logoContainer}>
-            <View style={s.logoBlock}>
-              <Text style={s.logoText}>SB ME</Text>
-            </View>
-            <View style={s.logoDivider} />
-            <Text style={s.logoSub}>DFS.AI</Text>
-          </View>
+          <LogoText />
           <View style={s.headerIcons}>
             <TouchableOpacity onPress={() => router.push("/(tabs)/intelligence")}>
               <Ionicons name="pulse" size={20} color="#c9a84c" />

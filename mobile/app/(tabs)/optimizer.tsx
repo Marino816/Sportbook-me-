@@ -140,7 +140,7 @@ export default function OptimizerScreen() {
 
         {/* Data Source Label */}
         <View style={s.demoBadge}>
-            <Text style={s.demoText}>SB ME Native DFS — DraftKings Contest Data</Text>
+            <Text style={s.demoText}>DraftKings Contest Data — Powered by SB ME Intelligence</Text>
           </View>
 
         <TouchableOpacity style={s.btn} onPress={handleBuild} disabled={loading || fetchingSlates}>
