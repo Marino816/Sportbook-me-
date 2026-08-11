@@ -115,25 +115,25 @@ async def run_optimizer(
         pass
 
     # Legacy SportsDataIO fallback
-    if not is_native:
-        projections_dicts = await get_slate_projections(request.slate_id, db)
+        if not is_native:
+            projections_dicts = await get_slate_projections(request.slate_id, db)
 
-    # Determine sport from slate for roster requirements
-    from models.domain import Slate as SlateModel
-    slate_result = await db.execute(select(SlateModel).where(SlateModel.id == request.slate_id))
-    slate = slate_result.scalars().first()
-    if not slate:
-        raise HTTPException(status_code=400, detail=f"Slate {request.slate_id} not found.")
-    sport = slate.sport.upper()
-    min_players = 10 if sport == "MLB" else 8  # MLB DK Classic = 10, NBA = 8
+            # Determine sport from slate for roster requirements
+            from models.domain import Slate as SlateModel
+            slate_result = await db.execute(select(SlateModel).where(SlateModel.id == request.slate_id))
+            slate = slate_result.scalars().first()
+            if not slate:
+                raise HTTPException(status_code=400, detail=f"Slate {request.slate_id} not found.")
+            sport = slate.sport.upper()
+            min_players = 10 if sport == "MLB" else 8
 
-    if isinstance(projections_dicts, dict) and "data" in projections_dicts:
-        projections_list = projections_dicts["data"]
-    else:
-        projections_list = projections_dicts
+            if isinstance(projections_dicts, dict) and "data" in projections_dicts:
+                projections_list = projections_dicts["data"]
+            else:
+                projections_list = projections_dicts
 
-    if len(projections_list) < min_players:
-        raise HTTPException(status_code=400, detail=f"Not enough players in projection pool ({len(projections_list)}/{min_players} needed for {sport}).")
+            if len(projections_list) < min_players:
+                raise HTTPException(status_code=400, detail=f"Not enough players in projection pool ({len(projections_list)}/{min_players} needed for {sport}.)")
 
     # MLB uses the builder's platform-aware roster generator
     if sport == "MLB":
