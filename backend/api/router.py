@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -112,6 +113,7 @@ async def run_optimizer(
         history_saved = False
         if formatted:
             try:
+                history_payload = jsonable_encoder(formatted)
                 hist = LineupHistory(
                     user_id=user.id,
                     sport=sport,
@@ -123,7 +125,7 @@ async def run_optimizer(
                     total_salary=int(formatted[0].get("total_salary", 0)),
                     projected_score=float(formatted[0].get("projected_score", 0)),
                     data_mode="TRIAL_SCRAMBLED",
-                    lineups_json=formatted,
+                    lineups_json=history_payload,
                 )
                 db.add(hist)
                 await db.commit()
