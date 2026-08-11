@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 
 from models.database import get_db
 from models.schemas import LineupRequest, LineupResponse, ProjectionSchema
-from models.domain import Projection, Player, User, Subscription
+from models.domain import Projection, LineupHistory, Player, User, Subscription
 from optimizer.core import DFSOptimizer
 from api.utils import wrap_data
 from api.auth import get_current_user
@@ -106,6 +106,27 @@ async def run_optimizer(
                 "remaining_salary": lu.get("remaining_salary", 0),
                 "players": lu.get("players", []),
             })
+
+        # Save to lineup history
+        try:
+            hist = LineupHistory(
+                user_id=user.id,
+                sport=sport,
+                platform=platform,
+                slate_id=request.slate_id,
+                strategy=strategy,
+                lineup_count=len(formatted),
+                player_count=formatted[0]["players"].__len__() if formatted else 0,
+                total_salary=formatted[0]["total_salary"] if formatted else 0,
+                projected_score=formatted[0]["projected_score"] if formatted else 0,
+                data_mode="TRIAL_SCRAMBLED",
+                lineups_json=formatted,
+            )
+            db.add(hist)
+            await db.commit()
+        except Exception:
+            pass  # History save is non-critical
+
         return wrap_data({
                     "lineups": formatted,
                     "source": "sportsdataio",
@@ -137,12 +158,53 @@ async def run_optimizer(
     
     return wrap_data(formatted_responses, source="live")
 
-@router.get("/export/csv")
-async def export_lineups_csv(
-    user: User = Depends(get_current_user)
+# ── Lineup History ──
+@router.get("/lineups/history")
+async def list_lineup_history(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """CSV Export endpoint - Pro/Elite feature gate."""
-    if not user.is_pro:
-        raise HTTPException(status_code=403, detail="CSV Export is a Pro/Elite feature. Please upgrade your account.")
-        
+    """List authenticated user's lineup history."""
+    result = await db.execute(
+        select(LineupHistory)
+        .where(LineupHistory.user_id == user.id)
+        .order_by(LineupHistory.created_at.desc())
+        .limit(50)
+    )
+    rows = result.scalars().all()
+    return wrap_data([{
+        "id": r.id,
+        "sport": r.sport,
+        "platform": r.platform,
+        "slate_id": r.slate_id,
+        "strategy": r.strategy,
+        "lineup_count": r.lineup_count,
+        "player_count": r.player_count,
+        "total_salary": r.total_salary,
+        "projected_score": r.projected_score,
+        "data_mode": r.data_mode,
+        "created_at": str(r.created_at) if r.created_at else None,
+        "lineups": r.lineups_json or [],
+    } for r in rows])
+
+
+@router.delete("/lineups/history/{history_id}")
+async def delete_lineup_history(
+    history_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a user's lineup history record."""
+    result = await db.execute(
+        select(LineupHistory).where(
+            LineupHistory.id == history_id,
+            LineupHistory.user_id == user.id,
+        )
+    )
+    row = result.scalars().first()
+    if not row:
+        raise HTTPException(404, "History not found")
+    await db.delete(row)
+    await db.commit()
+    return {"ok": True}
     return wrap_data({"status": "success", "message": "CSV builder ready."})
