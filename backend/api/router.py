@@ -23,13 +23,7 @@ async def get_slate_projections(slate_id: int, db: AsyncSession = Depends(get_db
     rows = result.all()
     
     if not rows:
-        # High-fidelity demo fallback with names
-        return [
-            {"id": 1, "name": "Luka Doncic", "team": "DAL", "salary": 11000, "roster_position": "PG", "projected_fp": 55.4, "value": 5.03, "ownership": 25.5, "leverage": 39.5, "ceiling": 65, "floor": 40},
-            {"id": 2, "name": "Stephen Curry", "team": "GSW", "salary": 10500, "roster_position": "PG", "projected_fp": 52.1, "value": 4.96, "ownership": 18.0, "leverage": 42.0, "ceiling": 60, "floor": 38},
-            {"id": 3, "name": "Nikola Jokic", "team": "DEN", "salary": 11500, "roster_position": "C", "projected_fp": 60.5, "value": 5.26, "ownership": 35.0, "leverage": 35.0, "ceiling": 70, "floor": 45},
-            {"id": 4, "name": "Bennedict Mathurin", "team": "IND", "salary": 4500, "roster_position": "SF", "projected_fp": 25.0, "value": 5.55, "ownership": 5.0, "leverage": 30.0, "ceiling": 35, "floor": 10},
-        ]
+        return wrap_data([], source="live")
     
     projections = []
     for proj, player in rows:
@@ -74,7 +68,7 @@ async def run_optimizer(
         )
 
     is_native = False
-    dfs_source = "sportsdataio"
+    dfs_source = "native"
 
     # Try native DFS slate first
     try:
@@ -189,7 +183,7 @@ async def run_optimizer(
                     player_count=len(formatted[0].get("players", [])),
                     total_salary=int(formatted[0].get("total_salary", 0)),
                     projected_score=float(formatted[0].get("projected_score", 0)),
-                    data_mode="TRIAL_SCRAMBLED",
+                    data_mode="native",
                     lineups_json=history_payload,
                 )
                 db.add(hist)
@@ -201,7 +195,7 @@ async def run_optimizer(
 
         return wrap_data({
                     "lineups": formatted,
-                    "source": "sportsdataio",
+                    "source": "native",
                     "sport": sport,
                     "platform": platform,
                     "requested_lineups": requested_lineups,

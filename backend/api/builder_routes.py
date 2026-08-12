@@ -103,23 +103,9 @@ async def _load_projections(slate_id: int, db: AsyncSession) -> list[dict]:
         for proj, player in rows
     ]
 
-NBA_DEMO = [
-    {"id":1,"name":"Luka Doncic","team":"DAL","salary":11000,"roster_position":"PG","projected_fp":55.4,"ceiling":65,"edge_score":78,"risk_score":0.1,"ownership":None},
-    {"id":2,"name":"Stephen Curry","team":"GSW","salary":10500,"roster_position":"PG","projected_fp":52.1,"ceiling":60,"edge_score":72,"risk_score":0.15,"ownership":None},
-    {"id":3,"name":"Nikola Jokic","team":"DEN","salary":11500,"roster_position":"C","projected_fp":60.5,"ceiling":70,"edge_score":85,"risk_score":0.05,"ownership":None},
-    {"id":4,"name":"Jayson Tatum","team":"BOS","salary":10200,"roster_position":"SF","projected_fp":48.2,"ceiling":55,"edge_score":65,"risk_score":0.1,"ownership":None},
-    {"id":5,"name":"Giannis Antetokounmpo","team":"MIL","salary":10800,"roster_position":"PF","projected_fp":54.0,"ceiling":62,"edge_score":80,"risk_score":0.08,"ownership":None},
-    {"id":6,"name":"Bennedict Mathurin","team":"IND","salary":4500,"roster_position":"SF","projected_fp":25.0,"ceiling":35,"edge_score":45,"risk_score":0.3,"ownership":None},
-    {"id":7,"name":"Kevin Durant","team":"PHX","salary":9800,"roster_position":"PF","projected_fp":44.0,"ceiling":50,"edge_score":60,"risk_score":0.12,"ownership":None},
-    {"id":8,"name":"Joel Embiid","team":"PHI","salary":11300,"roster_position":"C","projected_fp":56.0,"ceiling":66,"edge_score":82,"risk_score":0.1,"ownership":None},
-    {"id":9,"name":"Austin Reaves","team":"LAL","salary":6500,"roster_position":"SG","projected_fp":32.0,"ceiling":42,"edge_score":55,"risk_score":0.2,"ownership":None},
-    {"id":10,"name":"Tyrese Haliburton","team":"IND","salary":9500,"roster_position":"PG","projected_fp":46.0,"ceiling":54,"edge_score":68,"risk_score":0.08,"ownership":None},
-    {"id":11,"name":"Value PG","team":"ORL","salary":3800,"roster_position":"PG","projected_fp":18.0,"ceiling":25,"edge_score":35,"risk_score":0.3,"ownership":None},
-    {"id":12,"name":"Budget SF","team":"CHA","salary":3500,"roster_position":"SF","projected_fp":15.0,"ceiling":22,"edge_score":30,"risk_score":0.4,"ownership":None},
-    {"id":13,"name":"Min C","team":"DET","salary":3000,"roster_position":"C","projected_fp":12.0,"ceiling":20,"edge_score":25,"risk_score":0.5,"ownership":None},
-    {"id":14,"name":"Min PG","team":"SAS","salary":3000,"roster_position":"PG","projected_fp":10.0,"ceiling":18,"edge_score":20,"risk_score":0.6,"ownership":None},
-    {"id":15,"name":"Min SG","team":"HOU","salary":3000,"roster_position":"SG","projected_fp":11.0,"ceiling":19,"edge_score":22,"risk_score":0.5,"ownership":None},
-]
+# No demo players — real projections only.
+# NBA_DEMO was removed. Builder uses live pool from _load_projections.
+NBA_DEMO = []
 
 # ════════════════════════════════════════════════════════════════
 #  MLB OPTIMIZER ENGINE  (DK MLB Classic)
@@ -431,8 +417,8 @@ def _gen_unique_lineups(
             "projected_score": round(proj_score, 1),
             "ceiling_score": round(ceil, 1) if ceil else None,
             "player_count": len(selected),
-            "data_source": "sportsdataio",
-            "data_mode": "TRIAL_SCRAMBLED",
+            "data_source": "native",
+            "data_mode": "native",
             "min_uniqueness": min_unique,
             "players": [
                 {

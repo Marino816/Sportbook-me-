@@ -324,7 +324,7 @@ export default function AdminDashboard() {
                </div>
                <h2 className="text-xl font-bold mb-6">Diagnostics</h2>
                <div className="space-y-4">
-                  <DiagRow label="Backend Host" val={process.env.NEXT_PUBLIC_API_URL || 'localhost:8000'} />
+                  <DiagRow label="Backend Host" val={process.env.NEXT_PUBLIC_API_URL || 'sportbook-me-production.up.railway.app'} />
                   <DiagRow label="Environment" val={process.env.NODE_ENV || 'development'} />
                   <DiagRow label="Protocol" val="REST / HTTP 1.1 SSL" />
                   <DiagRow label="LAN Connect" val="Enabled" color="primary" />

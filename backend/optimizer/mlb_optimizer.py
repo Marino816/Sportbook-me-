@@ -345,8 +345,8 @@ class MLBOptimizer:
             lineup["sport"] = "MLB"
             lineup["platform"] = self.platform
             lineup["strategy"] = self.strategy
-            lineup["data_source"] = "sportsdataio"
-            lineup["data_mode"] = "TRIAL_SCRAMBLED"
+            lineup["data_source"] = "native"
+            lineup["data_mode"] = "native"
             lineup["min_uniqueness"] = self.strat["min_unique"]
             lineup["requested_lineup_count"] = count
             lineup["generated_lineup_count"] = len(lineups) + 1

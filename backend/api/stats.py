@@ -20,14 +20,15 @@ async def get_performance_stats(db: AsyncSession = Depends(get_db)):
     wins = len([l for l in lineups if l.won_amount > l.entry_fee])
     win_rate = (wins / len(lineups) * 100) if lineups else 0
     
-    # Fallback/Demo fallback mapping for production analytics
+    # Real data only — no demo fallback
     if not lineups:
         return wrap_data({
-            "total_roi": "+24.8%",
-            "win_rate": "62.5%",
-            "ave_error": "4.12",
-            "accuracy": { "QB": 92, "WR": 78, "RB": 64 }
-        }, source="demo")
+            "total_roi": None,
+            "win_rate": None,
+            "ave_error": None,
+            "accuracy": {},
+            "message": "Data currently unavailable"
+        }, source="live")
 
     return wrap_data({
         "total_roi": f"{'+' if roi >= 0 else ''}{roi:.1f}%",

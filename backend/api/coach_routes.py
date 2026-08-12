@@ -50,14 +50,10 @@ def _tier(user: User) -> str:
     except: pass
     return "pro_arena"
 
-# ── Demo Contest Data ─────────────────────────────
-DEMO_CONTESTS = [
-    {"contest_id":"c1","user_id":1,"platform":"draftkings","sport":"nba","entry_fee":5.0,"entry_count":1000,"finishing_position":120,"payout":12.0,"final_lineup_score":285.5,"cash_line":272.0,"winning_score":340.0,"projected_score":270.0,"strategy_profile":"balanced","result_timestamp":datetime.now(timezone.utc)},
-    {"contest_id":"c2","user_id":1,"platform":"draftkings","sport":"nba","entry_fee":5.0,"entry_count":500,"finishing_position":400,"payout":0.0,"final_lineup_score":250.0,"cash_line":275.0,"winning_score":330.0,"projected_score":265.0,"strategy_profile":"aggressive","result_timestamp":datetime.now(timezone.utc)},
-    {"contest_id":"c3","user_id":1,"platform":"fanduel","sport":"nba","entry_fee":10.0,"entry_count":200,"finishing_position":45,"payout":35.0,"final_lineup_score":310.0,"cash_line":290.0,"winning_score":350.0,"projected_score":295.0,"strategy_profile":"cash","result_timestamp":datetime.now(timezone.utc)},
-    {"contest_id":"c4","user_id":1,"platform":"draftkings","sport":"nba","entry_fee":1.0,"entry_count":5000,"finishing_position":250,"payout":8.0,"final_lineup_score":295.0,"cash_line":280.0,"winning_score":345.0,"projected_score":280.0,"strategy_profile":"large_gpp","result_timestamp":datetime.now(timezone.utc)},
-    {"contest_id":"c5","user_id":1,"platform":"draftkings","sport":"nba","entry_fee":5.0,"entry_count":800,"finishing_position":600,"payout":0.0,"final_lineup_score":260.0,"cash_line":275.0,"winning_score":320.0,"projected_score":270.0,"strategy_profile":"aggressive","result_timestamp":datetime.now(timezone.utc)},
-]
+# ── Contest Data ─────────────────────────────
+# Contests loaded from authenticated user's real history.
+# No demo/mock data — returns empty if no real contests exist.
+DEMO_CONTESTS = []
 
 # ── Import Schema ────────────────────────────────
 class ContestImport(BaseModel):

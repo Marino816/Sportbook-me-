@@ -32,82 +32,9 @@ const SPORTS = [
     positions: ["All", "F", "CPT"] },
 ];
 
-// Demo projections per sport so the page is never empty
-const DEMO_PROJECTIONS: Record<string, PlayerProjection[]> = {
-  nfl: [
-    { id:1, name:"Patrick Mahomes",  team:"KC",  slate_id:1, player_id:1,  salary:8400, roster_position:"QB",   projected_fp:38.2, ceiling:52.1, floor:24.4, ownership:28.4, leverage:1.1, value:4.55 },
-    { id:2, name:"Josh Allen",       team:"BUF", slate_id:1, player_id:2,  salary:8200, roster_position:"QB",   projected_fp:35.8, ceiling:50.4, floor:22.1, ownership:22.1, leverage:2.3, value:4.37 },
-    { id:3, name:"Tyreek Hill",      team:"MIA", slate_id:1, player_id:3,  salary:7800, roster_position:"WR",   projected_fp:29.4, ceiling:44.2, floor:14.5, ownership:18.6, leverage:1.9, value:3.77 },
-    { id:4, name:"Davante Adams",    team:"NYJ", slate_id:1, player_id:4,  salary:7200, roster_position:"WR",   projected_fp:27.1, ceiling:38.8, floor:13.2, ownership:15.4, leverage:1.5, value:3.76 },
-    { id:5, name:"Christian McCaffrey",team:"SF",slate_id:1,player_id:5,  salary:9000, roster_position:"RB",   projected_fp:33.6, ceiling:48.2, floor:19.8, ownership:32.5, leverage:-0.9,value:3.73 },
-    { id:6, name:"Stefon Diggs",     team:"HOU", slate_id:1, player_id:6,  salary:6800, roster_position:"WR",   projected_fp:24.8, ceiling:36.1, floor:12.0, ownership:14.2, leverage:2.1, value:3.65 },
-    { id:7, name:"Travis Kelce",     team:"KC",  slate_id:1, player_id:7,  salary:7600, roster_position:"TE",   projected_fp:26.4, ceiling:40.0, floor:14.1, ownership:24.8, leverage:0.2, value:3.47 },
-    { id:8, name:"Dalton Kincaid",   team:"BUF", slate_id:1, player_id:8,  salary:5200, roster_position:"TE",   projected_fp:18.2, ceiling:28.4, floor:8.4,  ownership:9.1,  leverage:3.2, value:3.50 },
-    { id:9, name:"DAL DST",          team:"DAL", slate_id:1, player_id:9,  salary:3200, roster_position:"DST",  projected_fp:10.4, ceiling:22.5, floor:2.0,  ownership:6.4,  leverage:1.8, value:3.25 },
-    { id:10,name:"Breece Hall",      team:"NYJ", slate_id:1, player_id:10, salary:6600, roster_position:"RB",   projected_fp:24.2, ceiling:36.6, floor:11.8, ownership:16.3, leverage:0.9, value:3.67 },
-  ],
-  nba: [
-    { id:1, name:"Nikola Jokić",     team:"DEN", slate_id:1, player_id:1,  salary:11200, roster_position:"C",  projected_fp:62.4, ceiling:82.1, floor:42.2, ownership:28.2, leverage:0.8, value:5.57 },
-    { id:2, name:"Luka Dončić",      team:"DAL", slate_id:1, player_id:2,  salary:10800, roster_position:"PG", projected_fp:58.8, ceiling:78.4, floor:38.4, ownership:24.5, leverage:1.2, value:5.44 },
-    { id:3, name:"Shai Gilgeous-Alexander",team:"OKC",slate_id:1,player_id:3,salary:10400,roster_position:"SG",projected_fp:54.2,ceiling:72.1,floor:36.2,ownership:22.1,leverage:1.8,value:5.21},
-    { id:4, name:"Giannis Antetokounmpo",team:"MIL",slate_id:1,player_id:4,salary:10800,roster_position:"PF",projected_fp:58.1,ceiling:76.4,floor:38.8,ownership:26.4,leverage:0.4,value:5.38},
-    { id:5, name:"LeBron James",     team:"LAL", slate_id:1, player_id:5,  salary:9800,  roster_position:"SF", projected_fp:48.6, ceiling:66.2, floor:30.4, ownership:20.4, leverage:1.4, value:4.96 },
-    { id:6, name:"Anthony Davis",    team:"LAL", slate_id:1, player_id:6,  salary:10200, roster_position:"PF", projected_fp:52.4, ceiling:70.8, floor:34.2, ownership:24.1, leverage:0.9, value:5.14 },
-    { id:7, name:"Trae Young",       team:"ATL", slate_id:1, player_id:7,  salary:8400,  roster_position:"PG", projected_fp:44.8, ceiling:62.4, floor:26.2, ownership:16.4, leverage:2.8, value:5.33 },
-    { id:8, name:"Jayson Tatum",     team:"BOS", slate_id:1, player_id:8,  salary:9600,  roster_position:"SF", projected_fp:50.2, ceiling:68.4, floor:32.4, ownership:22.8, leverage:1.1, value:5.23 },
-  ],
-  mlb: [
-    { id:1, name:"Shohei Ohtani",    team:"LAD", slate_id:1, player_id:1,  salary:5800, roster_position:"OF",  projected_fp:18.4, ceiling:32.2, floor:8.4,  ownership:32.4, leverage:-1.2,value:3.17 },
-    { id:2, name:"Mookie Betts",     team:"LAD", slate_id:1, player_id:2,  salary:5200, roster_position:"OF",  projected_fp:15.8, ceiling:28.4, floor:6.2,  ownership:18.4, leverage:1.4, value:3.04 },
-    { id:3, name:"Freddie Freeman",  team:"LAD", slate_id:1, player_id:3,  salary:4800, roster_position:"1B",  projected_fp:14.2, ceiling:25.6, floor:5.8,  ownership:14.2, leverage:2.1, value:2.96 },
-    { id:4, name:"Gerrit Cole",      team:"NYY", slate_id:1, player_id:4,  salary:10200,roster_position:"P",   projected_fp:28.8, ceiling:44.2, floor:14.4, ownership:24.1, leverage:0.6, value:2.82 },
-    { id:5, name:"Paul Goldschmidt", team:"STL", slate_id:1, player_id:5,  salary:4400, roster_position:"1B",  projected_fp:12.4, ceiling:22.4, floor:4.8,  ownership:10.4, leverage:2.8, value:2.82 },
-    { id:6, name:"Bryce Harper",     team:"PHI", slate_id:1, player_id:6,  salary:5000, roster_position:"1B",  projected_fp:14.8, ceiling:26.4, floor:6.4,  ownership:16.2, leverage:1.6, value:2.96 },
-  ],
-  nhl: [
-    { id:1, name:"Connor McDavid",   team:"EDM", slate_id:1, player_id:1,  salary:9000, roster_position:"C",   projected_fp:22.4, ceiling:36.2, floor:10.4, ownership:38.2, leverage:-2.1,value:2.49 },
-    { id:2, name:"Nathan MacKinnon", team:"COL", slate_id:1, player_id:2,  salary:8600, roster_position:"C",   projected_fp:20.8, ceiling:34.4, floor:9.8,  ownership:28.4, leverage:0.4, value:2.42 },
-    { id:3, name:"Auston Matthews",  team:"TOR", slate_id:1, player_id:3,  salary:8400, roster_position:"C",   projected_fp:20.2, ceiling:33.2, floor:9.2,  ownership:26.2, leverage:1.2, value:2.40 },
-    { id:4, name:"David Pastrnak",   team:"BOS", slate_id:1, player_id:4,  salary:8000, roster_position:"W",   projected_fp:18.8, ceiling:30.4, floor:8.4,  ownership:22.4, leverage:1.8, value:2.35 },
-    { id:5, name:"Andrei Vasilevskiy",team:"TBL",slate_id:1, player_id:5,  salary:7800, roster_position:"G",   projected_fp:24.2, ceiling:40.8, floor:8.2,  ownership:18.4, leverage:2.4, value:3.10 },
-  ],
-  ufc: [
-    { id:1, name:"Jon Jones",        team:"HW",  slate_id:1, player_id:1,  salary:10800,roster_position:"CPT",  projected_fp:48.0, ceiling:80.0, floor:12.0, ownership:28.4, leverage:1.2, value:4.44 },
-    { id:2, name:"Islam Makhachev",  team:"LW",  slate_id:1, player_id:2,  salary:9800, roster_position:"F",    projected_fp:38.4, ceiling:72.0, floor:10.4, ownership:22.4, leverage:2.1, value:3.92 },
-    { id:3, name:"Sean O'Malley",    team:"BW",  slate_id:1, player_id:3,  salary:8800, roster_position:"F",    projected_fp:32.2, ceiling:68.0, floor:8.0,  ownership:18.4, leverage:3.2, value:3.66 },
-  ],
-  pga: [
-    { id:1, name:"Scottie Scheffler",team:"PGA", slate_id:1, player_id:1,  salary:11800,roster_position:"G",   projected_fp:38.4, ceiling:52.2, floor:24.4, ownership:28.4, leverage:0.2, value:3.25 },
-    { id:2, name:"Rory McIlroy",     team:"PGA", slate_id:1, player_id:2,  salary:10800,roster_position:"G",   projected_fp:34.8, ceiling:48.4, floor:20.2, ownership:22.4, leverage:1.4, value:3.22 },
-    { id:3, name:"Jon Rahm",         team:"PGA", slate_id:1, player_id:3,  salary:10400,roster_position:"G",   projected_fp:33.2, ceiling:46.8, floor:18.8, ownership:18.4, leverage:2.2, value:3.19 },
-  ],
-  soccer: [
-    { id:1, name:"Erling Haaland",   team:"MCI", slate_id:1, player_id:1,  salary:12000,roster_position:"FWD", projected_fp:28.4, ceiling:44.2, floor:12.4, ownership:34.2, leverage:-0.8,value:2.37 },
-    { id:2, name:"Kylian Mbappé",    team:"RMA", slate_id:1, player_id:2,  salary:11200,roster_position:"FWD", projected_fp:26.8, ceiling:42.4, floor:10.8, ownership:28.4, leverage:0.8, value:2.39 },
-    { id:3, name:"Kevin De Bruyne",  team:"MCI", slate_id:1, player_id:3,  salary:10400,roster_position:"MID", projected_fp:24.2, ceiling:38.4, floor:10.4, ownership:22.4, leverage:1.8, value:2.33 },
-  ],
-  mls: [
-    { id:1, name:"Lionel Messi",     team:"MIA", slate_id:1, player_id:1,  salary:11200,roster_position:"FWD", projected_fp:26.4, ceiling:42.2, floor:10.4, ownership:38.4, leverage:-2.4,value:2.36 },
-    { id:2, name:"Lorenzo Insigne",  team:"TOR", slate_id:1, player_id:2,  salary:8400, roster_position:"MID", projected_fp:18.4, ceiling:30.4, floor:8.4,  ownership:16.4, leverage:2.8, value:2.19 },
-    { id:3, name:"Carlos Vela",      team:"LAFC",slate_id:1, player_id:3,  salary:8000, roster_position:"F/M", projected_fp:17.2, ceiling:28.4, floor:7.4,  ownership:14.2, leverage:3.1, value:2.15 },
-  ],
-  ncaaf: [
-    { id:1, name:"Caleb Williams",   team:"USC", slate_id:1, player_id:1,  salary:8800, roster_position:"QB",  projected_fp:38.4, ceiling:56.2, floor:22.4, ownership:32.4, leverage:0.4, value:4.36 },
-    { id:2, name:"Marvin Harrison Jr.",team:"OSU",slate_id:1,player_id:2,  salary:7400, roster_position:"WR",  projected_fp:28.4, ceiling:44.2, floor:14.4, ownership:22.4, leverage:2.1, value:3.84 },
-  ],
-  ncaam: [
-    { id:1, name:"Zach Edey",        team:"PUR", slate_id:1, player_id:1,  salary:10800,roster_position:"C",   projected_fp:52.4, ceiling:72.2, floor:32.4, ownership:42.4, leverage:-1.8,value:4.85 },
-    { id:2, name:"Hunter Dickinson",  team:"KAN", slate_id:1, player_id:2,  salary:9800, roster_position:"C",   projected_fp:46.8, ceiling:66.4, floor:28.4, ownership:32.4, leverage:0.8, value:4.78 },
-  ],
-  ncaaw: [
-    { id:1, name:"Caitlin Clark",    team:"IOWA",slate_id:1, player_id:1,  salary:11200,roster_position:"PG",  projected_fp:56.4, ceiling:80.2, floor:34.4, ownership:52.4, leverage:-4.2,value:5.04 },
-    { id:2, name:"Angel Reese",      team:"LSU", slate_id:1, player_id:2,  salary:9800, roster_position:"PF",  projected_fp:44.8, ceiling:64.2, floor:26.4, ownership:34.4, leverage:1.8, value:4.57 },
-  ],
-  boxing: [
-    { id:1, name:"Canelo Álvarez",   team:"SMW", slate_id:1, player_id:1,  salary:10800,roster_position:"CPT", projected_fp:44.0, ceiling:76.0, floor:10.0, ownership:28.4, leverage:1.2, value:4.07 },
-    { id:2, name:"Tyson Fury",       team:"HW",  slate_id:1, player_id:2,  salary:10400,roster_position:"F",   projected_fp:38.4, ceiling:70.0, floor:8.0,  ownership:22.4, leverage:2.4, value:3.69 },
-  ],
-};
+// No demo projections — real API data only.
+// If live data is unavailable, show "Data currently unavailable".
+const DEMO_PROJECTIONS: Record<string, PlayerProjection[]> = {};
 
 function ProjectionsInner() {
   const [activeSport, setActiveSport] = useState("nba");

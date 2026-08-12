@@ -174,8 +174,8 @@ async def get_slate_intelligence(
         "sport": slate.sport or "MLB",
         "platform": slate.site or "draftkings",
         "provider": {
-            "dfs": "SportsDataIO",
-            "dfs_data_mode": DFSDataMode.TRIAL_SCRAMBLED.value,
+            "dfs": "native",
+            "dfs_data_mode": "native",
             "market": "SportsGameOdds" if sgo_available else "unavailable",
             "market_context_status": (
                 DataSourceStatus.LIVE.value if sgo_available
