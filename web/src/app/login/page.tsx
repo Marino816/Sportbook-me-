@@ -3,9 +3,10 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { getSafeReturnPath } from "@/lib/safe-return-path";
-import { Loader2, Zap, Mail, Lock, AlertCircle } from "lucide-react";
+import { Loader2, Mail, Lock, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,7 +19,6 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Redirect if already authenticated
   React.useEffect(() => {
     if (isAuthenticated) router.replace(destination);
   }, [destination, isAuthenticated, router]);
@@ -31,151 +31,55 @@ export default function LoginPage() {
       await login(email, password);
       router.push(destination);
     } catch (err: any) {
-      setError(err.message || "Invalid credentials. Please try again.");
+      setError(err.message || "Invalid credentials.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div
-      className="flex-1 flex items-center justify-center min-h-screen px-4"
-      style={{ background: "#0d1117" }}
-    >
-      <div className="w-full max-w-md">
-        {/* Brand */}
-        <div className="text-center mb-10">
-          <Link href="/" className="inline-flex items-center gap-3 mb-4">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black"
-              style={{
-                background: "linear-gradient(135deg, #00dc82, #00b368)",
-              }}
-            >
-              S
-            </div>
-            <span
-              className="text-xl font-black italic tracking-tight"
-              style={{ color: "#00dc82" }}
-            >
-              SPORTBOOK ME
-            </span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, background: "#060b1a" }}>
+      <div style={{ width: "100%", maxWidth: 420 }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <Link href="/">
+            <Image src="/logo.png" alt="SB ME DFS.AI" width={160} height={84} priority style={{ margin: "0 auto" }} />
           </Link>
-          <h1 className="text-2xl font-black text-white">Welcome Back</h1>
-          <p className="text-sm mt-2" style={{ color: "#8b949e" }}>
-            Sign in to access your DFS tools
-          </p>
+          <h1 style={{ fontSize: 24, fontWeight: 900, color: "#f0f6fc", marginTop: 12 }}>Welcome Back</h1>
+          <p style={{ color: "#94a3b8", fontSize: 14, marginTop: 4 }}>Sign in to access your DFS tools</p>
         </div>
 
-        {/* Error */}
         {error && (
-          <div
-            className="mb-6 p-4 rounded-xl flex items-center gap-3 text-sm"
-            style={{
-              background: "rgba(248,81,73,0.1)",
-              border: "1px solid rgba(248,81,73,0.3)",
-              color: "#f85149",
-            }}
-          >
-            <AlertCircle className="size-5 shrink-0" />
-            {error}
+          <div style={{ marginBottom: 24, padding: 16, borderRadius: 14, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", display: "flex", alignItems: "center", gap: 12, fontSize: 14 }}>
+            <AlertCircle size={20} />{error}
           </div>
         )}
 
-        {/* Form */}
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-2xl p-8 space-y-5"
-          style={{ background: "#161b22", border: "1px solid #30363d" }}
-        >
+        <form onSubmit={handleSubmit} style={{ background: "#0a0f24", borderRadius: 20, border: "1px solid #1e293b", padding: 32, display: "flex", flexDirection: "column", gap: 20 }}>
           <div>
-            <label
-              className="block text-xs font-bold uppercase tracking-wider mb-2"
-              style={{ color: "#8b949e" }}
-            >
-              Email
-            </label>
-            <div className="relative">
-              <Mail
-                className="absolute left-3 top-1/2 -translate-y-1/2 size-4"
-                style={{ color: "#8b949e" }}
-              />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full pl-10 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
-                style={{
-                  background: "#0d1117",
-                  border: "1px solid #30363d",
-                  color: "#f0f6fc",
-                }}
-                onFocus={(e) => (e.target.style.borderColor = "#00dc82")}
-                onBlur={(e) => (e.target.style.borderColor = "#30363d")}
-              />
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: 8 }}>Email</label>
+            <div style={{ position: "relative" }}>
+              <Mail size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
+              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com"
+                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#060b1a", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
             </div>
           </div>
-
           <div>
-            <label
-              className="block text-xs font-bold uppercase tracking-wider mb-2"
-              style={{ color: "#8b949e" }}
-            >
-              Password
-            </label>
-            <div className="relative">
-              <Lock
-                className="absolute left-3 top-1/2 -translate-y-1/2 size-4"
-                style={{ color: "#8b949e" }}
-              />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                className="w-full pl-10 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
-                style={{
-                  background: "#0d1117",
-                  border: "1px solid #30363d",
-                  color: "#f0f6fc",
-                }}
-                onFocus={(e) => (e.target.style.borderColor = "#00dc82")}
-                onBlur={(e) => (e.target.style.borderColor = "#30363d")}
-              />
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: 8 }}>Password</label>
+            <div style={{ position: "relative" }}>
+              <Lock size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
+              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password"
+                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#060b1a", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
             </div>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3.5 rounded-xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-60"
-            style={{
-              background: "#00dc82",
-              color: "#0d1117",
-              boxShadow: "0 4px 20px rgba(0,220,130,0.4)",
-            }}
-          >
-            {loading ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Zap className="size-4" />
-            )}
-            {loading ? "Signing In..." : "Sign In"}
+          <button type="submit" disabled={loading}
+            style={{ padding: "14px", borderRadius: 14, background: "#c9a84c", color: "#060b1a", border: "none", fontWeight: 800, fontSize: 15, textTransform: "uppercase", cursor: "pointer", boxShadow: "0 4px 20px rgba(201,168,76,0.3)" }}>
+            {loading ? <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> : "Sign In"}
           </button>
         </form>
 
-        <p className="text-center text-sm mt-6" style={{ color: "#8b949e" }}>
+        <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 14, marginTop: 24 }}>
           Don&apos;t have an account?{" "}
-          <Link
-            href="/register"
-            className="font-bold hover:underline"
-            style={{ color: "#00dc82" }}
-          >
-            Create One
-          </Link>
+          <Link href="/register" style={{ color: "#c9a84c", fontWeight: 700 }}>Create One</Link>
         </p>
       </div>
     </div>

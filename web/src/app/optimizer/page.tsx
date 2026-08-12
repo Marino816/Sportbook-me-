@@ -1,361 +1,226 @@
 "use client";
 
-import { Settings2, Play, Lock, Ban, ListFilter, Calculator, Loader2, Download } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
-import { runOptimizer, fetchSubscriptionStatus, type LineupResponse, type SubscriptionStatus } from "@/lib/api";
 import { useState, useEffect } from "react";
-import Link from "next/link";
-import { cn } from "@/lib/utils";
-
-const SPORTS = [
-  { id: "NFL",    label: "NFL",    emoji: "🏈", color: "#d4ac0d",
-    positions: ["QB","RB","WR","TE","K","DST","FLEX"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "NBA",    label: "NBA",    emoji: "🏀", color: "#f97316",
-    positions: ["PG","SG","SF","PF","C","G","F","UTIL"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "MLB",    label: "MLB",    emoji: "⚾", color: "#3b82f6",
-    positions: ["P","C","1B","2B","3B","SS","OF","UTIL"],
-    salaryMin: 34000, salaryMax: 35000 },
-  { id: "NHL",    label: "NHL",    emoji: "🏒", color: "#06b6d4",
-    positions: ["C","W","D","G","UTIL"],
-    salaryMin: 44000, salaryMax: 45000 },
-  { id: "SOCCER", label: "SOCCER", emoji: "⚽", color: "#22c55e",
-    positions: ["GK","DEF","MID","FWD"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "MLS",    label: "MLS",    emoji: "🥅", color: "#0ea5e9",
-    positions: ["GK","DEF","MID","FWD","F/M"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "UFC",    label: "UFC",    emoji: "🥊", color: "#ef4444",
-    positions: ["F","CPT"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "PGA",    label: "PGA",    emoji: "⛳", color: "#10b981",
-    positions: ["G","CPT"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "NCAAF",  label: "NCAAF",  emoji: "🏟️", color: "#a855f7",
-    positions: ["QB","RB","WR","TE","K","DST","FLEX"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "NCAAM",  label: "NCAAM",  emoji: "🏀", color: "#6366f1",
-    positions: ["PG","SG","SF","PF","C","G","F","UTIL"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "NCAAW",  label: "NCAAW",  emoji: "🏀", color: "#ec4899",
-    positions: ["PG","SG","SF","PF","C","G","F","UTIL"],
-    salaryMin: 49000, salaryMax: 50000 },
-  { id: "BOXING", label: "BOXING", emoji: "🥋", color: "#f59e0b",
-    positions: ["F","CPT"],
-    salaryMin: 49000, salaryMax: 50000 },
-];
+import { useMutation } from "@tanstack/react-query";
+import { Play, Loader2, Settings2 } from "lucide-react";
+import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchSubscriptionStatus, type DFSSlateSummary, type DFSSlateDetail, type LineupResponse, type SubscriptionStatus } from "@/lib/api";
 
 export default function OptimizerPage() {
-  const [sport, setSport] = useState("NBA");
-  const [site, setSite] = useState("DraftKings");
+  const [slates, setSlates] = useState<DFSSlateSummary[]>([]);
+  const [selectedSlate, setSelectedSlate] = useState<DFSSlateSummary | null>(null);
+  const [slateDetail, setSlateDetail] = useState<DFSSlateDetail | null>(null);
+  const [strategy, setStrategy] = useState("balanced");
   const [lineupCount, setLineupCount] = useState(1);
-  const [maxPerTeam, setMaxPerTeam] = useState(4);
-  const [maxExposure, setMaxExposure] = useState(100);
   const [sub, setSub] = useState<SubscriptionStatus | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      try { const res = await fetchSubscriptionStatus(); setSub(res.data); }
-      catch (e) { console.error("Failed to load sub", e); }
+      try {
+        const res = await fetchDFSSlates();
+        if (res?.data) {
+          const published = res.data.filter((s: DFSSlateSummary) => s.status === "PUBLISHED");
+          setSlates(published);
+          if (published.length > 0) setSelectedSlate(published[0]);
+        }
+        const subRes = await fetchSubscriptionStatus();
+        if (subRes?.data) setSub(subRes.data);
+      } catch { /* unavailable */ }
+      setLoading(false);
     }
     load();
   }, []);
 
-  const activeSport = SPORTS.find(s => s.id === sport) || SPORTS[1];
-  const maxAllowed = sub?.plan === "Elite Stack" ? 150 : sub?.plan === "Pro Arena" ? 20 : 1;
+  useEffect(() => {
+    if (!selectedSlate) return;
+    async function load() {
+      try {
+        const res = await fetchDFSSlate(selectedSlate!.id);
+        if (res?.data) setSlateDetail(res.data);
+      } catch { setSlateDetail(null); }
+    }
+    load();
+  }, [selectedSlate]);
+
+  const maxLineups = sub?.plan === "Elite Stack" ? 150 : sub?.plan === "Pro Arena" ? 20 : 1;
+  const platform = selectedSlate?.platform || "draftkings";
+  const sport = selectedSlate?.sport || "MLB";
 
   const optimizeMutation = useMutation({
-    mutationFn: () => runOptimizer(1, {
+    mutationFn: () => runOptimizer(selectedSlate!.id, {
       sport,
-      site,
-      num_lineups: Math.min(lineupCount, maxAllowed),
-      min_salary: activeSport.salaryMin,
-      max_salary: activeSport.salaryMax,
-      max_players_per_team: maxPerTeam,
-      max_exposure: maxExposure / 100,
+      platform,
+      strategy,
+      num_lineups: Math.min(lineupCount, maxLineups),
     }),
   });
 
-  const handleExport = () => {
-    if (!optimizeMutation.data?.data) return;
-    const lines = optimizeMutation.data.data.map((l: LineupResponse, i: number) =>
-      `Lineup ${i + 1},Salary: $${l.total_salary.toLocaleString()},Proj: ${l.projected_score.toFixed(2)}\n` +
-      l.players.map(p => `${p.roster_position},Player #${p.player_id},$${p.salary.toLocaleString()},${p.projected_fp.toFixed(1)}`).join("\n")
-    ).join("\n\n");
-    const blob = new Blob([lines], { type: "text/csv" });
-    const url = URL.createObjectURL(blob); const a = document.createElement("a");
-    a.href = url; a.download = `${sport}_lineups.csv`; a.click();
-  };
-
   return (
-    <div className="flex-1 overflow-hidden h-full flex flex-col lg:flex-row" style={{ background: "#0d1117" }}>
-
-      {/* ── SIDEBAR ── */}
-      <div className="w-full lg:w-88 flex-shrink-0 flex flex-col overflow-y-auto scroll-hide"
-        style={{ background: "#0d1117", borderRight: "1px solid #30363d", width: "340px" }}>
-
-        {/* Header */}
-        <div className="px-5 py-4 border-b" style={{ borderColor: "#30363d" }}>
-          <h1 className="text-xl font-black tracking-tight text-white">Lineup Optimizer</h1>
-          <p className="text-xs mt-0.5" style={{ color: "#8b949e" }}>
-            SCIP integer programming engine — {activeSport.emoji} {activeSport.label}
+    <div style={{ background: "#060b1a", minHeight: "100vh", display: "flex", flexDirection: "column", color: "#f0f6fc" }}>
+      {/* Header */}
+      <div style={{ padding: "20px 24px", borderBottom: "1px solid #1e293b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: "#c9a84c", fontStyle: "italic", margin: 0 }}>Lineup Optimizer</h1>
+          <p style={{ color: "#64748b", fontSize: 13, margin: "4px 0 0" }}>
+            Native DFS · CP-SAT Engine · SportsGameOdds Intelligence
           </p>
-        </div>
-
-        <div className="p-4 space-y-5 flex-1">
-
-          {/* ── 12-SPORT SELECTOR ── */}
-          <section>
-            <p className="text-[9px] font-black uppercase tracking-widest mb-3" style={{ color: "#8b949e" }}>
-              <Settings2 className="size-3 inline mr-1" />Select Sport
-            </p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {SPORTS.map((s) => {
-                const isActive = sport === s.id;
-                return (
-                  <button key={s.id}
-                    onClick={() => setSport(s.id)}
-                    className="flex flex-col items-center gap-1 py-2 px-1 rounded-xl transition-all duration-150 text-center"
-                    style={{
-                      background: isActive ? `${s.color}22` : "#161b22",
-                      border: isActive ? `1px solid ${s.color}55` : "1px solid #30363d",
-                    }}>
-                    <span className="text-lg leading-none">{s.emoji}</span>
-                    <span className="text-[8px] font-black uppercase leading-none"
-                      style={{ color: isActive ? s.color : "#8b949e" }}>{s.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* ── POSITIONS (for reference) ── */}
-          <section>
-            <p className="text-[9px] font-black uppercase tracking-widest mb-2" style={{ color: "#8b949e" }}>
-              {activeSport.label} Roster Positions
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {activeSport.positions.map(pos => (
-                <span key={pos} className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider"
-                  style={{ background: `${activeSport.color}22`, color: activeSport.color, border: `1px solid ${activeSport.color}33` }}>
-                  {pos}
-                </span>
-              ))}
-            </div>
-          </section>
-
-          {/* ── SITE TOGGLE ── */}
-          <section>
-            <p className="text-[9px] font-black uppercase tracking-widest mb-2" style={{ color: "#8b949e" }}>Target Site</p>
-            <div className="grid grid-cols-2 gap-2">
-              {["DraftKings", "FanDuel"].map(s => (
-                <button key={s} onClick={() => setSite(s)}
-                  className="py-2.5 rounded-xl text-sm font-black transition-all"
-                  style={{
-                    background: site === s ? "#00dc82" : "#161b22",
-                    color: site === s ? "#0d1117" : "#8b949e",
-                    border: site === s ? "none" : "1px solid #30363d",
-                    boxShadow: site === s ? "0 2px 12px rgba(0,220,130,0.3)" : "none",
-                  }}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {/* ── LINEUP COUNT ── */}
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[9px] font-black uppercase tracking-widest" style={{ color: "#8b949e" }}>Number of Lineups</p>
-              <span className="text-sm font-black"
-                style={{ color: lineupCount > maxAllowed ? "#f85149" : "#00dc82" }}>
-                {lineupCount}/{maxAllowed}
-              </span>
-            </div>
-            <input type="range" min="1" max="150"
-              value={lineupCount}
-              onChange={e => setLineupCount(parseInt(e.target.value))}
-              className="w-full accent-green-400" />
-            {lineupCount > maxAllowed && (
-              <div className="mt-2 p-3 rounded-xl text-xs" style={{ background: "rgba(248,81,73,0.1)", border: "1px solid rgba(248,81,73,0.3)" }}>
-                <p className="font-black text-red-400 mb-1">Plan limit: {maxAllowed} lineups</p>
-                <Link href="/billing" className="text-white font-black underline text-[10px]">
-                  Upgrade for more →
-                </Link>
-              </div>
-            )}
-          </section>
-
-          {/* ── ADVANCED RULES ── */}
-          <section>
-            <p className="text-[9px] font-black uppercase tracking-widest mb-3" style={{ color: "#8b949e" }}>
-              <ListFilter className="size-3 inline mr-1" />Advanced Rules
-            </p>
-            <div className="space-y-3">
-              {[
-                { label: "Max Players per Team", value: maxPerTeam, min: 1, max: 8, onChange: setMaxPerTeam },
-                { label: "Global Max Exposure %", value: maxExposure, min: 5, max: 100, onChange: setMaxExposure },
-              ].map(({ label, value, min, max, onChange }) => (
-                <div key={label} className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: "#c9d1d9" }}>{label}</span>
-                  <input type="number" value={value} min={min} max={max}
-                    onChange={e => onChange(parseInt(e.target.value) || min)}
-                    className="w-16 rounded-lg px-2 py-1 text-right text-sm font-bold outline-none"
-                    style={{ background: "#161b22", border: "1px solid #30363d", color: "#00dc82" }} />
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {/* ── GENERATE BUTTON ── */}
-        <div className="p-4 border-t" style={{ borderColor: "#30363d" }}>
-          <button onClick={() => optimizeMutation.mutate()}
-            disabled={optimizeMutation.isPending}
-            className="w-full py-3.5 rounded-xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition-all hover:opacity-90 disabled:opacity-60"
-            style={{
-              background: "#00dc82", color: "#0d1117",
-              boxShadow: "0 4px 20px rgba(0,220,130,0.4)",
-            }}>
-            {optimizeMutation.isPending
-              ? <><Loader2 className="size-5 animate-spin" /> Solving Constraints...</>
-              : <><Play className="size-4 fill-current" /> Generate {Math.min(lineupCount, maxAllowed)} Lineup{lineupCount > 1 ? "s" : ""}</>}
-          </button>
         </div>
       </div>
 
-      {/* ── MAIN WORKSPACE ── */}
-      <div className="flex-1 flex flex-col overflow-y-auto" style={{ background: "#0d1117" }}>
-
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-6 py-3 border-b" style={{ borderColor: "#30363d" }}>
-          <div className="flex gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold"
-              style={{ background: "#161b22", border: "1px solid #30363d" }}>
-              <Lock className="size-3 text-emerald-400" /> 0 Locked
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold"
-              style={{ background: "#161b22", border: "1px solid #30363d" }}>
-              <Ban className="size-3 text-red-400" /> 0 Excluded
-            </div>
-            {optimizeMutation.data?.data && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-black"
-                style={{ background: "rgba(0,220,130,0.15)", color: "#00dc82" }}>
-                ✓ {optimizeMutation.data.data.length} lineup{optimizeMutation.data.data.length > 1 ? "s" : ""} generated
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        {/* Sidebar */}
+        <div style={{ width: 320, flexShrink: 0, borderRight: "1px solid #1e293b", overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Slate Selector */}
+          <section>
+            <p style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: 8 }}>
+              <Settings2 size={12} style={{ display: "inline", marginRight: 4 }} />Select Slate
+            </p>
+            {loading ? (
+              <p style={{ color: "#64748b", fontSize: 13 }}>Loading slates...</p>
+            ) : slates.length === 0 ? (
+              <p style={{ color: "#64748b", fontSize: 13 }}>No published slates available.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {slates.map((s) => (
+                  <button key={s.id} onClick={() => setSelectedSlate(s)} style={{
+                    padding: "10px 14px", borderRadius: 10, textAlign: "left",
+                    background: selectedSlate?.id === s.id ? "rgba(201,168,76,0.1)" : "#0a0f24",
+                    border: selectedSlate?.id === s.id ? "1px solid rgba(201,168,76,0.3)" : "1px solid #1e293b",
+                    color: selectedSlate?.id === s.id ? "#c9a84c" : "#94a3b8",
+                    cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  }}>
+                    {s.slate_name}
+                    <span style={{ display: "block", fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                      {s.sport} · {s.platform} · {s.player_count} players
+                    </span>
+                  </button>
+                ))}
               </div>
             )}
-          </div>
-          {optimizeMutation.data?.data && (
-            <button onClick={handleExport}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all hover:opacity-80"
-              style={{ background: "#161b22", border: "1px solid #30363d", color: "#00dc82" }}>
-              <Download className="size-3.5" /> Export CSV
-            </button>
-          )}
+            {slateDetail && (
+              <p style={{ color: "#c9a84c", fontSize: 12, marginTop: 8 }}>
+                DraftKings Contest Data — Powered by SB ME Intelligence
+              </p>
+            )}
+          </section>
+
+          {/* Strategy */}
+          <section>
+            <p style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: 8 }}>Strategy</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+              {["balanced", "cash", "gpp"].map((s) => (
+                <button key={s} onClick={() => setStrategy(s)} style={{
+                  padding: "8px", borderRadius: 8, textTransform: "capitalize", fontSize: 12, fontWeight: 700,
+                  background: strategy === s ? "rgba(201,168,76,0.15)" : "#0a0f24",
+                  border: strategy === s ? "1px solid rgba(201,168,76,0.4)" : "1px solid #1e293b",
+                  color: strategy === s ? "#c9a84c" : "#94a3b8", cursor: "pointer",
+                }}>{s}</button>
+              ))}
+            </div>
+          </section>
+
+          {/* Lineup Count */}
+          <section>
+            <p style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", marginBottom: 8 }}>
+              Lineups ({Math.min(lineupCount, maxLineups)}/{maxLineups} allowed)
+            </p>
+            <input type="range" min={1} max={150} value={lineupCount}
+              onChange={(e) => setLineupCount(parseInt(e.target.value))}
+              style={{ width: "100%", accentColor: "#c9a84c" }} />
+          </section>
+
+          {/* Generate Button */}
+          <button onClick={() => optimizeMutation.mutate()} disabled={!selectedSlate || optimizeMutation.isPending}
+            style={{
+              padding: "14px", borderRadius: 14, fontWeight: 800, fontSize: 15, textTransform: "uppercase",
+              background: selectedSlate ? "#c9a84c" : "#1e293b",
+              color: selectedSlate ? "#060b1a" : "#64748b",
+              border: "none", cursor: selectedSlate ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              boxShadow: selectedSlate ? "0 4px 20px rgba(201,168,76,0.3)" : "none",
+              marginTop: "auto",
+            }}>
+            {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" />Solving...</> : <><Play size={18} />Generate {Math.min(lineupCount, maxLineups)} Lineup{lineupCount > 1 ? "s" : ""}</>}
+          </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 p-6">
+        {/* Main */}
+        <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
           {optimizeMutation.isPending ? (
-            <div className="flex flex-col items-center justify-center h-64 gap-4">
-              <div className="w-12 h-12 rounded-full border-4 border-t-transparent animate-spin"
-                style={{ borderColor: activeSport.color, borderTopColor: "transparent" }} />
-              <p className="text-sm font-bold" style={{ color: "#8b949e" }}>
-                Running SCIP optimizer for {activeSport.emoji} {activeSport.label}...
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300 }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", border: "4px solid #c9a84c", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
+              <p style={{ color: "#94a3b8", marginTop: 16, fontWeight: 600 }}>
+                Running CP-SAT optimizer for {sport} {platform}...
               </p>
             </div>
           ) : optimizeMutation.isError ? (
-            <div className="rounded-2xl p-8 flex flex-col items-center justify-center text-center"
-              style={{ background: "rgba(248,81,73,0.08)", border: "1px solid rgba(248,81,73,0.3)" }}>
-              <p className="text-lg font-black text-red-400 mb-2">Generation Failed</p>
-              <p className="text-sm max-w-md" style={{ color: "#8b949e" }}>
-                {optimizeMutation.error instanceof Error ? optimizeMutation.error.message : "An error occurred while building lineups."}
+            <div style={{ padding: 32, background: "rgba(239,68,68,0.08)", borderRadius: 16, border: "1px solid rgba(239,68,68,0.2)", textAlign: "center" }}>
+              <p style={{ fontSize: 18, fontWeight: 800, color: "#ef4444", marginBottom: 8 }}>Generation Failed</p>
+              <p style={{ color: "#94a3b8", fontSize: 14 }}>
+                {optimizeMutation.error instanceof Error ? optimizeMutation.error.message : "Unable to generate lineups."}
               </p>
-              <button onClick={() => optimizeMutation.reset()}
-                className="mt-4 px-4 py-2 rounded-xl text-xs font-black"
-                style={{ background: "rgba(248,81,73,0.15)", color: "#f85149", border: "1px solid rgba(248,81,73,0.3)" }}>
-                Try Again
-              </button>
             </div>
           ) : optimizeMutation.data?.data ? (
-            <div className="space-y-4">
-              {optimizeMutation.data.data.map((l: LineupResponse, i: number) => (
-                <LineupCard key={i} lineup={l} index={i} sportColor={activeSport.color} sportLabel={activeSport.label} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {(optimizeMutation.data.data as LineupResponse[]).map((l: LineupResponse, i: number) => (
+                <div key={i} style={{ background: "#0a0f24", borderRadius: 16, border: "1px solid #1e293b", overflow: "hidden" }}>
+                  <div style={{ height: 4, background: "#c9a84c" }} />
+                  <div style={{ padding: "16px 20px", borderBottom: "1px solid #1e293b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <span style={{ fontWeight: 800, fontSize: 15, color: "#f0f6fc" }}>Lineup {i + 1}</span>
+                      <span style={{ marginLeft: 12, fontSize: 12, color: "#64748b" }}>{sport} · {platform}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 16 }}>
+                      <span style={{ color: "#94a3b8", fontSize: 13 }}>Salary: <strong style={{ color: "#f0f6fc" }}>${l.total_salary.toLocaleString()}</strong></span>
+                      <span style={{ color: "#c9a84c", fontSize: 13, fontWeight: 700 }}>Proj: {l.projected_score}</span>
+                    </div>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <tbody>
+                      {l.players.map((p, j) => (
+                        <tr key={j} style={{ borderBottom: j < l.players.length - 1 ? "1px solid #1e293b30" : "none" }}>
+                          <td style={{ padding: "10px 20px", width: 80 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "#c9a84c", textTransform: "uppercase", background: "rgba(201,168,76,0.1)", padding: "3px 8px", borderRadius: 6 }}>
+                              {p.roster_position || "?"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 0", fontWeight: 600, color: "#f0f6fc" }}>
+                            {p.name || `Player #${p.player_id || p.id}`}
+                          </td>
+                          <td style={{ padding: "10px 0", color: "#64748b", fontSize: 13, textAlign: "right" }}>
+                            {p.team || ""}
+                          </td>
+                          <td style={{ padding: "10px 20px", fontWeight: 600, color: "#94a3b8", textAlign: "right" }}>
+                            ${(p.salary || 0).toLocaleString()}
+                          </td>
+                          <td style={{ padding: "10px 20px", fontWeight: 700, color: "#c9a84c", textAlign: "right" }}>
+                            {(p.projected_fp || 0).toFixed(1)} FP
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ))}
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full min-h-64 text-center">
-              <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-4xl mb-4"
-                style={{ background: "#161b22", border: "1px solid #30363d" }}>
-                {activeSport.emoji}
+          ) : selectedSlate ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, textAlign: "center" }}>
+              <div style={{ width: 80, height: 80, borderRadius: 20, background: "#0a0f24", border: "1px solid #1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, marginBottom: 16 }}>
+                ⚾
               </div>
-              <h3 className="text-lg font-black mb-2 text-white">Ready to Optimize</h3>
-              <p className="text-sm max-w-sm" style={{ color: "#8b949e" }}>
-                Select your sport & settings, then click <strong style={{ color: "#00dc82" }}>Generate Lineups</strong> to run the SCIP solver. Results appear here.
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: "#f0f6fc", marginBottom: 8 }}>Ready to Optimize</h3>
+              <p style={{ color: "#94a3b8", fontSize: 14, maxWidth: 400 }}>
+                Selected: <strong style={{ color: "#c9a84c" }}>{selectedSlate.slate_name}</strong> ({selectedSlate.sport} · {selectedSlate.platform} · {selectedSlate.player_count} players)
               </p>
-              <div className="mt-6 flex gap-3 flex-wrap justify-center">
-                {activeSport.positions.map(pos => (
-                  <span key={pos} className="px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider"
-                    style={{ background: `${activeSport.color}15`, color: activeSport.color, border: `1px solid ${activeSport.color}30` }}>
-                    {pos}
-                  </span>
-                ))}
-              </div>
+              <p style={{ color: "#64748b", fontSize: 13, marginTop: 8 }}>Choose a strategy and click Generate.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, textAlign: "center" }}>
+              <p style={{ color: "#64748b", fontSize: 16 }}>Select a published DFS slate to begin.</p>
             </div>
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function LineupCard({ lineup, index, sportColor, sportLabel }: { lineup: LineupResponse; index: number; sportColor: string; sportLabel: string }) {
-  const [expanded, setExpanded] = useState(true);
-  return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: "#161b22", border: "1px solid #30363d" }}>
-      <div className="h-0.5 w-full" style={{ background: sportColor }} />
-      <div className="px-5 py-3 flex items-center justify-between cursor-pointer"
-        style={{ borderBottom: expanded ? "1px solid #30363d" : "none" }}
-        onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-black text-white">Lineup {index + 1}</span>
-          <span className="text-[10px] px-2 py-0.5 rounded font-black uppercase"
-            style={{ background: `${sportColor}22`, color: sportColor }}>
-            {sportLabel}
-          </span>
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <div style={{ color: "#8b949e" }}>
-            Salary: <span className="font-black text-white">${lineup.total_salary.toLocaleString()}</span>
-          </div>
-          <div style={{ color: "#8b949e" }}>
-            Proj: <span className="font-black" style={{ color: sportColor }}>{lineup.projected_score.toFixed(2)}</span>
-          </div>
-          <span className="text-xs" style={{ color: "#8b949e" }}>{expanded ? "▲" : "▼"}</span>
-        </div>
-      </div>
-      {expanded && (
-        <table className="w-full text-sm">
-          <tbody>
-            {lineup.players.map((p, j) => (
-              <tr key={j} style={{ borderBottom: "1px solid #21262d" }}
-                onMouseEnter={e => (e.currentTarget.style.background = "#1c2128")}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                <td className="px-4 py-2.5 w-16">
-                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded"
-                    style={{ background: `${sportColor}22`, color: sportColor }}>
-                    {p.roster_position}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 font-bold text-white">Player #{p.player_id}</td>
-                <td className="px-4 py-2.5 text-right" style={{ color: "#8b949e" }}>${p.salary.toLocaleString()}</td>
-                <td className="px-4 py-2.5 text-right font-black" style={{ color: sportColor }}>{p.projected_fp.toFixed(1)} FP</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
     </div>
   );
 }

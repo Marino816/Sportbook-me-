@@ -6,7 +6,7 @@ import { fetchPerformanceStats } from "@/lib/api";
 import { TrendingUp, TrendingDown, Activity, Target, BarChart3, Calendar } from "lucide-react";
 
 const SPORTS = [
-  { id: "all",    label: "All Sports", emoji: "🎯", color: "#00dc82" },
+  { id: "all",    label: "All Sports", emoji: "🎯", color: "#c9a84c" },
   { id: "nfl",    label: "NFL",        emoji: "🏈", color: "#d4ac0d" },
   { id: "nba",    label: "NBA",        emoji: "🏀", color: "#f97316" },
   { id: "mlb",    label: "MLB",        emoji: "⚾", color: "#3b82f6" },
@@ -181,11 +181,11 @@ export default function BacktestingPage() {
                 <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: "#8b949e" }}>{label}</span>
                 <div className="p-1.5 rounded-lg"
                   style={{ background: positive ? "rgba(0,220,130,0.15)" : "rgba(248,81,73,0.15)" }}>
-                  <Icon className="size-3.5" style={{ color: positive ? "#00dc82" : "#f85149" }} />
+                  <Icon className="size-3.5" style={{ color: positive ? "#c9a84c" : "#f85149" }} />
                 </div>
               </div>
               <div className="text-2xl font-black mb-0.5"
-                style={{ color: label === "ROI" ? (roiPositive ? "#00dc82" : "#f85149") : "#f0f6fc" }}>
+                style={{ color: label === "ROI" ? (roiPositive ? "#c9a84c" : "#f85149") : "#f0f6fc" }}>
                 {value}
               </div>
               <div className="text-[10px]" style={{ color: "#8b949e" }}>{sub}</div>
@@ -201,7 +201,7 @@ export default function BacktestingPage() {
               <h2 className="font-black text-sm text-white">Slate-by-Slate ROI %</h2>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded"
-              style={{ background: "rgba(0,220,130,0.15)", color: "#00dc82" }}>
+              style={{ background: "rgba(0,220,130,0.15)", color: "#c9a84c" }}>
               Last 10 Slates
             </span>
           </div>
@@ -265,7 +265,7 @@ export default function BacktestingPage() {
                       <span className="text-xs font-black px-2 py-0.5 rounded"
                         style={{
                           background: accuracyNum >= 100 ? "rgba(0,220,130,0.15)" : "rgba(248,81,73,0.1)",
-                          color: accuracyNum >= 100 ? "#00dc82" : "#f85149",
+                          color: accuracyNum >= 100 ? "#c9a84c" : "#f85149",
                         }}>
                         {accuracy}%
                       </span>
@@ -274,7 +274,7 @@ export default function BacktestingPage() {
                       <span className="text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider"
                         style={{
                           background: s.cash ? "rgba(0,220,130,0.15)" : "rgba(248,81,73,0.1)",
-                          color: s.cash ? "#00dc82" : "#f85149",
+                          color: s.cash ? "#c9a84c" : "#f85149",
                         }}>
                         {s.cash ? "✓ Cashed" : "✗ Miss"}
                       </span>

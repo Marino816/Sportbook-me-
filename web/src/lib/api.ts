@@ -23,7 +23,7 @@ export interface ApiResponse<T> {
   status: string;
   data: T;
   metadata: {
-    data_source: 'live' | 'cached' | 'demo';
+    data_source: 'live' | 'cached';
     last_updated: string;
     api_version: string;
     environment: string;
@@ -73,7 +73,6 @@ export interface SportMatchup {
   home_team: string;
   away_team: string;
   is_live?: boolean;
-  is_boosted?: boolean;
   odds: Array<{ val: string; price: string }>;
 }
 
@@ -234,4 +233,107 @@ export async function fetchCurrentUser(): Promise<ApiResponse<any>> {
   return apiFetch<any>("/auth/me", {
     headers: { Authorization: `Bearer ${getStoredToken()}` },
   });
+}
+
+// ── Native DFS Slate API ──────────────────────────────────────
+
+export interface DFSSlateSummary {
+  id: number;
+  platform: string;
+  sport: string;
+  slate_name: string;
+  start_time: string | null;
+  player_count: number;
+  status: string;
+  data_source: string;
+}
+
+export interface DFSSlatePlayer {
+  player_id: string;
+  name: string;
+  team: string;
+  opponent: string | null;
+  position: string;
+  eligible_positions: string[];
+  salary: number;
+  game_info: string | null;
+  mapping_status: string;
+}
+
+export interface DFSSlateDetail {
+  id: number;
+  platform: string;
+  sport: string;
+  slate_name: string;
+  start_time: string | null;
+  player_count: number;
+  data_source: string;
+  players: DFSSlatePlayer[];
+}
+
+export async function fetchDFSSlates(platform?: string, sport?: string): Promise<ApiResponse<DFSSlateSummary[]>> {
+  const params = new URLSearchParams();
+  if (platform) params.set("platform", platform);
+  if (sport) params.set("sport", sport);
+  const qs = params.toString();
+  return apiFetch<DFSSlateSummary[]>(`/dfs/slates${qs ? `?${qs}` : ""}`);
+}
+
+export async function fetchDFSSlate(slateId: number): Promise<ApiResponse<DFSSlateDetail>> {
+  return apiFetch<DFSSlateDetail>(`/dfs/slates/${slateId}`);
+}
+
+// ── Lineup History API ──────────────────────────────────────
+
+export interface LineupHistoryEntry {
+  id: number;
+  sport: string;
+  platform: string;
+  slate_id: number;
+  strategy: string;
+  lineup_count: number;
+  player_count: number;
+  total_salary: number;
+  projected_score: number;
+  data_mode: string;
+  created_at: string;
+  lineups: LineupHistoryLineup[];
+}
+
+export interface LineupHistoryLineup {
+  total_salary: number;
+  projected_score: number;
+  remaining_salary: number;
+  players: LineupHistoryPlayer[];
+}
+
+export interface LineupHistoryPlayer {
+  id: number;
+  name: string;
+  team: string;
+  roster_slot: string;
+  salary: number;
+  projected_fp: number;
+}
+
+export async function fetchLineupHistory(): Promise<ApiResponse<LineupHistoryEntry[]>> {
+  return apiFetch<LineupHistoryEntry[]>("/lineups/history");
+}
+
+// ── Intelligence API ──────────────────────────────────────
+
+export interface IntelligenceSlatePlayer {
+  id: number;
+  player_name: string;
+  team: string;
+  position: string;
+  salary: number;
+  projected_fp: number | null;
+  fantasy_market_line: number | null;
+  edge_pct: number | null;
+  props_count: number;
+}
+
+export async function fetchSlateIntelligence(slateId: number): Promise<ApiResponse<any>> {
+  return apiFetch<any>(`/intelligence/slate/${slateId}`);
 }

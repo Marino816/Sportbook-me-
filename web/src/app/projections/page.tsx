@@ -159,7 +159,7 @@ function ProjectionsInner() {
         </div>
         <button onClick={handleExport}
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
-          style={{ background: "#161b22", border: "1px solid #30363d", color: "#00dc82" }}>
+          style={{ background: "#161b22", border: "1px solid #30363d", color: "#c9a84c" }}>
           <Download className="size-4" /> Export CSV
         </button>
       </div>
@@ -287,7 +287,7 @@ function PlayerRow({ player: p, sportColor, index }: { player: PlayerProjection;
           <div>
             <div className="font-bold text-white text-sm flex items-center gap-1.5">
               {p.name}
-              {isLowOwn && <span className="text-[8px] px-1.5 py-0.5 rounded font-black uppercase" style={{ background: "rgba(0,220,130,0.15)", color: "#00dc82" }}>LOW OWN</span>}
+              {isLowOwn && <span className="text-[8px] px-1.5 py-0.5 rounded font-black uppercase" style={{ background: "rgba(0,220,130,0.15)", color: "#c9a84c" }}>LOW OWN</span>}
             </div>
             <div className="text-[10px] font-black uppercase mt-0.5" style={{ color: "#8b949e" }}>{p.team}</div>
           </div>
@@ -309,7 +309,7 @@ function PlayerRow({ player: p, sportColor, index }: { player: PlayerProjection;
         <span className="px-2 py-0.5 rounded text-xs font-black"
           style={{
             background: isHighValue ? "rgba(0,220,130,0.15)" : "#21262d",
-            color: isHighValue ? "#00dc82" : "#8b949e",
+            color: isHighValue ? "#c9a84c" : "#8b949e",
           }}>
           {p.value?.toFixed(2)}x
         </span>
@@ -318,9 +318,9 @@ function PlayerRow({ player: p, sportColor, index }: { player: PlayerProjection;
       <td className="px-4 py-3">
         <div className="flex items-center gap-1">
           {p.leverage > 0
-            ? <TrendingUp className="size-3" style={{ color: "#00dc82" }} />
+            ? <TrendingUp className="size-3" style={{ color: "#c9a84c" }} />
             : <TrendingDown className="size-3" style={{ color: "#f85149" }} />}
-          <span className="text-xs font-bold" style={{ color: p.leverage > 0 ? "#00dc82" : "#f85149" }}>
+          <span className="text-xs font-bold" style={{ color: p.leverage > 0 ? "#c9a84c" : "#f85149" }}>
             {p.leverage > 0 ? "+" : ""}{p.leverage.toFixed(1)}
           </span>
         </div>

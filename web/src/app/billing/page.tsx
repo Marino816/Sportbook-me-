@@ -77,7 +77,7 @@ export default function BillingPage() {
       </div>
 
       {showSuccess && (
-        <div className="mb-8 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-3 text-emerald-400">
+        <div className="mb-8 p-4 bg-primary/10 border border-primary/20 rounded-xl flex items-center gap-3 text-primary">
           <Check className="size-5" />
           <p className="font-medium">Subscription activated successfully! Your features are now unlocked.</p>
         </div>
@@ -168,15 +168,15 @@ export default function BillingPage() {
 
         {/* Pro Arena Annual */}
         <div className={cn(
-          "p-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 relative flex flex-col h-full transition-all duration-300",
-          sub?.plan === "Pro Arena Annual" && "border-emerald-500 bg-emerald-500/10 scale-[1.02]"
+          "p-6 rounded-2xl border border-primary/30 bg-primary/5 relative flex flex-col h-full transition-all duration-300",
+          sub?.plan === "Pro Arena Annual" && "border-primary bg-primary/10 scale-[1.02]"
         )}>
-          <div className="absolute top-0 right-4 -translate-y-1/2 bg-emerald-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
+          <div className="absolute top-0 right-4 -translate-y-1/2 bg-primary text-primary-foreground px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
             Best Value
           </div>
-          <h3 className="text-lg font-semibold mb-1 text-emerald-400">Pro Arena Annual</h3>
+          <h3 className="text-lg font-semibold mb-1 text-primary">Pro Arena Annual</h3>
           <div className="text-3xl font-bold mb-1 text-white">$149<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
-          <p className="text-xs text-emerald-400/80 mb-4">Save $330 vs monthly</p>
+          <p className="text-xs text-primary/80 mb-4">Save $330 vs monthly</p>
 
           <button
             disabled={sub?.plan === "Pro Arena Annual" || !!actionLoading}
@@ -185,7 +185,7 @@ export default function BillingPage() {
               "w-full py-3 font-bold rounded-lg transition-all mb-6 shadow-lg",
               sub?.plan === "Pro Arena Annual"
                 ? "bg-secondary text-muted-foreground cursor-not-allowed"
-                : "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20"
+                : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20"
             )}
           >
             {actionLoading === "Pro Arena Annual" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Pro Arena Annual" ? "Current Plan" : "Subscribe Annually")}
