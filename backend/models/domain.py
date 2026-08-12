@@ -131,8 +131,7 @@ class LineupHistory(Base):
     player_count = Column(Integer)
     total_salary = Column(Integer)
     projected_score = Column(Float)
-    data_mode = Column(String, default="TRIAL_SCRAMBLED")
-    dfs_source = Column(String, default="sportsdataio")
+    data_mode = Column(String, default="native")
     lineups_json = Column(JSON)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
