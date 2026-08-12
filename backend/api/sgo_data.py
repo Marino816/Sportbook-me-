@@ -94,7 +94,7 @@ def _event_to_dict(event) -> dict:
             "abbreviation": away_abbr,
         },
         "start_time": start_time,
-        "status": (getattr(event, "status", "SCHEDULED") or "SCHEDULED"),
+        "status": _safe_str(getattr(event, "status", "SCHEDULED"), "SCHEDULED"),
         "home_score": getattr(event, "home_score", None),
         "away_score": getattr(event, "away_score", None),
         "period": _extract_period(event),
@@ -114,6 +114,17 @@ def _derive_abbr(name: str) -> str:
     return (parts[0][0] + parts[-1][:2]).upper()
 
 
+def _safe_str(val, default=""):
+    """Ensure a value is a string, extracting from dict if needed."""
+    if val is None:
+        return default
+    if isinstance(val, str):
+        return val
+    if isinstance(val, dict):
+        return str(val.get("name", val.get("state", val.get("display", str(val)))))
+    return str(val)
+
+
 def _extract_period(event) -> Optional[str]:
     """Extract period information (inning/quarter/period) from event context."""
     # Try raw event period fields
@@ -122,20 +133,21 @@ def _extract_period(event) -> Optional[str]:
         for key in ("period", "currentPeriod", "inning", "quarter", "half"):
             val = raw.get(key)
             if val:
-                # Handle numeric period
                 if isinstance(val, (int, float)):
                     num = int(val)
-                    return _period_label(getattr(event, "sport", ""), num)
+                    sport_val = _safe_str(getattr(event, "sport", ""))
+                    return _period_label(sport_val, num)
                 return str(val)
 
     # Try direct period attribute
     period = getattr(event, "period", None)
-    if period:
+    if period and not isinstance(period, dict):
         return str(period)
 
     # If LIVE, try to infer from scores
-    status = getattr(event, "status", "") or ""
-    if status.upper() == "LIVE":
+    status_val = getattr(event, "status", "")
+    status_str = _safe_str(status_val)
+    if status_str.upper() == "LIVE" or (isinstance(status_val, dict) and status_val.get("state") == "live"):
         return "Live"
     return None
 
