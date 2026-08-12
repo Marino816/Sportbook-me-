@@ -63,6 +63,9 @@ export default function DashboardScreen() {
         <View style={s.header}>
           <LogoText />
           <View style={s.headerIcons}>
+            <TouchableOpacity onPress={() => router.push("/(tabs)/market-tools")}>
+              <Ionicons name="trending-up" size={20} color="#c9a84c" />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push("/(tabs)/intelligence")}>
               <Ionicons name="pulse" size={20} color="#c9a84c" />
             </TouchableOpacity>
