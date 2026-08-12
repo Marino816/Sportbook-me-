@@ -42,7 +42,7 @@ app = FastAPI(
 )
 
 from api import router as api_router
-from api import admin, stats, sports, billing, auth, ai_routes, scout_routes, analyst_routes, builder_routes, coach_routes, mc_routes, assistant_routes, admin_health, operations, intelligence_routes, dfs_admin, dfs_customer, market_tools
+from api import admin, stats, sports, billing, auth, ai_routes, scout_routes, analyst_routes, builder_routes, coach_routes, mc_routes, assistant_routes, admin_health, operations, intelligence_routes, dfs_admin, dfs_customer, market_tools, sgo_data
 from services.logging import RequestLogMiddleware, configure_structured_logging
 
 # Allow CORS for Next.js / Expo frontend
@@ -88,6 +88,7 @@ app.include_router(intelligence_routes.router, prefix="/api", tags=["SB-Me Intel
 app.include_router(dfs_admin.router, prefix="/api", tags=["Admin DFS"])
 app.include_router(dfs_customer.router, prefix="/api", tags=["DFS Slates"])
 app.include_router(market_tools.router, prefix="/api", tags=["SB-Me Market Tools"])
+app.include_router(sgo_data.router, prefix="/api", tags=["SGO Data"])
 
 if __name__ == "__main__":
     import os

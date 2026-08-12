@@ -3,20 +3,67 @@
 import { useAuth } from "@/lib/auth";
 import { useState, useRef, useEffect } from "react";
 import { Send, Loader2 } from "lucide-react";
+import { getApiBaseUrl } from "@/lib/api-base-url";
+
+const API_BASE = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
+function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("sbme_dfs_token");
+}
+
+const DEFAULT_MSG =
+  "Welcome to SB ME AI. I have access to DFS slates, player projections, SportsGameOdds market intelligence, lineup optimization, and the Market Tools suite. How can I help?";
+
 export default function AIPage() {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "Welcome to SB ME AI. I have access to DFS slates, player projections, SportsGameOdds market intelligence, lineup optimization, and the Market Tools suite. How can I help?" },
+    { role: "assistant", content: "Loading SportsGameOdds context..." },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const chatEnd = useRef<HTMLDivElement>(null);
+
+  // On load, fetch MLB events and inject into initial message
+  useEffect(() => {
+    let cancelled = false;
+    async function loadContext() {
+      try {
+        const token = getToken();
+        const res = await fetch(`${API_BASE}/sgo/events?league=MLB`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error("unavailable");
+        const json = await res.json();
+        const events = json?.data?.events ?? [];
+        if (events.length > 0) {
+          const matchups = events
+            .slice(0, 8)
+            .map((e: any) => {
+              const a = e.away_team?.abbreviation || e.away_team?.name || "AWY";
+              const h = e.home_team?.abbreviation || e.home_team?.name || "HOM";
+              const status = e.status?.toUpperCase?.();
+              const liveTag = status === "LIVE" || status === "IN_PLAY" ? " (LIVE)" : "";
+              return `${a} @ ${h}${liveTag}`;
+            })
+            .join(", ");
+          const msg = `Today's MLB games: ${matchups}. I can answer questions about odds, props, and DFS lineups.`;
+          if (!cancelled) setMessages([{ role: "assistant", content: msg }]);
+        } else {
+          if (!cancelled) setMessages([{ role: "assistant", content: DEFAULT_MSG }]);
+        }
+      } catch {
+        if (!cancelled) setMessages([{ role: "assistant", content: DEFAULT_MSG }]);
+      }
+    }
+    loadContext();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -28,7 +75,7 @@ export default function AIPage() {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     try {
       const token = localStorage.getItem("sbme_dfs_token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "https://sportbook-me-production.up.railway.app/api"}/ai/chat`, {
+      const res = await fetch(`${API_BASE}/ai/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ message: text }),

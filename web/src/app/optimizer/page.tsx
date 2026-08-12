@@ -5,6 +5,17 @@ import { useMutation } from "@tanstack/react-query";
 import { Play, Loader2, Settings2 } from "lucide-react";
 import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchSubscriptionStatus, type DFSSlateSummary, type DFSSlateDetail, type LineupResponse, type SubscriptionStatus } from "@/lib/api";
 
+/** Map raw API slate names to customer-facing labels */
+function customerSlateLabel(raw: string): string {
+  const map: Record<string, string> = {
+    "DKSalaries": "MLB DraftKings Main Slate",
+    "DKSalaries_NFL": "NFL DraftKings Main Slate",
+    "DKSalaries_NBA": "NBA DraftKings Main Slate",
+    "DKSalaries_NHL": "NHL DraftKings Main Slate",
+  };
+  return map[raw] || raw;
+}
+
 export default function OptimizerPage() {
   const [slates, setSlates] = useState<DFSSlateSummary[]>([]);
   const [selectedSlate, setSelectedSlate] = useState<DFSSlateSummary | null>(null);
@@ -89,7 +100,7 @@ export default function OptimizerPage() {
                     color: selectedSlate?.id === s.id ? "#c9a84c" : "#94a3b8",
                     cursor: "pointer", fontSize: 13, fontWeight: 600,
                   }}>
-                    {s.slate_name}
+                    {customerSlateLabel(s.slate_name)}
                     <span style={{ display: "block", fontSize: 11, color: "#64748b", marginTop: 2 }}>
                       {s.sport} · {s.platform} · {s.player_count} players
                     </span>
@@ -210,7 +221,7 @@ export default function OptimizerPage() {
               </div>
               <h3 style={{ fontSize: 18, fontWeight: 800, color: "#f0f6fc", marginBottom: 8 }}>Ready to Optimize</h3>
               <p style={{ color: "#94a3b8", fontSize: 14, maxWidth: 400 }}>
-                Selected: <strong style={{ color: "#c9a84c" }}>{selectedSlate.slate_name}</strong> ({selectedSlate.sport} · {selectedSlate.platform} · {selectedSlate.player_count} players)
+                Selected: <strong style={{ color: "#c9a84c" }}>{customerSlateLabel(selectedSlate.slate_name)}</strong> ({selectedSlate.sport} · {selectedSlate.platform} · {selectedSlate.player_count} players)
               </p>
               <p style={{ color: "#64748b", fontSize: 13, marginTop: 8 }}>Choose a strategy and click Generate.</p>
             </div>

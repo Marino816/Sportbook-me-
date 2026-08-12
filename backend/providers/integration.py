@@ -22,6 +22,8 @@ from providers.normalizer import (
     NormalizedEvent,
     NormalizedGameOdds,
     NormalizedPlayerProp,
+    NormalizedPlayer,
+    NormalizedTeam,
     GameEnvironment,
 )
 
@@ -149,6 +151,40 @@ class SGOIntegration:
         try:
             return await self._cached(key, "usage",
                 lambda: self._provider.get_usage())
+        except Exception:
+            return None
+
+    async def get_sports(self) -> list:
+        """List available sports from SGO."""
+        key = "sports"
+        return await self._cached(key, "sports",
+            lambda: self._provider.get_sports())
+
+    async def get_teams(self, league: Optional[str] = None) -> list[NormalizedTeam]:
+        key = f"teams:{league or 'all'}"
+        raw = await self._cached(key, "teams",
+            lambda: self._provider.get_teams(league=league))
+        return [SportsGameOddsNormalizer.normalize_team(t) for t in raw]
+
+    async def get_players(self, league_id: str = None, team: str = None) -> list[NormalizedPlayer]:
+        key = f"players:{league_id or 'all'}:{team or 'all'}"
+        raw = await self._cached(key, "players",
+            lambda: self._provider.get_players(league_id=league_id, team=team))
+        return [SportsGameOddsNormalizer.normalize_player(p) for p in raw]
+
+    async def get_player_stats(self, player_id: str) -> dict | None:
+        key = f"player_stats:{player_id}"
+        try:
+            return await self._cached(key, "stats",
+                lambda: self._provider.get_player_stats(player_id))
+        except Exception:
+            return None
+
+    async def get_team_stats(self, team_id: str) -> dict | None:
+        key = f"team_stats:{team_id}"
+        try:
+            return await self._cached(key, "stats",
+                lambda: self._provider.get_team_stats(team_id))
         except Exception:
             return None
 
