@@ -7,6 +7,7 @@ import { Flame, MessageCircle, List, TrendingUp, Activity, Clock } from "lucide-
 import { useEffect, useState } from "react";
 import { getApiBaseUrl } from "@/lib/api-base-url";
 
+// SGO live data surface v1.0 — force Vercel redeploy after 500 fix
 const API_BASE = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
