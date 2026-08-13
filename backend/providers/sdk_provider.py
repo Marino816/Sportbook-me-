@@ -26,15 +26,12 @@ class SdkSgoProvider:
         paginator = await self._client.events.get(
             league_id=league_id.upper(),
             odds_available=True,
+            finalized=False,
             limit=50,
         )
-        events = []
-        async for item in paginator:
-            if hasattr(item, 'event_id'):
-                events.append(item)
-            elif hasattr(item, 'data') and item.data:
-                events.extend(item.data)
-        return events
+        # The official SDK paginator yields Event objects directly. Keep those
+        # typed objects intact until the canonical SBEvent conversion.
+        return [event async for event in paginator]
 
     async def get_sb_events(self, league_id: str) -> list[SBEvent]:
         raw = await self._get_events(league_id.upper())

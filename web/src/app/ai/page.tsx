@@ -40,7 +40,7 @@ export default function AIPage() {
         });
         if (!res.ok) throw new Error("unavailable");
         const json = await res.json();
-        const events = json?.data?.events ?? [];
+        const events = Array.isArray(json?.data) ? json.data : [];
         if (events.length > 0) {
           const matchups = events
             .slice(0, 8)
