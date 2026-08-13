@@ -2,8 +2,34 @@
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 from dataclasses import dataclass, field
+
+
+def _parse_odds(val) -> Optional[int]:
+    """Parse American odds from string or int: '+100' → 100, '-150' → -150."""
+    if val is None:
+        return None
+    if isinstance(val, int):
+        return val
+    if isinstance(val, float):
+        return int(val)
+    try:
+        return int(str(val))
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_float(val) -> Optional[float]:
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        return float(str(val))
+    except (ValueError, TypeError):
+        return None
 
 
 @dataclass
@@ -113,15 +139,15 @@ def parse_event_odds(event_id: str, raw_odds: dict, raw_players: dict | None = N
             line = ParsedBookLine(
                 bookmaker_id=book_id,
                 available=available,
-                odds=book_data.get("odds"),
-                spread=book_data.get("spread"),
-                over_under=book_data.get("overUnder"),
+                odds=_parse_odds(book_data.get("odds")),
+                spread=_parse_float(book_data.get("spread")),
+                over_under=_parse_float(book_data.get("overUnder")),
                 deeplink=book_data.get("deeplink", ""),
             )
             market.books.append(line)
         
         # Sort books: available first, then by odds descending
-        market.books.sort(key=lambda b: (not b.available, -(b.odds or -99999)))
+        market.books.sort(key=lambda b: (not b.available, -(b.odds if b.odds is not None else -99999)))
         
         # Classify
         category = _classify_market(odd_id, market.stat_entity_id)
