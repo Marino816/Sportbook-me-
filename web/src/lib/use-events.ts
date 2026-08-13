@@ -31,9 +31,8 @@ export function useEvents(league: string) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
         if (!cancelled) {
-          // Support both { data: [...] } and raw array responses
-          const raw = json?.data ?? json?.events ?? json;
-          setEvents(Array.isArray(raw) ? raw : []);
+          // /sgo/events has one contract: { status: "success", data: SBEvent[] }.
+          setEvents(Array.isArray(json?.data) ? json.data : []);
         }
       } catch (err: unknown) {
         if (!cancelled) {

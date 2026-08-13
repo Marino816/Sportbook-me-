@@ -51,7 +51,30 @@ def _rset(key: str, data, ttl: int = 900):
 
 
 # ── Helpers ──────────────────────────────────────────────────
+def _canonical_event_provider():
+    """The official SDK is the sole source for the canonical event feed."""
+    from providers.sdk_provider import SdkSgoProvider
+    return SdkSgoProvider()
+
+
+def _clear_obsolete_event_model_keys(league: str) -> None:
+    """Remove only legacy normalized-event keys; never flush the Redis store."""
+    from providers.redis_client import get_redis_client
+    redis = get_redis_client()
+    if redis is None:
+        return
+    try:
+        normalized_league = league.upper()
+        redis.delete(
+            f"sgo_cache:events:{normalized_league}",
+            f"sgo_cache:raw_events:{normalized_league}",
+        )
+    except Exception as exc:
+        logger.warning("Unable to remove obsolete SGO event keys: %s", exc)
+
+
 async def _get_sgo():
+    """Legacy integration retained only for non-canonical auxiliary routes."""
     from providers.integration import SGOIntegration
     return SGOIntegration()
 
@@ -220,30 +243,30 @@ async def get_events(
     league: str = Query(..., description="League ID (MLB, NFL, NBA, etc.)"),
     user: User = Depends(get_current_user),
 ):
-    """Live events with full SBEvent format — cached in Redis."""
-    cache_key = f"sgo:v2:sbevents:{league.upper()}"
+    """Canonical SDK Event → SBEvent JSON array for every SGO consumer."""
+    normalized_league = league.upper()
+    cache_key = f"sgo:v2:sbevents:{normalized_league}"
     cached = _rget(cache_key)
-    if cached and isinstance(cached, list) and cached:
-        return wrap_data({"events": cached, "league": league.upper(), "count": len(cached),
-                          "source": "cache"}, source="cached")
+    if isinstance(cached, list) and cached:
+        return wrap_data(cached, source="cached")
 
     try:
-        sgo = await _get_sgo()
-        async with sgo:
-            sb_events = await sgo.get_sb_events(league.upper())
-    except Exception as e:
-        logger.error(f"Failed to fetch sb_events: {e}")
-        return wrap_data({"events": [], "league": league.upper(), "count": 0,
-                          "status": "unavailable", "message": str(e)}, source="cached")
+        # Do not enter SGOIntegration here: it initializes the legacy raw-event
+        # provider. This route is intentionally SDK → SBEvent → JSON only.
+        sb_events = await _canonical_event_provider().get_sb_events(normalized_league)
+    except Exception as exc:
+        logger.error("Official SGO SDK event fetch failed for %s: %s", normalized_league, exc)
+        # Never replace a previously valid canonical cache entry with an error.
+        return wrap_data([], source="sportsgameodds")
 
     if not sb_events:
-        return wrap_data({"events": [], "league": league.upper(), "count": 0,
-                          "message": f"No events found for {league.upper()}"}, source="sportsgameodds")
+        # An empty upstream response is not cacheable and cannot overwrite LKG data.
+        return wrap_data([], source="sportsgameodds")
 
-    events_list = [_sb_event_to_dict(e) for e in sb_events]
+    events_list = [_sb_event_to_dict(event) for event in sb_events]
+    _clear_obsolete_event_model_keys(normalized_league)
     _rset(cache_key, events_list, ttl=900)
-    return wrap_data({"events": events_list, "league": league.upper(), "count": len(events_list)},
-                     source="sportsgameodds")
+    return wrap_data(events_list, source="sportsgameodds")
 
 
 @router.get("/events/{event_id}/odds")
