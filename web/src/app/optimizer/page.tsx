@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Play, Loader2, Search, Filter, ChevronDown, TrendingUp, DollarSign, Users, User } from "lucide-react";
+import { Play, Loader2, Search, Filter } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api-base-url";
-import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchSubscriptionStatus, type DFSSlateSummary, type DFSSlateDetail, type LineupResponse, type SubscriptionStatus } from "@/lib/api";
+import { fetchDFSSlates, runOptimizer, type LineupResponse } from "@/lib/api";
 
 const API_BASE = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
@@ -23,20 +23,13 @@ interface SgoEvent {
   period: string | null;
 }
 
-interface BookmakerLine {
-  bookmaker: string;
-  moneyline_home: number | null;
-  moneyline_away: number | null;
-  spread_home: number | null;
-  spread_away: number | null;
-  total_over: number | null;
-  total_under: number | null;
-}
-
-interface SgoOdds {
-  event_id: string;
-  books: BookmakerLine[];
-  consensus: BookmakerLine | null;
+interface SgoPlayer {
+  player_id: string;
+  name: string;
+  team: string;
+  position: string;
+  league: string;
+  sport: string;
 }
 
 interface PlayerProp {
@@ -45,18 +38,6 @@ interface PlayerProp {
     market: string;
     lines: Array<{ bookmaker: string; line: number; over_price: number | null; under_price: number | null }>;
   }>;
-}
-
-interface DFSPlayerExt {
-  player_id: string;
-  name: string;
-  team: string;
-  opponent: string | null;
-  position: string;
-  eligible_positions: string[];
-  salary: number;
-  game_info: string | null;
-  mapping_status: string;
 }
 
 async function sgoGet<T>(endpoint: string): Promise<T | null> {
@@ -90,222 +71,195 @@ export default function OptimizerPage() {
   const [bookmakerSource, setBookmakerSource] = useState<string>("Best Available");
   const [strategy, setStrategy] = useState<string>("balanced");
   const [lineupCount, setLineupCount] = useState(1);
-  const [sub, setSub] = useState<SubscriptionStatus | null>(null);
-  const [loading, setLoading] = useState(true);
 
   // SGO data
   const [events, setEvents] = useState<SgoEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<SgoEvent | null>(null);
-  const [odds, setOdds] = useState<SgoOdds | null>(null);
+  const [players, setPlayers] = useState<SgoPlayer[]>([]);
   const [props, setProps] = useState<PlayerProp[]>([]);
   const [bookmakers, setBookmakers] = useState<string[]>([]);
   const [sgoLoading, setSgoLoading] = useState(false);
+  const [playersLoading, setPlayersLoading] = useState(false);
 
-  // DFS data
-  const [slates, setSlates] = useState<DFSSlateSummary[]>([]);
-  const [selectedSlate, setSelectedSlate] = useState<DFSSlateSummary | null>(null);
-  const [slateDetail, setSlateDetail] = useState<DFSSlateDetail | null>(null);
-  const [players, setPlayers] = useState<DFSPlayerExt[]>([]);
+  // Filters
   const [playerSearch, setPlayerSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
+  const [teamFilter, setTeamFilter] = useState<string>("ALL");
 
   // Results
   const [lineups, setLineups] = useState<LineupResponse[]>([]);
+  const [resolvedSlateId, setResolvedSlateId] = useState<number | null>(null);
 
-  // ── Load initial data ─────────────────────────────────────
-  useEffect(() => {
-    async function load() {
-      try {
-        const [slateRes, subRes, bkRes] = await Promise.all([
-          fetchDFSSlates(platform, sport),
-          fetchSubscriptionStatus(),
-          sgoGet<{ bookmakers: string[] }>("/bookmakers?league=" + sport),
-        ]);
-        if (slateRes?.data) {
-          const pub = slateRes.data.filter((s: DFSSlateSummary) => s.status === "PUBLISHED");
-          setSlates(pub);
-          if (pub.length > 0) setSelectedSlate(pub[0]);
-        }
-        if (subRes?.data) setSub(subRes.data);
-        if (bkRes?.bookmakers) setBookmakers(bkRes.bookmakers);
-      } catch { /* ignore */ }
-      setLoading(false);
-    }
-    load();
-  }, [sport, platform]);
-
-  // Load SGO events when sport changes
+  // ── Load SGO events when sport changes ─────────────────────
   useEffect(() => {
     async function load() {
       setSgoLoading(true);
-      const data = await sgoGet<{ events: SgoEvent[] }>(`/events?league=${sport}`);
-      setEvents(data?.events ?? []);
+      setSelectedEvent(null);
+      setPlayers([]);
+      setProps([]);
+      const [eventsData, bkData] = await Promise.all([
+        sgoGet<{ events: SgoEvent[] }>(`/events?league=${sport}`),
+        sgoGet<{ bookmakers: string[] }>(`/bookmakers?league=${sport}`),
+      ]);
+      setEvents(eventsData?.events ?? []);
+      setBookmakers(bkData?.bookmakers ?? []);
       setSgoLoading(false);
     }
     load();
   }, [sport]);
 
-  // Load odds + props when event selected
+  // ── Resolve DFS slate silently (contest-rules/salary layer only) ──
   useEffect(() => {
-    if (!selectedEvent) return;
     async function load() {
-      const [oddsData, propsData] = await Promise.all([
-        sgoGet<SgoOdds>(`/events/${selectedEvent!.event_id}/odds`),
-        sgoGet<{ players: PlayerProp[] }>(`/events/${selectedEvent!.event_id}/props`),
-      ]);
-      setOdds(oddsData);
-      setProps(propsData?.players ?? []);
-    }
-    load();
-  }, [selectedEvent]);
-
-  // Load slate detail when slate selected
-  useEffect(() => {
-    if (!selectedSlate) return;
-    async function load() {
-      const res = await fetchDFSSlate(selectedSlate!.id);
-      if (res?.data) {
-        setSlateDetail(res.data);
-        setPlayers(res.data.players ?? []);
+      try {
+        const res = await fetchDFSSlates(platform, sport);
+        const pub = (res?.data ?? []).filter((s: any) => s.status === "PUBLISHED");
+        setResolvedSlateId(pub.length > 0 ? pub[0].id : null);
+      } catch {
+        setResolvedSlateId(null);
       }
     }
     load();
-  }, [selectedSlate]);
+  }, [sport, platform]);
 
-  const maxLineups = sub?.plan === "Elite Stack" ? 150 : sub?.plan === "Pro Arena" ? 20 : 1;
+  // ── Load players + props when event selected ───────────────
+  useEffect(() => {
+    if (!selectedEvent) return;
+    async function load() {
+      setPlayersLoading(true);
+      const [playersData, propsData] = await Promise.all([
+        sgoGet<{ players: SgoPlayer[] }>(`/players?league=${sport}`),
+        sgoGet<{ players: PlayerProp[] }>(`/events/${selectedEvent!.event_id}/props`),
+      ]);
+      setPlayers(playersData?.players ?? []);
+      const propList = propsData?.players ?? [];
+      setProps(Array.isArray(propList) ? propList : []);
+      setPlayersLoading(false);
+    }
+    load();
+  }, [selectedEvent, sport]);
 
   // ── Optimize mutation ─────────────────────────────────────
   const optimizeMutation = useMutation({
-    mutationFn: () => runOptimizer(selectedSlate!.id, {
+    mutationFn: () => runOptimizer(resolvedSlateId ?? 1, {
       sport,
       platform,
       strategy,
-      num_lineups: Math.min(lineupCount, maxLineups),
+      num_lineups: lineupCount,
+      event_id: selectedEvent?.event_id ?? null,
     }),
     onSuccess: (res) => {
-      if (res?.data) setLineups(res.data as LineupResponse[]);
+      if (res?.data) setLineups(Array.isArray(res.data) ? res.data : (res.data as any)?.lineups ?? []);
     },
   });
 
-  // ── Derived data ──────────────────────────────────────────
+  // ── Derived ────────────────────────────────────────────────
   const liveEvents = events.filter(e => liveClass(e.status));
   const upcomingEvents = events.filter(e => !liveClass(e.status));
-  const allBookmakers = bookmakerSource === "Best Available" || bookmakerSource === "Book Consensus"
-    ? bookmakers
-    : [bookmakerSource];
+  const teams = [...new Set(players.map(p => p.team).filter(Boolean))].sort();
+  const positions = [...new Set(players.map(p => p.position).filter(Boolean))].sort();
 
   const filteredPlayers = players.filter(p => {
+    if (teamFilter !== "ALL" && p.team !== teamFilter) return false;
+    if (posFilter !== "ALL" && p.position !== posFilter) return false;
     if (playerSearch) {
       const q = playerSearch.toLowerCase();
-      if (!p.name.toLowerCase().includes(q) && !p.team?.toLowerCase().includes(q)) return false;
-    }
-    if (posFilter !== "ALL" && p.position !== posFilter) return false;
-    if (selectedEvent) {
-      const evt = selectedEvent;
-      const teams = [evt.home_team.abbreviation, evt.away_team.abbreviation];
-      if (!teams.includes(p.team) && p.opponent && !teams.includes(p.opponent)) return false;
+      if (!p.name.toLowerCase().includes(q) && !p.team.toLowerCase().includes(q)) return false;
     }
     return true;
   });
 
-  const positions = [...new Set(players.map(p => p.position))].sort();
-  const customerSlateLabel = (raw: string) => {
-    const map: Record<string, string> = {
-      "DKSalaries": "MLB DraftKings Main Slate",
-    };
-    return map[raw] || raw.replace(/^DK/i, "DraftKings ").replace(/^FD/i, "FanDuel ");
-  };
-
   // ── Render ────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div style={{ background: "#060b1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8" }}>
-        <Loader2 size={32} className="animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div style={{ background: "#060b1a", minHeight: "100vh", color: "#f0f6fc" }}>
       {/* Header */}
-      <div style={{ padding: "20px 24px", borderBottom: "1px solid #1e293b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: "#c9a84c", fontStyle: "italic", margin: 0 }}>Lineup Optimizer</h1>
-          <p style={{ color: "#64748b", fontSize: 13, margin: "4px 0 0" }}>
-            SportsGameOdds Intelligence · Native DFS · CP-SAT Engine
-          </p>
-        </div>
+      <div style={{ padding: "20px 24px", borderBottom: "1px solid #1e293b" }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: "#c9a84c", fontStyle: "italic", margin: 0 }}>Lineup Optimizer</h1>
+        <p style={{ color: "#64748b", fontSize: 13, margin: "4px 0 0" }}>
+          SportsGameOdds Intelligence · Native DFS · CP-SAT Engine
+        </p>
       </div>
 
       {/* Selector Bar */}
       <div style={{ padding: "16px 24px", borderBottom: "1px solid #1e293b", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        {/* Sport */}
         <Selector label="Sport" value={sport} options={[...SPORTS]} onChange={setSport} />
-        {/* Platform */}
         <Selector label="Platform" value={platform} options={[...PLATFORMS]} onChange={setPlatform} format={(v: string) => v === "draftkings" ? "DraftKings" : "FanDuel"} />
-        {/* Bookmaker */}
         <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers.filter(b => b)]} onChange={setBookmakerSource} />
-        {/* Strategy */}
         <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
       </div>
 
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        {/* Sidebar */}
+        {/* Sidebar — Games (SGO primary) */}
         <div style={{ width: 340, flexShrink: 0, borderRight: "1px solid #1e293b", overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-          {/* Slate */}
-          <Section title="DFS Slate">
-            {slates.length === 0 ? (
-              <Muted>No published slates for {sport} {platform}</Muted>
+          <Section title="Games">
+            {sgoLoading ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#94a3b8" }}>
+                <Loader2 size={16} className="animate-spin" /> Loading from SportsGameOdds...
+              </div>
+            ) : events.length === 0 ? (
+              <Muted>No events for {sport}</Muted>
             ) : (
-              slates.map(s => (
-                <Chip key={s.id} active={selectedSlate?.id === s.id} onClick={() => setSelectedSlate(s)}>
-                  {customerSlateLabel(s.slate_name)} · {s.player_count} players
-                </Chip>
-              ))
+              <>
+                {liveEvents.length > 0 && (
+                  <>
+                    <Label>● LIVE</Label>
+                    {liveEvents.map(e => <GameChip key={e.event_id} event={e} active={selectedEvent?.event_id === e.event_id} onClick={() => setSelectedEvent(e)} />)}
+                  </>
+                )}
+                <Label>Upcoming</Label>
+                {upcomingEvents.slice(0, 16).map(e => <GameChip key={e.event_id} event={e} active={selectedEvent?.event_id === e.event_id} onClick={() => setSelectedEvent(e)} />)}
+              </>
             )}
           </Section>
 
-          {/* Games */}
-          <Section title="Games">
-            {sgoLoading ? <Loader2 size={16} className="animate-spin" style={{ color: "#94a3b8" }} /> :
-              events.length === 0 ? <Muted>No events for {sport}</Muted> : (
-                <>
-                  {liveEvents.length > 0 && (
-                    <>
-                      <Label>● LIVE</Label>
-                      {liveEvents.map(e => <GameChip key={e.event_id} event={e} active={selectedEvent?.event_id === e.event_id} onClick={() => setSelectedEvent(e)} />)}
-                    </>
-                  )}
-                  <Label>Upcoming</Label>
-                  {upcomingEvents.slice(0, 16).map(e => <GameChip key={e.event_id} event={e} active={selectedEvent?.event_id === e.event_id} onClick={() => setSelectedEvent(e)} />)}
-                </>
-              )}
-          </Section>
-
-          {/* Lineups */}
           <Section title="Lineups">
             <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
-              <input type="range" min={1} max={150} value={lineupCount} onChange={e => setLineupCount(+e.target.value)}
+              <input type="range" min={1} max={50} value={lineupCount} onChange={e => setLineupCount(+e.target.value)}
                 style={{ flex: 1, accentColor: "#c9a84c" }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#c9a84c" }}>{Math.min(lineupCount, maxLineups)}/{maxLineups}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#c9a84c" }}>{lineupCount}</span>
             </div>
-            <button onClick={() => optimizeMutation.mutate()} disabled={!selectedSlate || optimizeMutation.isPending}
+            <button onClick={() => optimizeMutation.mutate()} disabled={!selectedEvent || optimizeMutation.isPending}
               style={{
                 width: "100%", padding: "14px", borderRadius: 14, fontWeight: 800, fontSize: 15, textTransform: "uppercase",
-                background: selectedSlate ? "#c9a84c" : "#1e293b", color: selectedSlate ? "#060b1a" : "#64748b",
-                border: "none", cursor: selectedSlate ? "pointer" : "not-allowed",
+                background: selectedEvent ? "#c9a84c" : "#1e293b", color: selectedEvent ? "#060b1a" : "#64748b",
+                border: "none", cursor: selectedEvent ? "pointer" : "not-allowed",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                boxShadow: selectedSlate ? "0 4px 20px rgba(201,168,76,0.3)" : "none",
+                boxShadow: selectedEvent ? "0 4px 20px rgba(201,168,76,0.3)" : "none",
               }}>
               {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> Solving...</> : <><Play size={18} /> Generate</>}
             </button>
+            {!resolvedSlateId && <Muted>No contest salary data for {platform} {sport} — projections only.</Muted>}
           </Section>
         </div>
 
         {/* Main */}
         <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
-          {/* Player Pool */}
-          {players.length > 0 && (
+          {/* Selected game header */}
+          {selectedEvent ? (
+            <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: "16px 20px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 800, color: "#f0f6fc" }}>
+                  {selectedEvent.away_team.name} @ {selectedEvent.home_team.name}
+                </div>
+                <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                  {selectedEvent.away_team.abbreviation} @ {selectedEvent.home_team.abbreviation}
+                  {selectedEvent.start_time && ` · ${new Date(selectedEvent.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}
+                </div>
+              </div>
+              {liveClass(selectedEvent.status) && (
+                <span style={{ padding: "4px 12px", borderRadius: 8, background: "rgba(239,68,68,0.15)", color: "#ef4444", fontWeight: 800, fontSize: 12 }}>
+                  ● LIVE {selectedEvent.home_score}–{selectedEvent.away_score}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: "24px", marginBottom: 20, textAlign: "center", color: "#64748b" }}>
+              Select a game from the left to view teams and available players.
+            </div>
+          )}
+
+          {/* Player Pool (SGO) */}
+          {selectedEvent && (
             <>
               <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
                 <div style={{ position: "relative", flex: 1, maxWidth: 300 }}>
@@ -314,44 +268,56 @@ export default function OptimizerPage() {
                     style={{ width: "100%", padding: "8px 14px 8px 32px", borderRadius: 10, fontSize: 13, background: "#0a0f24", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
                 </div>
                 <Filter size={14} color="#64748b" />
+                <select value={teamFilter} onChange={e => setTeamFilter(e.target.value)}
+                  style={{ padding: "8px 12px", borderRadius: 10, fontSize: 12, background: "#0a0f24", border: "1px solid #1e293b", color: "#f0f6fc" }}>
+                  <option value="ALL">All Teams</option>
+                  {teams.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
                 <select value={posFilter} onChange={e => setPosFilter(e.target.value)}
                   style={{ padding: "8px 12px", borderRadius: 10, fontSize: 12, background: "#0a0f24", border: "1px solid #1e293b", color: "#f0f6fc" }}>
                   <option value="ALL">All Positions</option>
                   {positions.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
                 <span style={{ fontSize: 12, color: "#64748b", marginLeft: "auto" }}>
-                  {filteredPlayers.length} / {players.length} players
+                  {filteredPlayers.length} players · SportsGameOdds
                 </span>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {filteredPlayers.slice(0, 100).map(p => {
-                  const playerProps = props.find(pp => pp.player_id === p.player_id);
-                  const bestProp = playerProps?.markets?.[0];
-                  const bestLine = bestProp?.lines?.[0];
-                  return (
-                    <div key={p.player_id} style={{
-                      display: "grid", gridTemplateColumns: "60px 1fr 80px 80px 80px 80px", gap: 8,
-                      padding: "10px 16px", background: "#0a0f24", borderRadius: 10, border: "1px solid #1e293b",
-                      alignItems: "center", fontSize: 13,
-                    }}>
-                      <span style={{ color: "#c9a84c", fontWeight: 700, fontSize: 11, textTransform: "uppercase" }}>{p.position}</span>
-                      <div>
-                        <span style={{ color: "#f0f6fc", fontWeight: 600 }}>{p.name}</span>
-                        <span style={{ color: "#64748b", fontSize: 11, marginLeft: 8 }}>{p.team} {p.opponent ? `@ ${p.opponent}` : ""}</span>
+              {playersLoading ? (
+                <Center><Loader2 size={24} className="animate-spin" style={{ color: "#c9a84c" }} /></Center>
+              ) : filteredPlayers.length === 0 ? (
+                <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: 28, textAlign: "center", color: "#64748b" }}>
+                  No player data available for this game.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {filteredPlayers.slice(0, 150).map(p => {
+                    const playerProps = props.find(pp => pp.player_id === p.player_id || pp.player_id === p.name);
+                    const bestProp = playerProps?.markets?.[0];
+                    const bestLine = bestProp?.lines?.[0];
+                    return (
+                      <div key={p.player_id} style={{
+                        display: "grid", gridTemplateColumns: "70px 1fr 90px 120px 90px", gap: 8,
+                        padding: "10px 16px", background: "#0a0f24", borderRadius: 10, border: "1px solid #1e293b",
+                        alignItems: "center", fontSize: 13,
+                      }}>
+                        <span style={{ color: "#c9a84c", fontWeight: 700, fontSize: 11, textTransform: "uppercase" }}>{p.position || "—"}</span>
+                        <div>
+                          <span style={{ color: "#f0f6fc", fontWeight: 600 }}>{p.name}</span>
+                          <span style={{ color: "#64748b", fontSize: 11, marginLeft: 8 }}>{p.team}</span>
+                        </div>
+                        <span style={{ color: "#94a3b8", textAlign: "right", fontSize: 11 }}>
+                          {playerProps ? `${playerProps.markets.length} markets` : "—"}
+                        </span>
+                        <span style={{ color: "#c9a84c", textAlign: "right", fontWeight: 600 }}>
+                          {bestProp ? bestProp.market : "—"}{bestLine ? ` ${bestLine.line} (${fmtOdds(bestLine.over_price)})` : ""}
+                        </span>
+                        <span style={{ color: "#64748b", textAlign: "right", fontSize: 11 }}>{bestLine?.bookmaker || ""}</span>
                       </div>
-                      <span style={{ color: "#94a3b8", textAlign: "right" }}>${p.salary?.toLocaleString()}</span>
-                      <span style={{ color: "#c9a84c", textAlign: "right", fontWeight: 600 }}>
-                        {bestLine ? `${bestLine.line} (${fmtOdds(bestLine.over_price)})` : "—"}
-                      </span>
-                      <span style={{ color: "#64748b", textAlign: "right", fontSize: 11 }}>
-                        {playerProps ? `${playerProps.markets.length} props` : "—"}
-                      </span>
-                      <span style={{ color: "#94a3b8", textAlign: "right", fontSize: 11 }}>{p.mapping_status}</span>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </>
           )}
 
@@ -368,7 +334,7 @@ export default function OptimizerPage() {
               </p>
             </Center>
           ) : lineups.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 24 }}>
               {lineups.map((l, i) => (
                 <div key={i} style={{ background: "#0a0f24", borderRadius: 16, border: "1px solid #1e293b", overflow: "hidden" }}>
                   <div style={{ height: 4, background: "#c9a84c" }} />
@@ -395,22 +361,7 @@ export default function OptimizerPage() {
                 </div>
               ))}
             </div>
-          ) : selectedSlate ? (
-            <Center>
-              <div style={{ width: 70, height: 70, borderRadius: 18, background: "#0a0f24", border: "1px solid #1e293b", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, marginBottom: 16 }}>
-                ⚾
-              </div>
-              <p style={{ fontSize: 16, fontWeight: 700, color: "#f0f6fc" }}>
-                {customerSlateLabel(selectedSlate.slate_name)}
-              </p>
-              <p style={{ color: "#94a3b8", fontSize: 14 }}>{sport} · {platform === "draftkings" ? "DraftKings" : "FanDuel"} · {selectedSlate.player_count} players</p>
-              <p style={{ color: "#64748b", fontSize: 13, marginTop: 8 }}>Select games, choose strategy, and click Generate.</p>
-            </Center>
-          ) : (
-            <Center>
-              <p style={{ color: "#64748b", fontSize: 16 }}>Select a published DFS slate and a sport to begin.</p>
-            </Center>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -450,19 +401,6 @@ function Muted({ children }: { children: React.ReactNode }) {
   return <p style={{ color: "#64748b", fontSize: 13 }}>{children}</p>;
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button onClick={onClick} style={{
-      width: "100%", padding: "8px 12px", borderRadius: 10, textAlign: "left", fontSize: 12, fontWeight: 600,
-      background: active ? "rgba(201,168,76,0.1)" : "#0a0f24",
-      border: active ? "1px solid rgba(201,168,76,0.3)" : "1px solid #1e293b",
-      color: active ? "#c9a84c" : "#94a3b8", cursor: "pointer", marginBottom: 4,
-    }}>
-      {children}
-    </button>
-  );
-}
-
 function GameChip({ event, active, onClick }: { event: SgoEvent; active: boolean; onClick: () => void }) {
   const isLive = liveClass(event.status);
   return (
@@ -480,7 +418,7 @@ function GameChip({ event, active, onClick }: { event: SgoEvent; active: boolean
 
 function Center({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, textAlign: "center" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 200, textAlign: "center" }}>
       {children}
     </div>
   );

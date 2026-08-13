@@ -177,7 +177,6 @@ async def run_optimizer(
                     sport=sport,
                     platform=platform,
                     slate_id=request.slate_id,
-                    dfs_source=dfs_source,
                     strategy=strategy,
                     lineup_count=len(formatted),
                     player_count=len(formatted[0].get("players", [])),
