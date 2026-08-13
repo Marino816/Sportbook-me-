@@ -232,6 +232,14 @@ class SGOIntegration:
         )
         return data if data is not None else []
 
+    async def get_raw_events(self, league_id: str) -> list:
+        """Return raw SGO event dicts preserving full odds/players/teams data."""
+        key = f"raw_events:{league_id}"
+        data, source = await self._fetch_or_cache(key, "events",
+            lambda: self._provider.get_events(league_id=league_id)
+        )
+        return data if data is not None else []
+
     async def get_odds(self, event_id: str) -> Optional[NormalizedGameOdds]:
         key = f"odds:{event_id}"
         data, source = await self._fetch_or_cache(key, "odds",
