@@ -1,6 +1,7 @@
 """SportsGameOdds Integration Service — Redis-backed cache, single-flight, LKG fallback."""
 
 import asyncio
+import dataclasses
 import json
 import logging
 import time
@@ -204,9 +205,14 @@ class SGOIntegration:
                 data=data, fetched_at=now, ttl=ttl, source="live"
             )
 
-            # Write to Redis (best-effort)
+            # Write to Redis (best-effort) with proper dataclass→dict serialization
             try:
-                serialized = json.dumps(data, default=str)
+                if isinstance(data, list) and data and dataclasses.is_dataclass(data[0]):
+                    serialized = json.dumps([dataclasses.asdict(d) for d in data], default=str)
+                elif dataclasses.is_dataclass(data):
+                    serialized = json.dumps(dataclasses.asdict(data), default=str)
+                else:
+                    serialized = json.dumps(data, default=str)
                 _redis_set(key, serialized.encode(), ttl)
             except Exception:
                 pass

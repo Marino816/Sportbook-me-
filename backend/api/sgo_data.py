@@ -49,18 +49,26 @@ async def _get_sgo():
     return SGOIntegration()
 
 
+def _val(obj, attr, default=None):
+    """Safely access attribute or dict key."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(attr, default)
+    return getattr(obj, attr, default)
+
+
 def _event_to_dict(event) -> dict:
-    """Convert a NormalizedEvent (or raw event dict with teams) to API response format."""
-    home_team_name = getattr(event, "home_team", "") or ""
-    away_team_name = getattr(event, "away_team", "") or ""
+    """Convert a NormalizedEvent (or dict from cache) to API response format."""
+    home_team_name = _val(event, "home_team", "") or ""
+    away_team_name = _val(event, "away_team", "") or ""
 
     # Build team objects with name + abbreviation
     home_abbr = ""
     away_abbr = ""
 
-    # Try to extract abbreviation from team name (e.g., "Los Angeles Dodgers" → "LAD")
-    # or from raw event's nested teams data
-    raw_teams = getattr(event, "_raw_teams", None)
+    # Try to extract abbreviation from raw event's nested teams data
+    raw_teams = _val(event, "_raw_teams", None)
     if raw_teams:
         home_obj = raw_teams.get("home") or raw_teams.get("homeTeam") or {}
         away_obj = raw_teams.get("away") or raw_teams.get("awayTeam") or {}
@@ -75,11 +83,13 @@ def _event_to_dict(event) -> dict:
     if not away_abbr and away_team_name:
         away_abbr = _derive_abbr(away_team_name)
 
-    start_time = getattr(event, "start_time", None)
+    start_time = _val(event, "start_time", None)
     if start_time and hasattr(start_time, "isoformat"):
         start_time = start_time.isoformat()
+    elif start_time and isinstance(start_time, dict):
+        start_time = start_time.get("isoformat", start_time.get("$date", str(start_time)))
     elif start_time:
-        start_time = str(start_time)
+        start_time = str(start_time) if not isinstance(start_time, str) else start_time
 
     return {
         "event_id": getattr(event, "id", ""),
