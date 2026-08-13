@@ -4,7 +4,6 @@ import "./globals.css";
 import Providers from "@/lib/providers";
 import { AuthProvider } from "@/lib/auth";
 import { TopNav } from "@/components/TopNav";
-import { DataSourceBadge } from "@/components/DataSourceBadge";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
@@ -38,11 +37,10 @@ export default function RootLayout({
       >
         <Providers>
           <AuthProvider>
-                      <TopNav />
-                      <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-                        <ProtectedRoute>{children}</ProtectedRoute>
-                      </main>
-                      <DataSourceBadge />
+            <TopNav />
+            <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
+              <ProtectedRoute>{children}</ProtectedRoute>
+            </main>
           </AuthProvider>
         </Providers>
         <Analytics />

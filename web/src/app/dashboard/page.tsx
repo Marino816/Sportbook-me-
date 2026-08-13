@@ -4,54 +4,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { Flame, MessageCircle, List, TrendingUp, Activity, Clock } from "lucide-react";
-import { useEffect, useState } from "react";
-import { getApiBaseUrl } from "@/lib/api-base-url";
+import { useState, useMemo } from "react";
+import { useEvents } from "@/lib/use-events";
+import type { SBEvent, SBMarket } from "@/lib/sbevent";
 
-// SGO live data surface v1.0 — force Vercel redeploy after 500 fix
-const API_BASE = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
-
-const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
+// ── leagues as surfaced by SGO ──
+const LEAGUES = ["MLB", "NFL", "NBA", "NHL"] as const;
 type League = (typeof LEAGUES)[number];
-
-interface SgoEvent {
-  event_id: string;
-  sport: string;
-  league: string;
-  home_team: { name: string; abbreviation: string };
-  away_team: { name: string; abbreviation: string };
-  start_time: string | null;
-  status: string;
-  home_score: number | null;
-  away_score: number | null;
-  period: string | null;
-}
-
-interface SgoBook {
-  bookmaker: string;
-  moneyline_home: number | null;
-  moneyline_away: number | null;
-  spread_home: number | null;
-  spread_away: number | null;
-  total_over: number | null;
-  total_under: number | null;
-}
-
-interface SgoPropLine {
-  bookmaker: string;
-  line: number | null;
-  over_price: number | null;
-  under_price: number | null;
-}
-
-interface SgoPropMarket {
-  market: string;
-  lines: SgoPropLine[];
-}
-
-interface SgoPlayerProps {
-  player_id: string;
-  markets: SgoPropMarket[];
-}
 
 const QUICK = [
   { icon: Flame, label: "Build Lineup", href: "/optimizer" },
@@ -60,24 +19,7 @@ const QUICK = [
   { icon: MessageCircle, label: "Ask SB ME AI", href: "/ai" },
 ];
 
-function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("sbme_dfs_token");
-}
-
-async function sgoFetch<T>(endpoint: string): Promise<T | null> {
-  try {
-    const token = getToken();
-    const res = await fetch(`${API_BASE}/sgo${endpoint}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return (json?.data ?? null) as T | null;
-  } catch {
-    return null;
-  }
-}
+// ── helpers ──
 
 function fmtOdds(v: number | null | undefined): string {
   if (v == null) return "—";
@@ -98,90 +40,117 @@ function formatTime(iso: string | null): string {
   if (!iso) return "TBD";
   try {
     const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+    return d.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    });
   } catch {
     return iso;
   }
 }
 
+// ── main page ──
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const name = user?.email?.split("@")[0] || "Player";
   const [activeLeague, setActiveLeague] = useState<League>("MLB");
-  const [events, setEvents] = useState<SgoEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { events, loading, error } = useEvents(activeLeague);
 
-  // Load events for active league
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      const data = await sgoFetch<{ events: SgoEvent[]; league: string; count: number }>(
-        `/events?league=${activeLeague}`
+  const liveEvents = useMemo(
+    () => events.filter((e) => isLive(e.status)),
+    [events],
+  );
+  const upcomingEvents = useMemo(
+    () => events.filter((e) => !isLive(e.status) && !isCompleted(e.status)),
+    [events],
+  );
+  const completedEvents = useMemo(
+    () => events.filter((e) => isCompleted(e.status)),
+    [events],
+  );
+
+  // ── BEST AVAILABLE ODDS (moneyline markets across ALL events) ──
+  const moneylineOdds = useMemo(() => {
+    const result: {
+      bookmaker: string;
+      home_team: string;
+      away_team: string;
+      home_ml: number | null;
+      away_ml: number | null;
+    }[] = [];
+    for (const evt of events) {
+      const mlMarkets = evt.markets.filter(
+        (m) => m.bet_type === "moneyline",
       );
-      if (!cancelled) {
-        setEvents(data?.events ?? []);
-        setLoading(false);
+      for (const mkt of mlMarkets) {
+        for (const book of mkt.books) {
+          if (!book.available) continue;
+          const existing = result.find((r) => r.bookmaker === book.bookmaker);
+          if (!existing) {
+            result.push({
+              bookmaker: book.bookmaker,
+              home_team: evt.home_team.abbreviation || evt.home_team.name,
+              away_team: evt.away_team.abbreviation || evt.away_team.name,
+              home_ml: mkt.side === "home" ? book.moneyline : null,
+              away_ml: mkt.side === "away" ? book.moneyline : null,
+            });
+          } else {
+            if (mkt.side === "home" && existing.home_ml == null)
+              existing.home_ml = book.moneyline;
+            if (mkt.side === "away" && existing.away_ml == null)
+              existing.away_ml = book.moneyline;
+          }
+        }
       }
     }
-    load();
-    return () => { cancelled = true; };
-  }, [activeLeague]);
+    // keep only those with at least one moneyline
+    return result.filter((r) => r.home_ml != null || r.away_ml != null);
+  }, [events]);
 
-  // Split events into live and upcoming
-  const liveEvents = events.filter((e) => isLive(e.status));
-  const upcomingEvents = events.filter((e) => !isLive(e.status) && !isCompleted(e.status));
-  const completedEvents = events.filter((e) => isCompleted(e.status));
-
-  // Featured player props section — uses the first upcoming event's props
-  const [featuredProps, setFeaturedProps] = useState<SgoPlayerProps[]>([]);
-  const [propsLoading, setPropsLoading] = useState(false);
-  const [propsEventId, setPropsEventId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const firstUpcoming = upcomingEvents[0];
-    if (!firstUpcoming || firstUpcoming.event_id === propsEventId) return;
-    let cancelled = false;
-    async function loadProps() {
-      setPropsLoading(true);
-      setPropsEventId(firstUpcoming.event_id);
-      const data = await sgoFetch<{
-        event_id: string; players: SgoPlayerProps[]; player_count: number; prop_count: number;
-      }>(`/events/${firstUpcoming.event_id}/props`);
-      if (!cancelled) {
-        setFeaturedProps(data?.players?.slice(0, 6) ?? []);
-        setPropsLoading(false);
+  // ── FEATURED PLAYER PROPS (top 6 across all events) ──
+  const featuredProps = useMemo(() => {
+    const props: {
+      player_name: string;
+      market_name: string;
+      best_line: number | null;
+      best_odds: number | null;
+      bookmaker: string;
+      event_label: string;
+    }[] = [];
+    for (const evt of events) {
+      const propMarkets = evt.markets.filter(
+        (m) => m.bet_type === "player_prop",
+      );
+      for (const mkt of propMarkets) {
+        let bestLine: number | null = null;
+        let bestOdds: number | null = null;
+        let bestBook = "";
+        for (const b of mkt.books) {
+          if (!b.available) continue;
+          if (
+            b.over_under != null &&
+            (bestLine == null || b.moneyline != null)
+          ) {
+            bestLine = b.over_under;
+            bestOdds = b.moneyline;
+            bestBook = b.bookmaker;
+          }
+        }
+        if (!mkt.player_name) continue;
+        props.push({
+          player_name: mkt.player_name,
+          market_name: mkt.market_name,
+          best_line: bestLine,
+          best_odds: bestOdds,
+          bookmaker: bestBook,
+          event_label: `${evt.away_team.abbreviation || evt.away_team.name} @ ${evt.home_team.abbreviation || evt.home_team.name}`,
+        });
       }
     }
-    loadProps();
-    return () => { cancelled = true; };
-  }, [upcomingEvents]);
-
-  // Best odds for first live event (or first upcoming)
-  const [bestOdds, setBestOdds] = useState<{
-    event_id: string; books: SgoBook[]; consensus?: SgoBook;
-  } | null>(null);
-  const [oddsLoading, setOddsLoading] = useState(false);
-  const [oddsEventId, setOddsEventId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const target = liveEvents[0] || upcomingEvents[0];
-    if (!target || target.event_id === oddsEventId) return;
-    let cancelled = false;
-    async function loadOdds() {
-      setOddsLoading(true);
-      setOddsEventId(target.event_id);
-      const data = await sgoFetch<{
-        event_id: string; books: SgoBook[]; book_count: number; consensus?: SgoBook;
-      }>(`/events/${target.event_id}/odds`);
-      if (!cancelled) {
-        setBestOdds(data ?? null);
-        setOddsLoading(false);
-      }
-    }
-    loadOdds();
-    return () => { cancelled = true; };
-  }, [liveEvents, upcomingEvents]);
+    return props.slice(0, 6);
+  }, [events]);
 
   const greeting =
     new Date().getHours() < 12
@@ -190,12 +159,35 @@ export default function DashboardPage() {
         ? "afternoon"
         : "evening";
 
+  const hasGames = liveEvents.length > 0 || upcomingEvents.length > 0;
+
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 24px", color: "#f0f6fc" }}>
+    <div
+      style={{
+        maxWidth: 1200,
+        margin: "0 auto",
+        padding: "40px 24px",
+        color: "#f0f6fc",
+      }}
+    >
       {/* Hero */}
       <div style={{ textAlign: "center", marginBottom: 40 }}>
-        <Image src="/logo.png" alt="SB ME DFS.AI" width={200} height={105} priority style={{ margin: "0 auto" }} />
-        <p style={{ fontSize: 20, fontWeight: 700, color: "#94a3b8", marginTop: 16 }}>
+        <Image
+          src="/logo.png"
+          alt="SB ME DFS.AI"
+          width={200}
+          height={105}
+          priority
+          style={{ margin: "0 auto" }}
+        />
+        <p
+          style={{
+            fontSize: 20,
+            fontWeight: 700,
+            color: "#94a3b8",
+            marginTop: 16,
+          }}
+        >
           Good {greeting}, {name}.
         </p>
         <p style={{ fontSize: 16, color: "#64748b", marginTop: 4 }}>
@@ -204,9 +196,15 @@ export default function DashboardPage() {
         {user && (
           <span
             style={{
-              display: "inline-block", marginTop: 12, padding: "6px 16px", borderRadius: 20,
-              background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)",
-              color: "#c9a84c", fontSize: 13, fontWeight: 600,
+              display: "inline-block",
+              marginTop: 12,
+              padding: "6px 16px",
+              borderRadius: 20,
+              background: "rgba(201,168,76,0.1)",
+              border: "1px solid rgba(201,168,76,0.3)",
+              color: "#c9a84c",
+              fontSize: 13,
+              fontWeight: 600,
             }}
           >
             {user.plan || "Free"} Plan
@@ -215,38 +213,85 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <h2 style={{ fontSize: 13, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 2, marginBottom: 16 }}>
+      <h2
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: 2,
+          marginBottom: 16,
+        }}
+      >
         Quick Actions
       </h2>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 40 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+          gap: 12,
+          marginBottom: 40,
+        }}
+      >
         {QUICK.map((a, i) => {
           const Icon = a.icon;
           return (
             <Link
-              key={i} href={a.href}
+              key={i}
+              href={a.href}
               style={{
-                background: "#0a0f24", borderRadius: 16, border: "1px solid #1e293b",
-                padding: "24px 16px", textAlign: "center", textDecoration: "none",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+                background: "#0a0f24",
+                borderRadius: 16,
+                border: "1px solid #1e293b",
+                padding: "24px 16px",
+                textAlign: "center",
+                textDecoration: "none",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 10,
               }}
             >
               <Icon size={28} color="#c9a84c" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#94a3b8", lineHeight: 1.3 }}>{a.label}</span>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#94a3b8",
+                  lineHeight: 1.3,
+                }}
+              >
+                {a.label}
+              </span>
             </Link>
           );
         })}
       </div>
 
       {/* ─── SPORT TABS ─── */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 24, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          marginBottom: 24,
+          flexWrap: "wrap",
+        }}
+      >
         {LEAGUES.map((lg) => (
           <button
             key={lg}
             onClick={() => setActiveLeague(lg)}
             style={{
-              padding: "8px 18px", borderRadius: 10, fontSize: 13, fontWeight: 700,
-              background: activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24",
-              border: activeLeague === lg ? "1px solid #c9a84c" : "1px solid #1e293b",
+              padding: "8px 18px",
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 700,
+              background:
+                activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24",
+              border:
+                activeLeague === lg
+                  ? "1px solid #c9a84c"
+                  : "1px solid #1e293b",
               color: activeLeague === lg ? "#c9a84c" : "#94a3b8",
               cursor: "pointer",
             }}
@@ -256,61 +301,97 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* ─── LIVE GAMES ─── */}
-      <h2 style={{ fontSize: 13, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 2, marginBottom: 14 }}>
-        {liveEvents.length > 0 ? "● LIVE GAMES" : "UPCOMING GAMES"}
-      </h2>
+      {/* ─── LIVE & UPCOMING GAMES ─── */}
+      <SectionHeading
+        label={
+          liveEvents.length > 0 ? "● LIVE GAMES" : "UPCOMING GAMES"
+        }
+      />
 
       {loading ? (
         <LoadingCard />
-      ) : liveEvents.length === 0 && upcomingEvents.length === 0 ? (
-        <EmptyCard message="Data currently unavailable" />
+      ) : error ? (
+        <EmptyCard message={`Unable to load games: ${error}`} />
+      ) : !hasGames ? (
+        <EmptyCard message={`No ${activeLeague} games available right now.`} />
       ) : (
         <div style={{ display: "grid", gap: 12, marginBottom: 36 }}>
-          {/* LIVE events first */}
           {liveEvents.map((evt) => (
-            <EventCard key={evt.event_id} event={evt} />
+            <EventCard key={evt.id} event={evt} />
           ))}
-          {/* Upcoming events */}
           {upcomingEvents.map((evt) => (
-            <EventCard key={evt.event_id} event={evt} />
+            <EventCard key={evt.id} event={evt} />
           ))}
         </div>
       )}
 
+      {/* ─── LIVE SCORES (live events with scores) ─── */}
+      {liveEvents.filter(
+        (e) => e.home_score != null || e.away_score != null,
+      ).length > 0 && (
+        <>
+          <SectionHeading label="LIVE SCORES" />
+          <div style={{ display: "grid", gap: 12, marginBottom: 36 }}>
+            {liveEvents
+              .filter((e) => e.home_score != null || e.away_score != null)
+              .map((evt) => (
+                <LiveScoreCard key={evt.id} event={evt} />
+              ))}
+          </div>
+        </>
+      )}
+
       {/* ─── BEST AVAILABLE ODDS ─── */}
-      <h2 style={{ fontSize: 13, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 2, marginBottom: 14 }}>
-        BEST AVAILABLE ODDS
-      </h2>
-      {oddsLoading ? (
+      <SectionHeading label="BEST AVAILABLE ODDS" />
+      {loading ? (
         <LoadingCard />
-      ) : bestOdds && bestOdds.books.length > 0 ? (
-        <BestOddsPanel odds={bestOdds} />
+      ) : moneylineOdds.length > 0 ? (
+        <BestOddsPanel odds={moneylineOdds} />
       ) : (
-        <EmptyCard message="Data currently unavailable" />
+        <EmptyCard message="No moneyline odds available for this league." />
       )}
 
       {/* ─── FEATURED PLAYER PROPS ─── */}
-      <h2 style={{ fontSize: 13, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 2, marginTop: 36, marginBottom: 14 }}>
+      <h2
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: "#64748b",
+          textTransform: "uppercase",
+          letterSpacing: 2,
+          marginTop: 36,
+          marginBottom: 14,
+        }}
+      >
         FEATURED PLAYER PROPS
       </h2>
-      {propsLoading ? (
+      {loading ? (
         <LoadingCard />
       ) : featuredProps.length > 0 ? (
-        <FeaturedPropsPanel players={featuredProps} />
+        <FeaturedPropsPanel props={featuredProps} />
       ) : (
-        <EmptyCard message="Data currently unavailable" />
+        <EmptyCard message="No player props available for this league." />
       )}
 
       {/* ─── RECENT RESULTS ─── */}
       {completedEvents.length > 0 && (
         <>
-          <h2 style={{ fontSize: 13, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 2, marginTop: 36, marginBottom: 14 }}>
+          <h2
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#64748b",
+              textTransform: "uppercase",
+              letterSpacing: 2,
+              marginTop: 36,
+              marginBottom: 14,
+            }}
+          >
             RECENT RESULTS
           </h2>
           <div style={{ display: "grid", gap: 12, marginBottom: 36 }}>
             {completedEvents.slice(0, 5).map((evt) => (
-              <CompletedCard key={evt.event_id} event={evt} />
+              <CompletedCard key={evt.id} event={evt} />
             ))}
           </div>
         </>
@@ -321,53 +402,111 @@ export default function DashboardPage() {
 
 /* ── Sub-Components ── */
 
-function EventCard({ event }: { event: SgoEvent }) {
+function SectionHeading({ label }: { label: string }) {
+  return (
+    <h2
+      style={{
+        fontSize: 13,
+        fontWeight: 700,
+        color: "#64748b",
+        textTransform: "uppercase",
+        letterSpacing: 2,
+        marginBottom: 14,
+      }}
+    >
+      {label}
+    </h2>
+  );
+}
+
+function EventCard({ event }: { event: SBEvent }) {
   const live = isLive(event.status);
   return (
     <div
       style={{
         background: live ? "rgba(201,168,76,0.05)" : "#0a0f24",
-        borderRadius: 14, border: live ? "1px solid rgba(201,168,76,0.2)" : "1px solid #1e293b",
-        padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center",
+        borderRadius: 14,
+        border: live
+          ? "1px solid rgba(201,168,76,0.2)"
+          : "1px solid #1e293b",
+        padding: "16px 20px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 8,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         {/* Status badge */}
-        {live && (
-          <span style={{
-            padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 800,
-            background: "rgba(239,68,68,0.15)", color: "#ef4444", textTransform: "uppercase",
-            flexShrink: 0,
-          }}>
+        {live ? (
+          <span
+            style={{
+              padding: "3px 10px",
+              borderRadius: 6,
+              fontSize: 10,
+              fontWeight: 800,
+              background: "rgba(239,68,68,0.15)",
+              color: "#ef4444",
+              textTransform: "uppercase",
+              flexShrink: 0,
+            }}
+          >
             ● LIVE
           </span>
-        )}
-        {!live && event.start_time && (
-          <span style={{
-            padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600,
-            background: "rgba(100,116,139,0.12)", color: "#94a3b8", flexShrink: 0,
-            display: "flex", alignItems: "center", gap: 4,
-          }}>
+        ) : (
+          <span
+            style={{
+              padding: "3px 10px",
+              borderRadius: 6,
+              fontSize: 10,
+              fontWeight: 600,
+              background: "rgba(100,116,139,0.12)",
+              color: "#94a3b8",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
             <Clock size={11} /> {formatTime(event.start_time)}
           </span>
         )}
         {/* Matchup */}
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#f0f6fc" }}>
-            <span style={{ color: live ? "#c9a84c" : "#f0f6fc" }}>{event.away_team.abbreviation || event.away_team.name}</span>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: "#f0f6fc",
+            }}
+          >
+            <span style={{ color: live ? "#c9a84c" : "#f0f6fc" }}>
+              {event.away_team.abbreviation || event.away_team.name}
+            </span>
             {" @ "}
-            <span style={{ color: live ? "#c9a84c" : "#f0f6fc" }}>{event.home_team.abbreviation || event.home_team.name}</span>
+            <span style={{ color: live ? "#c9a84c" : "#f0f6fc" }}>
+              {event.home_team.abbreviation || event.home_team.name}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+            {event.venue && `${event.venue} · `}
+            {event.status_display}
           </div>
         </div>
       </div>
       {/* Score if live */}
       {live && (event.home_score != null || event.away_score != null) && (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 18, fontWeight: 800, color: "#c9a84c" }}>
+          <span
+            style={{ fontSize: 18, fontWeight: 800, color: "#c9a84c" }}
+          >
             {event.away_score ?? 0} – {event.home_score ?? 0}
           </span>
           {event.period && (
-            <span style={{ fontSize: 11, color: "#64748b" }}>{event.period}</span>
+            <span style={{ fontSize: 11, color: "#64748b" }}>
+              {event.period}
+            </span>
           )}
         </div>
       )}
@@ -375,23 +514,82 @@ function EventCard({ event }: { event: SgoEvent }) {
   );
 }
 
-function CompletedCard({ event }: { event: SgoEvent }) {
+function LiveScoreCard({ event }: { event: SBEvent }) {
   return (
-    <div style={{
-      background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b",
-      padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center",
-    }}>
-      <div style={{ fontSize: 15, fontWeight: 600, color: "#94a3b8" }}>
-        {event.away_team.abbreviation || event.away_team.name} @ {event.home_team.abbreviation || event.home_team.name}
+    <div
+      style={{
+        background: "rgba(201,168,76,0.05)",
+        borderRadius: 14,
+        border: "1px solid rgba(201,168,76,0.2)",
+        padding: "16px 20px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 10,
+      }}
+    >
+      <div>
+        <div
+          style={{ fontSize: 15, fontWeight: 700, color: "#f0f6fc" }}
+        >
+          <span style={{ color: "#c9a84c" }}>
+            {event.away_team.abbreviation || event.away_team.name}
+          </span>
+          {" @ "}
+          <span style={{ color: "#c9a84c" }}>
+            {event.home_team.abbreviation || event.home_team.name}
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+          {event.period || event.status_display}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 22, fontWeight: 800, color: "#c9a84c" }}>
+          {event.away_score ?? 0} – {event.home_score ?? 0}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function CompletedCard({ event }: { event: SBEvent }) {
+  return (
+    <div
+      style={{
+        background: "#0a0f24",
+        borderRadius: 14,
+        border: "1px solid #1e293b",
+        padding: "16px 20px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      }}
+    >
+      <div
+        style={{ fontSize: 15, fontWeight: 600, color: "#94a3b8" }}
+      >
+        {event.away_team.abbreviation || event.away_team.name} @{" "}
+        {event.home_team.abbreviation || event.home_team.name}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 18, fontWeight: 800, color: "#f0f6fc" }}>
+        <span
+          style={{ fontSize: 18, fontWeight: 800, color: "#f0f6fc" }}
+        >
           {event.away_score ?? "—"} – {event.home_score ?? "—"}
         </span>
-        <span style={{
-          padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
-          background: "rgba(100,116,139,0.15)", color: "#64748b", textTransform: "uppercase",
-        }}>
+        <span
+          style={{
+            padding: "3px 8px",
+            borderRadius: 4,
+            fontSize: 10,
+            fontWeight: 700,
+            background: "rgba(100,116,139,0.15)",
+            color: "#64748b",
+            textTransform: "uppercase",
+          }}
+        >
           FINAL
         </span>
       </div>
@@ -399,73 +597,171 @@ function CompletedCard({ event }: { event: SgoEvent }) {
   );
 }
 
-function BestOddsPanel({ odds }: { odds: { event_id: string; books: SgoBook[]; consensus?: SgoBook } }) {
-  const topBooks = odds.books.slice(0, 6);
-
-  // Best moneyline home/away across books
-  let bestMlHome = -Infinity, bestMlAway = -Infinity;
-  let bestMlHomeBook = "", bestMlAwayBook = "";
-  for (const b of odds.books) {
-    if ((b.moneyline_home ?? -Infinity) > bestMlHome) { bestMlHome = b.moneyline_home!; bestMlHomeBook = b.bookmaker; }
-    if ((b.moneyline_away ?? -Infinity) > bestMlAway) { bestMlAway = b.moneyline_away!; bestMlAwayBook = b.bookmaker; }
+function BestOddsPanel({
+  odds,
+}: {
+  odds: {
+    bookmaker: string;
+    home_team: string;
+    away_team: string;
+    home_ml: number | null;
+    away_ml: number | null;
+  }[];
+}) {
+  // find best home and away moneyline across all books
+  let bestHome = -Infinity;
+  let bestAway = -Infinity;
+  let bestHomeBook = "";
+  let bestAwayBook = "";
+  for (const o of odds) {
+    if ((o.home_ml ?? -Infinity) > bestHome) {
+      bestHome = o.home_ml!;
+      bestHomeBook = o.bookmaker;
+    }
+    if ((o.away_ml ?? -Infinity) > bestAway) {
+      bestAway = o.away_ml!;
+      bestAwayBook = o.bookmaker;
+    }
   }
 
+  const first = odds[0]; // for team labels
+
   return (
-    <div style={{
-      background: "#0a0f24", borderRadius: 16, border: "1px solid #1e293b",
-      padding: 20, overflow: "hidden",
-    }}>
+    <div
+      style={{
+        background: "#0a0f24",
+        borderRadius: 16,
+        border: "1px solid #1e293b",
+        padding: 20,
+        overflow: "hidden",
+      }}
+    >
       {/* Best prices highlight */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18,
-      }}>
-        <div style={{ background: "rgba(201,168,76,0.06)", borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
-          <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", marginBottom: 4 }}>Best Home ML</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#c9a84c" }}>{fmtOdds(bestMlHome)}</div>
-          <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{bestMlHomeBook}</div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 16,
+          marginBottom: 18,
+        }}
+      >
+        <div
+          style={{
+            background: "rgba(201,168,76,0.06)",
+            borderRadius: 10,
+            padding: "12px 16px",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              color: "#64748b",
+              textTransform: "uppercase",
+              marginBottom: 4,
+            }}
+          >
+            Best Home ML ({first?.home_team ?? "—"})
+          </div>
+          <div
+            style={{ fontSize: 18, fontWeight: 800, color: "#c9a84c" }}
+          >
+            {fmtOdds(bestHome)}
+          </div>
+          <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+            {bestHomeBook}
+          </div>
         </div>
-        <div style={{ background: "rgba(201,168,76,0.06)", borderRadius: 10, padding: "12px 16px", textAlign: "center" }}>
-          <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", marginBottom: 4 }}>Best Away ML</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#c9a84c" }}>{fmtOdds(bestMlAway)}</div>
-          <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{bestMlAwayBook}</div>
+        <div
+          style={{
+            background: "rgba(201,168,76,0.06)",
+            borderRadius: 10,
+            padding: "12px 16px",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              color: "#64748b",
+              textTransform: "uppercase",
+              marginBottom: 4,
+            }}
+          >
+            Best Away ML ({first?.away_team ?? "—"})
+          </div>
+          <div
+            style={{ fontSize: 18, fontWeight: 800, color: "#c9a84c" }}
+          >
+            {fmtOdds(bestAway)}
+          </div>
+          <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+            {bestAwayBook}
+          </div>
         </div>
       </div>
 
       {/* Bookmaker comparison table */}
       <div style={{ overflowX: "auto" }}>
-        <div style={{
-          display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr", gap: 4,
-          padding: "8px 0", borderBottom: "1px solid #1e293b",
-          fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase",
-        }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.5fr 1fr 1fr",
+            gap: 4,
+            padding: "8px 0",
+            borderBottom: "1px solid #1e293b",
+            fontSize: 10,
+            fontWeight: 700,
+            color: "#64748b",
+            textTransform: "uppercase",
+          }}
+        >
           <span>Bookmaker</span>
-          <span style={{ textAlign: "center" }}>ML Home</span>
-          <span style={{ textAlign: "center" }}>ML Away</span>
-          <span style={{ textAlign: "center" }}>Spread/Total</span>
+          <span style={{ textAlign: "center" }}>Home ML</span>
+          <span style={{ textAlign: "center" }}>Away ML</span>
         </div>
-        {topBooks.map((b, i) => (
-          <div key={i} style={{
-            display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr", gap: 4,
-            padding: "10px 0", borderBottom: "1px solid #1e293b20", alignItems: "center",
-          }}>
-            <span style={{ fontSize: 12, color: "#94a3b8", fontWeight: 500 }}>{b.bookmaker}</span>
-            <span style={{
-              fontSize: 13, fontWeight: b.moneyline_home === bestMlHome ? 800 : 500,
-              color: b.moneyline_home === bestMlHome ? "#c9a84c" : "#f0f6fc",
-              textAlign: "center",
-            }}>
-              {fmtOdds(b.moneyline_home)}
+        {odds.slice(0, 10).map((b, i) => (
+          <div
+            key={i}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.5fr 1fr 1fr",
+              gap: 4,
+              padding: "10px 0",
+              borderBottom: "1px solid #1e293b20",
+              alignItems: "center",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 12,
+                color: "#94a3b8",
+                fontWeight: 500,
+              }}
+            >
+              {b.bookmaker}
             </span>
-            <span style={{
-              fontSize: 13, fontWeight: b.moneyline_away === bestMlAway ? 800 : 500,
-              color: b.moneyline_away === bestMlAway ? "#c9a84c" : "#f0f6fc",
-              textAlign: "center",
-            }}>
-              {fmtOdds(b.moneyline_away)}
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: b.home_ml === bestHome ? 800 : 500,
+                color:
+                  b.home_ml === bestHome ? "#c9a84c" : "#f0f6fc",
+                textAlign: "center",
+              }}
+            >
+              {fmtOdds(b.home_ml)}
             </span>
-            <span style={{ fontSize: 11, color: "#64748b", textAlign: "center" }}>
-              {b.spread_home != null ? (b.spread_home > 0 ? "+" : "") + b.spread_home : "—"} /{" "}
-              {b.total_over != null ? `O${b.total_over}` : "—"}
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: b.away_ml === bestAway ? 800 : 500,
+                color:
+                  b.away_ml === bestAway ? "#c9a84c" : "#f0f6fc",
+                textAlign: "center",
+              }}
+            >
+              {fmtOdds(b.away_ml)}
             </span>
           </div>
         ))}
@@ -474,59 +770,157 @@ function BestOddsPanel({ odds }: { odds: { event_id: string; books: SgoBook[]; c
   );
 }
 
-function FeaturedPropsPanel({ players }: { players: SgoPlayerProps[] }) {
+function FeaturedPropsPanel({
+  props,
+}: {
+  props: {
+    player_name: string;
+    market_name: string;
+    best_line: number | null;
+    best_odds: number | null;
+    bookmaker: string;
+    event_label: string;
+  }[];
+}) {
   return (
-    <div style={{
-      display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14,
-    }}>
-      {players.map((p) => {
-        const firstMarket = p.markets[0];
-        if (!firstMarket) return null;
-        const bestLine = firstMarket.lines[0];
-        return (
-          <div key={p.player_id} style={{
-            background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b",
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+        gap: 14,
+      }}
+    >
+      {props.map((p, i) => (
+        <div
+          key={i}
+          style={{
+            background: "#0a0f24",
+            borderRadius: 14,
+            border: "1px solid #1e293b",
             padding: "16px 18px",
-          }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#f0f6fc", marginBottom: 10 }}>
-              {p.player_id}
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", textTransform: "uppercase", marginBottom: 6 }}>
-              {firstMarket.market}
-            </div>
-            <div style={{ display: "flex", gap: 12 }}>
-              <div style={{ flex: 1, background: "rgba(201,168,76,0.06)", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: "#64748b" }}>Line</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: "#c9a84c" }}>{bestLine?.line ?? "—"}</div>
-              </div>
-              <div style={{ flex: 1, background: "rgba(201,168,76,0.06)", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: "#64748b" }}>Over</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: "#c9a84c" }}>{fmtOdds(bestLine?.over_price)}</div>
-              </div>
-            </div>
-            {bestLine && (
-              <div style={{ fontSize: 10, color: "#64748b", marginTop: 8 }}>{bestLine.bookmaker}</div>
-            )}
+          }}
+        >
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#f0f6fc",
+              marginBottom: 4,
+            }}
+          >
+            {p.player_name}
           </div>
-        );
-      })}
+          <div
+            style={{
+              fontSize: 11,
+              color: "#64748b",
+              marginBottom: 4,
+            }}
+          >
+            {p.event_label}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "#64748b",
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}
+          >
+            {p.market_name}
+          </div>
+          <div style={{ display: "flex", gap: 12 }}>
+            <div
+              style={{
+                flex: 1,
+                background: "rgba(201,168,76,0.06)",
+                borderRadius: 8,
+                padding: "8px 12px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 10, color: "#64748b" }}>Line</div>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 800,
+                  color: "#c9a84c",
+                }}
+              >
+                {p.best_line ?? "—"}
+              </div>
+            </div>
+            <div
+              style={{
+                flex: 1,
+                background: "rgba(201,168,76,0.06)",
+                borderRadius: 8,
+                padding: "8px 12px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 10, color: "#64748b" }}>Odds</div>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 800,
+                  color: "#c9a84c",
+                }}
+              >
+                {fmtOdds(p.best_odds)}
+              </div>
+            </div>
+          </div>
+          {p.bookmaker && (
+            <div
+              style={{ fontSize: 10, color: "#64748b", marginTop: 8 }}
+            >
+              {p.bookmaker}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
 
 function LoadingCard() {
   return (
-    <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: 32, textAlign: "center", color: "#94a3b8" }}>
-      <Activity size={22} style={{ marginBottom: 8, opacity: 0.5, animation: "spin 2s linear infinite" }} />
-      <p style={{ margin: 0, fontSize: 14 }}>Loading SGO data...</p>
+    <div
+      style={{
+        background: "#0a0f24",
+        borderRadius: 14,
+        border: "1px solid #1e293b",
+        padding: 32,
+        textAlign: "center",
+        color: "#94a3b8",
+      }}
+    >
+      <Activity
+        size={22}
+        style={{ marginBottom: 8, opacity: 0.5 }}
+      />
+      <p style={{ margin: 0, fontSize: 14 }}>
+        Loading SGO data...
+      </p>
     </div>
   );
 }
 
 function EmptyCard({ message }: { message: string }) {
   return (
-    <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: 28, textAlign: "center" }}>
-      <p style={{ color: "#64748b", fontSize: 14, margin: 0 }}>{message}</p>
+    <div
+      style={{
+        background: "#0a0f24",
+        borderRadius: 14,
+        border: "1px solid #1e293b",
+        padding: 28,
+        textAlign: "center",
+      }}
+    >
+      <p style={{ color: "#64748b", fontSize: 14, margin: 0 }}>
+        {message}
+      </p>
     </div>
   );
 }

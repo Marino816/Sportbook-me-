@@ -193,25 +193,26 @@ async def get_events(
     league: str = Query(..., description="League ID (MLB, NFL, NBA, etc.)"),
     user: User = Depends(get_current_user),
 ):
-    """Live/upcoming events with game context and parsed odds."""
+    """Live events with full game context, odds, markets, players — SBEvent format."""
     try:
         sgo = await _get_sgo()
         async with sgo:
-            events = await sgo.get_events(league_id=league.upper())
+            sb_events = await sgo.get_sb_events(league.upper())
     except Exception as e:
-        logger.error(f"Failed to fetch events for league={league}: {e}")
+        logger.error(f"Failed to fetch sb_events for league={league}: {e}")
         return wrap_data({"events": [], "league": league.upper(), "count": 0,
-                          "status": "unavailable", "message": "SportsGameOdds data is currently unavailable."},
-                         source="cached")
+                          "status": "unavailable", "message": str(e)}, source="cached")
 
-    if not events:
+    if not sb_events:
         return wrap_data({"events": [], "league": league.upper(), "count": 0,
-                          "message": f"No events found for {league.upper()}"},
-                         source="sportsgameodds")
+                          "message": f"No events found for {league.upper()}"}, source="sportsgameodds")
 
-    events_list = [_event_summary(e, include_odds=True) for e in events]
-    return wrap_data({"events": events_list, "league": league.upper(), "count": len(events_list)},
-                     source="sportsgameodds")
+    events_list = [_sb_event_to_dict(e) for e in sb_events]
+    return wrap_data({
+        "events": events_list,
+        "league": league.upper(),
+        "count": len(events_list),
+    }, source="sportsgameodds")
 
 
 @router.get("/events/{event_id}/odds")

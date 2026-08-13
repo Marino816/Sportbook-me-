@@ -9,6 +9,7 @@ const PROTECTED_PATHS = [
   "/backtesting",
   "/billing",
   "/dashboard",
+  "/market-tools",
   "/optimizer",
   "/projections",
 ] as const;
