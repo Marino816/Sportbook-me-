@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -24,6 +25,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sgo", tags=["SGO Data"])
 
 
+# ── Redis helpers ────────────────────────────────────────────
+
+def _rget(key: str):
+    from providers.redis_client import get_redis_client
+    r = get_redis_client()
+    if r is None:
+        return None
+    try:
+        v = r.get(key)
+        return json.loads(v) if v else None
+    except Exception:
+        return None
+
+
+def _rset(key: str, data, ttl: int = 900):
+    from providers.redis_client import get_redis_client
+    r = get_redis_client()
+    if r is None:
+        return
+    try:
+        r.setex(key, ttl, json.dumps(data, default=str).encode())
+    except Exception:
+        pass
+
+
+# ── Helpers ──────────────────────────────────────────────────
 async def _get_sgo():
     from providers.integration import SGOIntegration
     return SGOIntegration()
@@ -193,13 +220,19 @@ async def get_events(
     league: str = Query(..., description="League ID (MLB, NFL, NBA, etc.)"),
     user: User = Depends(get_current_user),
 ):
-    """Live events with full game context, odds, markets, players — SBEvent format."""
+    """Live events with full SBEvent format — cached in Redis."""
+    cache_key = f"sgo:v2:sbevents:{league.upper()}"
+    cached = _rget(cache_key)
+    if cached and isinstance(cached, list) and cached:
+        return wrap_data({"events": cached, "league": league.upper(), "count": len(cached),
+                          "source": "cache"}, source="cached")
+
     try:
         sgo = await _get_sgo()
         async with sgo:
             sb_events = await sgo.get_sb_events(league.upper())
     except Exception as e:
-        logger.error(f"Failed to fetch sb_events for league={league}: {e}")
+        logger.error(f"Failed to fetch sb_events: {e}")
         return wrap_data({"events": [], "league": league.upper(), "count": 0,
                           "status": "unavailable", "message": str(e)}, source="cached")
 
@@ -208,11 +241,9 @@ async def get_events(
                           "message": f"No events found for {league.upper()}"}, source="sportsgameodds")
 
     events_list = [_sb_event_to_dict(e) for e in sb_events]
-    return wrap_data({
-        "events": events_list,
-        "league": league.upper(),
-        "count": len(events_list),
-    }, source="sportsgameodds")
+    _rset(cache_key, events_list, ttl=900)
+    return wrap_data({"events": events_list, "league": league.upper(), "count": len(events_list)},
+                     source="sportsgameodds")
 
 
 @router.get("/events/{event_id}/odds")

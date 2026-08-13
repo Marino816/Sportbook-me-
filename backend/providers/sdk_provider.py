@@ -22,18 +22,18 @@ class SdkSgoProvider:
         self._client = AsyncSportsGameOdds(api_key_header=key)
 
     async def _get_events(self, league_id: str) -> list:
-        """Fetch events via SDK async paginator, returns SDK Event objects."""
+        """Fetch events via SDK async paginator — each item is an Event."""
         paginator = await self._client.events.get(
             league_id=league_id.upper(),
             odds_available=True,
             limit=50,
         )
         events = []
-        async for page in paginator:
-            if hasattr(page, 'data') and page.data:
-                events.extend(page.data)
-            elif isinstance(page, list):
-                events.extend(page)
+        async for item in paginator:
+            if hasattr(item, 'event_id'):
+                events.append(item)
+            elif hasattr(item, 'data') and item.data:
+                events.extend(item.data)
         return events
 
     async def get_sb_events(self, league_id: str) -> list[SBEvent]:
