@@ -37,6 +37,15 @@ class ProviderStats:
     objects_consumed: int = 0  # approximate — count paginated objects
 
 
+class SgoRateLimitError(Exception):
+    """Raised when SGO returns HTTP 429. Carries Retry-After seconds."""
+
+    def __init__(self, path: str, retry_after: int):
+        self.path = path
+        self.retry_after = retry_after
+        super().__init__(f"SGO rate-limited ({retry_after}s) on {path}")
+
+
 class SportsGameOddsProvider:
     """
     Authenticated httpx client for SportsGameOdds API v2.
@@ -105,12 +114,25 @@ class SportsGameOddsProvider:
                 resp = await self._client.request(method, url, params=params)
                 self.stats.responses += 1
 
+                # 429 Rate-limit: do NOT retry-storm. Honor Retry-After once,
+                # log once, and raise so the cache layer can serve last-known-good.
                 if resp.status_code == 429:
-                    retry_after = int(resp.headers.get("Retry-After", RETRY_DELAY * (attempt + 1)))
-                    logger.warning(f"SGO rate-limited, waiting {retry_after}s")
-                    await asyncio.sleep(retry_after)
-                    continue
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after is not None:
+                        try:
+                            retry_after = int(retry_after)
+                        except ValueError:
+                            retry_after = RETRY_DELAY
+                    else:
+                        retry_after = RETRY_DELAY
+                    self.stats.errors += 1
+                    logger.warning(
+                        f"SGO 429 rate-limited on {path}; Retry-After={retry_after}s; "
+                        f"surfacing cached data instead of retrying"
+                    )
+                    raise SgoRateLimitError(path, int(retry_after))
 
+                # Transient server errors: limited retries with backoff.
                 if resp.status_code >= 500:
                     logger.warning(f"SGO server error {resp.status_code}, attempt {attempt+1}")
                     if attempt < MAX_RETRIES - 1:

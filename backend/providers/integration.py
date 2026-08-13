@@ -1,22 +1,14 @@
-"""
-SportsGameOdds Integration Service — PRIMARY provider.
-
-Connects SGO provider to SB ME intelligence layer with:
-- Cache (in-memory TTL-based)
-- Request deduplication
-- Freshness metadata
-- Provider ID mapping
-- Usage monitoring
-"""
+"""SportsGameOdds Integration Service — Redis-backed cache, single-flight, LKG fallback."""
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-from providers.sportsgameodds import SportsGameOddsProvider
+from providers.sportsgameodds import SportsGameOddsProvider, SgoRateLimitError
 from providers.normalizer import (
     SportsGameOddsNormalizer,
     NormalizedEvent,
@@ -29,21 +21,64 @@ from providers.normalizer import (
 
 logger = logging.getLogger(__name__)
 
-# Cache TTLs by data type (seconds)
+# Cache TTLs (seconds) — shorter for live, longer for static
 CACHE_TTL = {
-    "sports": 86400,       # 24 hours
+    "sports": 86400,       # 24h
     "leagues": 86400,
     "teams": 86400,
-    "events": 900,         # 15 minutes
-    "odds": 120,           # 2 minutes (pre-game)
-    "props": 300,          # 5 minutes
-    "scores": 60,          # 1 minute (live)
+    "players": 86400,
+    "events": 900,         # 15min
+    "odds": 120,           # 2min
+    "props": 300,          # 5min
+    "scores": 60,          # 1min
     "fair_odds": 300,
     "consensus": 300,
-    "players": 86400,
-    "stats": 3600,         # 1 hour
-    "usage": 3600,
+    "stats": 3600,
+    "usage": 1800,
 }
+
+# Redis key prefix to namespace our cache
+PREFIX = "sgo_cache"
+
+# In-flight dedup locks (global, not per-instance)
+_locks: dict[str, asyncio.Lock] = {}
+
+
+def _redis():
+    """Lazy Redis client."""
+    from providers.redis_client import get_redis_client
+    return get_redis_client()
+
+
+def _redis_set(key: str, value: bytes, ttl: int):
+    r = _redis()
+    if r is None:
+        return
+    try:
+        r.set(f"{PREFIX}:{key}", value, ex=ttl)
+    except Exception as e:
+        logger.debug(f"Redis write failed for {key}: {e}")
+
+
+def _redis_get(key: str) -> Optional[bytes]:
+    r = _redis()
+    if r is None:
+        return None
+    try:
+        return r.get(f"{PREFIX}:{key}")
+    except Exception as e:
+        logger.debug(f"Redis read failed for {key}: {e}")
+        return None
+
+
+def _redis_delete(key: str):
+    r = _redis()
+    if r is None:
+        return
+    try:
+        r.delete(f"{PREFIX}:{key}")
+    except Exception:
+        pass
 
 
 @dataclass
@@ -51,24 +86,17 @@ class CachedEntry:
     data: any
     fetched_at: float
     ttl: int
+    source: str  # "live" or "cached"
 
 
 class SGOIntegration:
-    """
-    Primary integration service for SportsGameOdds.
-
-    Usage:
-        sgo = SGOIntegration()
-        async with sgo:
-            events = await sgo.get_mlb_events()
-            odds = await sgo.get_odds(events[0].id)
-    """
+    """Redis-backed integration service with single-flight dedup and LKG fallback."""
 
     def __init__(self):
         self._provider: SportsGameOddsProvider | None = None
-        self._cache: dict[str, CachedEntry] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._local_cache: dict[str, CachedEntry] = {}
         self._request_count = 0
+        self._rate_limited_until: float = 0.0
 
     async def __aenter__(self):
         self._provider = SportsGameOddsProvider()
@@ -79,120 +107,209 @@ class SGOIntegration:
         if self._provider:
             await self._provider.__aexit__(*args)
 
-    async def _cached(self, key: str, ttl_key: str, fetch_fn) -> any:
-        """Fetch with TTL cache + deduplication lock."""
-        now = time.time()
+    # ── Core cache + fetch with LKG fallback ──────────────────
+
+    async def _fetch_or_cache(self, key: str, ttl_key: str, fetch_fn, normalize_fn=None) -> tuple[any, str]:
+        """
+        Fetch with: Redis → local → LKG → upstream (single-flight dedup).
+
+        Returns (data, source) where source is "live", "cached", or "lkg".
+        """
         ttl = CACHE_TTL.get(ttl_key, 300)
+        now = time.time()
 
-        # Cache hit
-        entry = self._cache.get(key)
-        if entry and (now - entry.fetched_at) < entry.ttl:
-            return entry.data
+        # 1. Local cache hit
+        local = self._local_cache.get(key)
+        if local and (now - local.fetched_at) < local.ttl:
+            return local.data, local.source
 
-        # Dedup: only one concurrent request per key
-        lock = self._locks.setdefault(key, asyncio.Lock())
-        async with lock:
-            # Re-check after acquiring lock
-            entry = self._cache.get(key)
-            if entry and (now - entry.fetched_at) < entry.ttl:
-                return entry.data
+        # 2. Redis cache hit
+        try:
+            raw = _redis_get(key)
+            if raw:
+                data = json.loads(raw)
+                # For normalized objects, this will be dicts — clients must handle both
+                self._local_cache[key] = CachedEntry(
+                    data=data, fetched_at=now, ttl=ttl, source="cached"
+                )
+                return data, "cached"
+        except Exception:
+            pass
 
-            data = await fetch_fn()
+        # 3. Single-flight dedup: only one request per key globally
+        lock = _locks.setdefault(key, asyncio.Lock())
+        acquired = False
+        wait_timeout = 4.0  # max wait for another in-flight request
+        try:
+            acquired = await asyncio.wait_for(lock.acquire(), timeout=wait_timeout)
+        except asyncio.TimeoutError:
+            pass
+
+        if not acquired:
+            # Another request is already fetching — return last-known-good or empty
+            # Try local first, then Redis
+            local = self._local_cache.get(key)
+            if local:
+                return local.data, "lkg"
+            raw = _redis_get(key)
+            if raw:
+                return json.loads(raw), "lkg"
+            return None, "unavailable"
+
+        try:
+            # Double-check after acquiring lock
+            local = self._local_cache.get(key)
+            if local and (now - local.fetched_at) < local.ttl:
+                return local.data, local.source
+            raw = _redis_get(key)
+            if raw:
+                data = json.loads(raw)
+                self._local_cache[key] = CachedEntry(
+                    data=data, fetched_at=now, ttl=ttl, source="cached"
+                )
+                return data, "cached"
+
+            # 4. Upstream fetch
+            try:
+                raw_data = await fetch_fn()
+            except SgoRateLimitError as e:
+                logger.warning(f"SGO 429 on {key}, falling back to LKG: {e}")
+                # Return last-known-good from local or Redis
+                local = self._local_cache.get(key)
+                if local:
+                    return local.data, "lkg"
+                raw = _redis_get(key)
+                if raw:
+                    return json.loads(raw), "lkg"
+                return None, "unavailable"
+            except Exception as e:
+                logger.error(f"SGO fetch failed for {key}: {e}")
+                local = self._local_cache.get(key)
+                if local:
+                    return local.data, "lkg"
+                raw = _redis_get(key)
+                if raw:
+                    return json.loads(raw), "lkg"
+                raise
+
+            # Normalize
+            if normalize_fn and raw_data is not None:
+                data = normalize_fn(raw_data)
+            else:
+                data = raw_data
+
+            # Store
             self._request_count += 1
-            self._cache[key] = CachedEntry(data=data, fetched_at=time.time(), ttl=ttl)
-            return data
+            self._local_cache[key] = CachedEntry(
+                data=data, fetched_at=now, ttl=ttl, source="live"
+            )
 
-    # ── High-level queries ──
+            # Write to Redis (best-effort)
+            try:
+                serialized = json.dumps(data, default=str)
+                _redis_set(key, serialized.encode(), ttl)
+            except Exception:
+                pass
 
-    async def get_events(self, league_id: str) -> list[NormalizedEvent]:
+            return data, "live"
+
+        finally:
+            lock.release()
+
+    # ── High-level queries ────────────────────────────────────
+
+    async def get_events(self, league_id: str) -> list:
         key = f"events:{league_id}"
-        raw = await self._cached(key, "events",
-            lambda: self._provider.get_events(league_id=league_id))
-        return [SportsGameOddsNormalizer.normalize_event(e) for e in raw]
+        data, source = await self._fetch_or_cache(key, "events",
+            lambda: self._provider.get_events(league_id=league_id),
+            normalize_fn=lambda raw: [SportsGameOddsNormalizer.normalize_event(e) for e in raw]
+        )
+        return data if data is not None else []
 
     async def get_odds(self, event_id: str) -> Optional[NormalizedGameOdds]:
         key = f"odds:{event_id}"
-        raw = await self._cached(key, "odds",
-            lambda: self._provider.get_odds(event_id))
-        return SportsGameOddsNormalizer.normalize_game_odds(raw, event_id)
+        data, source = await self._fetch_or_cache(key, "odds",
+            lambda: self._provider.get_odds(event_id),
+            normalize_fn=lambda raw: SportsGameOddsNormalizer.normalize_game_odds(raw, event_id)
+        )
+        return data if data else None
 
-    async def get_player_props(self, event_id: str) -> list[NormalizedPlayerProp]:
+    async def get_player_props(self, event_id: str) -> list:
         key = f"props:{event_id}"
-        raw = await self._cached(key, "props",
-            lambda: self._provider.get_player_props(event_id))
-        return [SportsGameOddsNormalizer.normalize_player_prop(p) for p in raw]
+        data, source = await self._fetch_or_cache(key, "props",
+            lambda: self._provider.get_player_props(event_id),
+            normalize_fn=lambda raw: [SportsGameOddsNormalizer.normalize_player_prop(p) for p in raw]
+        )
+        return data if data is not None else []
 
-    async def get_fair_odds(self, event_id: str) -> dict | None:
+    async def get_fair_odds(self, event_id: str) -> Optional[dict]:
         key = f"fair_odds:{event_id}"
-        try:
-            return await self._cached(key, "fair_odds",
-                lambda: self._provider.get_fair_odds(event_id))
-        except Exception:
-            return None
+        data, source = await self._fetch_or_cache(key, "fair_odds",
+            lambda: self._provider.get_fair_odds(event_id)
+        )
+        return data
 
-    async def get_consensus(self, event_id: str) -> dict | None:
+    async def get_consensus(self, event_id: str) -> Optional[dict]:
         key = f"consensus:{event_id}"
-        try:
-            return await self._cached(key, "consensus",
-                lambda: self._provider.get_consensus(event_id))
-        except Exception:
-            return None
+        data, source = await self._fetch_or_cache(key, "consensus",
+            lambda: self._provider.get_consensus(event_id)
+        )
+        return data
 
-    async def get_scores(self, event_id: str) -> dict | None:
+    async def get_scores(self, event_id: str) -> Optional[dict]:
         key = f"scores:{event_id}"
-        try:
-            return await self._cached(key, "scores",
-                lambda: self._provider.get_scores(event_id))
-        except Exception:
-            return None
+        data, source = await self._fetch_or_cache(key, "scores",
+            lambda: self._provider.get_scores(event_id)
+        )
+        return data
 
-    async def get_usage(self) -> dict | None:
+    async def get_usage(self) -> Optional[dict]:
         key = "usage"
-        try:
-            return await self._cached(key, "usage",
-                lambda: self._provider.get_usage())
-        except Exception:
-            return None
+        data, source = await self._fetch_or_cache(key, "usage",
+            lambda: self._provider.get_usage()
+        )
+        return data
 
     async def get_sports(self) -> list:
-        """List available sports from SGO."""
         key = "sports"
-        return await self._cached(key, "sports",
-            lambda: self._provider.get_sports())
+        data, source = await self._fetch_or_cache(key, "sports",
+            lambda: self._provider.get_sports()
+        )
+        return data if data is not None else []
 
-    async def get_teams(self, league: Optional[str] = None) -> list[NormalizedTeam]:
+    async def get_teams(self, league: Optional[str] = None) -> list:
         key = f"teams:{league or 'all'}"
-        raw = await self._cached(key, "teams",
-            lambda: self._provider.get_teams(league=league))
-        return [SportsGameOddsNormalizer.normalize_team(t) for t in raw]
+        data, source = await self._fetch_or_cache(key, "teams",
+            lambda: self._provider.get_teams(league=league),
+            normalize_fn=lambda raw: [SportsGameOddsNormalizer.normalize_team(t) for t in raw]
+        )
+        return data if data is not None else []
 
-    async def get_players(self, league_id: str = None, team: str = None) -> list[NormalizedPlayer]:
+    async def get_players(self, league_id: str = None, team: str = None) -> list:
         key = f"players:{league_id or 'all'}:{team or 'all'}"
-        raw = await self._cached(key, "players",
-            lambda: self._provider.get_players(league_id=league_id, team=team))
-        return [SportsGameOddsNormalizer.normalize_player(p) for p in raw]
+        data, source = await self._fetch_or_cache(key, "players",
+            lambda: self._provider.get_players(league_id=league_id, team=team),
+            normalize_fn=lambda raw: [SportsGameOddsNormalizer.normalize_player(p) for p in raw]
+        )
+        return data if data is not None else []
 
-    async def get_player_stats(self, player_id: str) -> dict | None:
+    async def get_player_stats(self, player_id: str) -> Optional[dict]:
         key = f"player_stats:{player_id}"
-        try:
-            return await self._cached(key, "stats",
-                lambda: self._provider.get_player_stats(player_id))
-        except Exception:
-            return None
+        data, source = await self._fetch_or_cache(key, "stats",
+            lambda: self._provider.get_player_stats(player_id)
+        )
+        return data
 
-    async def get_team_stats(self, team_id: str) -> dict | None:
+    async def get_team_stats(self, team_id: str) -> Optional[dict]:
         key = f"team_stats:{team_id}"
-        try:
-            return await self._cached(key, "stats",
-                lambda: self._provider.get_team_stats(team_id))
-        except Exception:
-            return None
+        data, source = await self._fetch_or_cache(key, "stats",
+            lambda: self._provider.get_team_stats(team_id)
+        )
+        return data
 
     async def build_game_environment(self, event_id: str) -> GameEnvironment:
-        """Aggregate all available context for a game."""
         odds = await self.get_odds(event_id)
         scores = await self.get_scores(event_id)
-        # Derive implied totals from consensus/fair odds when available
         impl_home = None
         impl_away = None
         game_total = None
