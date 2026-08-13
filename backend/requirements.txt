@@ -19,4 +19,4 @@ stripe
 passlib[bcrypt]==1.7.4
 bcrypt>=4.0.0,<4.1
 python-jose[cryptography]
-python-multipart
+python-multipartsports-odds-api

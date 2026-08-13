@@ -17,6 +17,7 @@ from providers.event_parser import (
     extract_bookmaker_odds_table,
     build_player_props_list,
 )
+from providers.sbevent import SBEvent
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,37 @@ def _event_summary(event, include_odds: bool = False) -> dict:
             result["totals_count"] = len(parsed.totals)
 
     return result
+
+
+# ── Canonical SBEvent → JSON ──────────────────────────────────
+
+def _sb_event_to_dict(evt: SBEvent) -> dict:
+    """ONE canonical JSON format shared by all pages."""
+    markets = []
+    for m in evt.markets:
+        books = [{
+            "bookmaker": b.bookmaker, "available": b.available,
+            "moneyline": b.moneyline, "spread": b.spread,
+            "over_under": b.over_under, "is_main_line": b.is_main_line,
+        } for b in m.books]
+        markets.append({
+            "odd_id": m.odd_id, "market_name": m.market_name,
+            "bet_type": m.bet_type, "side": m.side,
+            "player_id": m.player_id, "player_name": m.player_name,
+            "stat_entity_id": m.stat_entity_id, "stat_id": m.stat_id,
+            "fair_odds": m.fair_odds, "fair_spread": m.fair_spread,
+            "fair_over_under": m.fair_over_under, "books": books,
+        })
+    return {
+        "id": evt.id, "sport": evt.sport, "league": evt.league,
+        "start_time": evt.start_time, "status": evt.status,
+        "status_display": evt.status_display, "venue": evt.venue,
+        "home_team": {"name": evt.home_team.name, "abbreviation": evt.home_team.abbreviation, "team_id": evt.home_team.team_id},
+        "away_team": {"name": evt.away_team.name, "abbreviation": evt.away_team.abbreviation, "team_id": evt.away_team.team_id},
+        "home_score": evt.home_score, "away_score": evt.away_score, "period": evt.period,
+        "players": [{"player_id": p.player_id, "name": p.name, "team_id": p.team_id, "position": p.position} for p in evt.players],
+        "markets": markets, "bookmakers": evt.bookmakers,
+    }
 
 
 # ── Routes ───────────────────────────────────────────────────

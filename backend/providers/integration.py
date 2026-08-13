@@ -240,6 +240,14 @@ class SGOIntegration:
         )
         return data if data is not None else []
 
+    async def get_sb_events(self, league_id: str) -> list:
+        """Fetch normalized SBEvent objects via the official SDK."""
+        from providers.sdk_provider import SdkSgoProvider
+        from providers.sbevent import from_sdk_event
+        provider = SdkSgoProvider()
+        raw = await provider.get_raw_sdk_events(league_id)
+        return [from_sdk_event(e) for e in raw]
+
     async def get_odds(self, event_id: str) -> Optional[NormalizedGameOdds]:
         key = f"odds:{event_id}"
         data, source = await self._fetch_or_cache(key, "odds",
