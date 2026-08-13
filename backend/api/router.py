@@ -236,6 +236,7 @@ async def list_lineup_history(
     result = await db.execute(
         select(LineupHistory)
         .where(LineupHistory.user_id == user.id)
+        .where(LineupHistory.data_mode.notin_(["TRIAL_SCRAMBLED", "demo", "mock", "fake", "archived_legacy"]))
         .order_by(LineupHistory.created_at.desc())
         .limit(50)
     )
