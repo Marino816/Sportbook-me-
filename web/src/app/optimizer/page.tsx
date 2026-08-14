@@ -462,7 +462,7 @@ export default function OptimizerPage() {
                             <Td>{teamName}</Td>
                             <Td style={{ color: "#64748b" }}>{opp || "—"}</Td>
                             <Td style={{ color: "#64748b", fontSize: 10 }}>{startT || "—"}</Td>
-                            <Td style={{ color: "#c9a84c", fontWeight: 700, textTransform: "uppercase", fontSize: 10 }}>{p.position || "—"}</Td>
+                            <Td style={{ color: "#c9a84c", fontWeight: 700, textTransform: "uppercase", fontSize: 10 }}>{dfs?.position || p.position || "—"}</Td>
                             <Td>
                               <button onClick={() => toggleLike(p.player_id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                                 <Heart size={14} color={isLiked ? "#c9a84c" : "#334155"} fill={isLiked ? "#c9a84c" : "none"} />
