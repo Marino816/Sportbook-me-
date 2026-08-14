@@ -1,55 +1,173 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { UserCheck, Search, CheckCircle } from "lucide-react";
+import { UserCheck, Search, RotateCcw } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
-import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
+import type { SBEvent, SBMarket } from "@/lib/sbevent";
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 type League = (typeof LEAGUES)[number];
 
-interface PropRow {
-  playerId: string;
-  playerName: string;
-  teamAbbr: string;
-  marketName: string;
-  betType: string;
-  side: string;
-  line: number | null;
-  overPrice: number | null;
-  underPrice: number | null;
-  bookmaker: string;
-}
+const PROP_TYPE_LABELS: Record<string, string> = {
+  batting_RBI: "Runs Batted In",
+  batting_hits: "Hits",
+  batting_singles: "Singles",
+  batting_homeRuns: "Home Runs",
+  batting_totalBases: "Total Bases",
+  batting_basesOnBalls: "Walks",
+  batting_strikeouts: "Strikeouts",
+  batting_stolenBases: "Stolen Bases",
+  batting_doubles: "Doubles",
+  "batting_hits+runs+rbi": "Hits + Runs + RBI",
+  "batting_runs+rbi": "Runs + RBI",
+  batting_triples: "Triples",
+  batting_firstHomeRun: "First Home Run",
+  fantasyScore: "Fantasy Score",
+  pitching_earnedRuns: "Earned Runs",
+  pitching_strikeouts: "Pitching Strikeouts",
+  pitching_basesOnBalls: "Pitching Walks",
+  pitching_hits: "Pitching Hits",
+  pitching_outs: "Pitching Outs",
+  points: "Points",
+};
 
 function fmtOdds(v: number | null | undefined): string {
   if (v == null) return "—";
   return v > 0 ? `+${v}` : `${v}`;
 }
 
-/** Extract player prop rows from SBEvent.markets, grouped by player_name. */
-function extractPlayerProps(event: SBEvent): PropRow[] {
-  const rows: PropRow[] = [];
+function propTypeLabel(statId: string): string {
+  return PROP_TYPE_LABELS[statId] || statId || "Prop";
+}
 
-  for (const market of event.markets) {
-    if (market.bet_type !== "player_prop") continue;
+interface PlayerPoolEntry {
+  playerId: string;
+  playerName: string;
+  teamAbbr: string;
+  opponentAbbr: string;
+  game: string;
+  eventId: string;
+  marketCount: number;
+  markets: SBMarket[];
+}
 
-    for (const book of market.books) {
-      if (!book.available) continue;
+/**
+ * Combine all prop-eligible players across every event, deduplicated by
+ * player id. Team/opponent are resolved from the event's player→team map
+ * (SGO stat_entity_id is the PLAYER id, not the team id).
+ */
+function buildPlayerPool(events: SBEvent[]): PlayerPoolEntry[] {
+  const pool = new Map<string, PlayerPoolEntry>();
 
+  for (const event of events) {
+    // player_id -> team_id from the event roster
+    const teamById = new Map<string, string>();
+    for (const p of event.players ?? []) {
+      if (p.player_id) teamById.set(p.player_id, p.team_id);
+    }
+
+    for (const market of event.markets ?? []) {
+      if (market.bet_type !== "player_prop") continue;
+      const pid = market.player_id || market.player_name;
+      if (!pid) continue;
+
+      const key = market.player_id || `name:${market.player_name}`;
+      if (!pool.has(key)) {
+        const playerTeamId = teamById.get(market.player_id) || "";
+        const isHome = playerTeamId && event.home_team.team_id === playerTeamId;
+        const teamAbbr = isHome ? event.home_team.abbreviation : event.away_team.abbreviation;
+        const opponentAbbr = isHome ? event.away_team.abbreviation : event.home_team.abbreviation;
+        pool.set(key, {
+          playerId: market.player_id || market.player_name || "unknown",
+          playerName: market.player_name || "Unknown",
+          teamAbbr,
+          opponentAbbr,
+          game: `${event.away_team.abbreviation || "AWY"} @ ${event.home_team.abbreviation || "HOM"}`,
+          eventId: event.id,
+          marketCount: 0,
+          markets: [],
+        });
+      }
+
+      const entry = pool.get(key)!;
+      entry.markets.push(market);
+      entry.marketCount++;
+    }
+  }
+
+  return Array.from(pool.values()).sort((a, b) => a.playerName.localeCompare(b.playerName));
+}
+
+interface MarketBookRow {
+  propType: string;
+  line: number | null;
+  overPrice: number | null;
+  underPrice: number | null;
+  bookmaker: string;
+  isBestOver: boolean;
+  isBestUnder: boolean;
+  fairOdds: number | null;
+  consensus: number | null;
+}
+
+/** Flatten a player's prop markets into (prop, bookmaker) rows with fair data. */
+function buildMarketRows(entry: PlayerPoolEntry): MarketBookRow[] {
+  const byStat = new Map<string, SBMarket[]>();
+  for (const m of entry.markets) {
+    const key = m.stat_id || m.market_name;
+    if (!byStat.has(key)) byStat.set(key, []);
+    byStat.get(key)!.push(m);
+  }
+
+  const rows: MarketBookRow[] = [];
+
+  for (const [statId, markets] of byStat) {
+    const label = propTypeLabel(statId);
+    const isOU = markets.some((m) => m.side === "over" || m.side === "under");
+    const isYN = markets.some((m) => (m.market_name || "").toLowerCase().includes("yes/no"));
+
+    const first = markets[0];
+    const fairOdds = first?.fair_odds ?? null;
+    const fairOverUnder = first?.fair_over_under ?? null;
+
+    const bookLines = new Map<string, { over: number | null; under: number | null; line: number | null }>();
+    for (const m of markets) {
+      for (const book of m.books ?? []) {
+        if (!book.available) continue;
+        const bk = book.bookmaker || "Unknown";
+        if (!bookLines.has(bk)) bookLines.set(bk, { over: null, under: null, line: null });
+        const bl = bookLines.get(bk)!;
+        if (book.over_under != null) bl.line = book.over_under;
+        if (isOU) {
+          if (m.side === "over" && book.moneyline != null) bl.over = book.moneyline;
+          if (m.side === "under" && book.moneyline != null) bl.under = book.moneyline;
+        } else if (isYN) {
+          const oid = (m.odd_id || "").toLowerCase();
+          if (oid.endsWith("-yes") && book.moneyline != null) bl.over = book.moneyline;
+          if (oid.endsWith("-no") && book.moneyline != null) bl.under = book.moneyline;
+        }
+      }
+    }
+
+    let bestOver = -Infinity;
+    let bestUnder = -Infinity;
+    for (const bl of bookLines.values()) {
+      if (bl.over != null && bl.over > bestOver) bestOver = bl.over;
+      if (bl.under != null && bl.under > bestUnder) bestUnder = bl.under;
+    }
+
+    const sorted = Array.from(bookLines.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [bookmaker, bl] of sorted) {
       rows.push({
-        playerId: market.player_id || "unknown",
-        playerName: market.player_name || "Unknown",
-        teamAbbr:
-          event.home_team.team_id === market.stat_entity_id
-            ? event.home_team.abbreviation
-            : event.away_team.abbreviation,
-        marketName: market.market_name,
-        betType: market.bet_type,
-        side: market.side,
-        line: book.over_under ?? book.spread ?? null,
-        overPrice: market.side === "over" ? book.moneyline : null,
-        underPrice: market.side === "under" ? book.moneyline : null,
-        bookmaker: book.bookmaker,
+        propType: label,
+        line: bl.line ?? fairOverUnder,
+        overPrice: bl.over,
+        underPrice: bl.under,
+        bookmaker,
+        isBestOver: bl.over != null && bl.over === bestOver,
+        isBestUnder: bl.under != null && bl.under === bestUnder,
+        fairOdds,
+        consensus: fairOverUnder,
       });
     }
   }
@@ -57,124 +175,101 @@ function extractPlayerProps(event: SBEvent): PropRow[] {
   return rows;
 }
 
-/**
- * Merge player props — for over_under props, pair over/under sides together.
- * Returns a simplified view: Player | Team | Prop | Line | Over | Under | Book
- */
-interface GroupedProp {
-  playerName: string;
-  teamAbbr: string;
-  marketName: string;
-  lines: { line: number | null; overPrice: number | null; underPrice: number | null; bookmaker: string }[];
-}
-
-function groupProps(rows: PropRow[]): GroupedProp[] {
-  const groups = new Map<string, GroupedProp>();
-
-  for (const row of rows) {
-    const key = `${row.playerName}::${row.marketName}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        playerName: row.playerName,
-        teamAbbr: row.teamAbbr,
-        marketName: row.marketName,
-        lines: [],
-      });
-    }
-
-    const group = groups.get(key)!;
-
-    // Try to pair with an existing line from the same bookmaker at the same line value
-    const existing = group.lines.find(
-      (l) => l.bookmaker === row.bookmaker && l.line === row.line
-    );
-
-    if (existing) {
-      if (row.overPrice != null) existing.overPrice = row.overPrice;
-      if (row.underPrice != null) existing.underPrice = row.underPrice;
-    } else {
-      group.lines.push({
-        line: row.line,
-        overPrice: row.overPrice,
-        underPrice: row.underPrice,
-        bookmaker: row.bookmaker,
-      });
-    }
-  }
-
-  return Array.from(groups.values());
-}
-
-/** Build player->props map for the UI */
-function buildPlayerPropMap(
-  events: SBEvent[],
-  selectedEventId: string | null
-): Map<string, GroupedProp[]> {
-  const map = new Map<string, GroupedProp[]>();
-
-  if (!selectedEventId) return map;
-
-  const event = events.find((e) => e.id === selectedEventId);
-  if (!event) return map;
-
-  const rows = extractPlayerProps(event);
-  const groups = groupProps(rows);
-
-  for (const g of groups) {
-    if (!map.has(g.playerName)) {
-      map.set(g.playerName, []);
-    }
-    map.get(g.playerName)!.push(g);
-  }
-
-  return map;
-}
+const thStyle: React.CSSProperties = {
+  padding: "8px 12px",
+  textAlign: "left",
+  fontSize: 10,
+  fontWeight: 700,
+  color: "#64748b",
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+};
+const tdStyle: React.CSSProperties = { padding: "9px 12px", whiteSpace: "nowrap", fontSize: 12 };
 
 export default function PlayerPropsPage() {
   const [activeLeague, setActiveLeague] = useState<League>("MLB");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [selectedPlayerName, setSelectedPlayerName] = useState<string | null>(null);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [teamFilter, setTeamFilter] = useState<string>("");
+  const [propTypeFilter, setPropTypeFilter] = useState<string>("");
+  const [bookmakerFilter, setBookmakerFilter] = useState<string>("");
 
   const { events, loading, error } = useEvents(activeLeague);
 
-  const playerPropMap = useMemo(
-    () => buildPlayerPropMap(events, selectedEventId),
-    [events, selectedEventId]
+  // Full deduplicated player pool (ALL GAMES by default)
+  const pool = useMemo(() => buildPlayerPool(events), [events]);
+
+  // Game filter: null = ALL GAMES
+  const filteredEvents = useMemo(() => {
+    if (!selectedEventId) return events;
+    return events.filter((e) => e.id === selectedEventId);
+  }, [events, selectedEventId]);
+
+  // Player pool filtered by game + team + search
+  const visiblePool = useMemo(() => {
+    const q = search.toLowerCase();
+    return pool.filter((p) => {
+      if (selectedEventId && p.eventId !== selectedEventId) return false;
+      if (teamFilter && p.teamAbbr !== teamFilter) return false;
+      if (q && !p.playerName.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [pool, selectedEventId, teamFilter, search]);
+
+  // Team options from the full pool
+  const teamOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of pool) if (p.teamAbbr) set.add(p.teamAbbr);
+    return Array.from(set).sort();
+  }, [pool]);
+
+  // Bookmaker options from visible events
+  const bookmakerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of events) for (const b of e.bookmakers ?? []) if (b) set.add(b);
+    return Array.from(set).sort();
+  }, [events]);
+
+  const selectedPlayer = useMemo(
+    () => pool.find((p) => p.playerId === selectedPlayerId) ?? null,
+    [pool, selectedPlayerId]
   );
 
-  const playerNames = useMemo(() => Array.from(playerPropMap.keys()), [playerPropMap]);
+  // Market rows for the selected player, filtered by prop type + bookmaker
+  const marketRows = useMemo(() => {
+    if (!selectedPlayer) return [];
+    return buildMarketRows(selectedPlayer).filter((r) => {
+      if (propTypeFilter && r.propType !== propTypeFilter) return false;
+      if (bookmakerFilter && r.bookmaker !== bookmakerFilter) return false;
+      return true;
+    });
+  }, [selectedPlayer, propTypeFilter, bookmakerFilter]);
 
-  const filteredPlayers = useMemo(() => {
-    if (!search) return playerNames;
-    const q = search.toLowerCase();
-    return playerNames.filter((n) => n.toLowerCase().includes(q));
-  }, [playerNames, search]);
+  // Prop type options for the selected player
+  const propTypeOptions = useMemo(() => {
+    if (!selectedPlayer) return [];
+    const set = new Set<string>();
+    for (const r of buildMarketRows(selectedPlayer)) set.add(r.propType);
+    return Array.from(set).sort();
+  }, [selectedPlayer]);
 
-  const selectedProps = selectedPlayerName
-    ? playerPropMap.get(selectedPlayerName) ?? []
-    : [];
+  const resetFilters = () => {
+    setSelectedEventId(null);
+    setSelectedPlayerId(null);
+    setSearch("");
+    setTeamFilter("");
+    setPropTypeFilter("");
+    setBookmakerFilter("");
+  };
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
+    <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 24px" }}>
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          marginBottom: 28,
-          background: "#0a0f24",
-          borderRadius: 14,
-          border: "1px solid #1e293b",
-          padding: "20px 24px",
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28, background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: "20px 24px" }}>
         <UserCheck size={26} color="#c9a84c" />
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, color: "#c9a84c", margin: 0 }}>
-            Player Props
-          </h1>
+          <h1 style={{ fontSize: 24, fontWeight: 900, color: "#c9a84c", margin: 0 }}>Player Props</h1>
           <p style={{ fontSize: 13, color: "#94a3b8", margin: "2px 0 0" }}>
             Prop bets across sportsbooks — SportsGameOdds
           </p>
@@ -184,349 +279,151 @@ export default function PlayerPropsPage() {
       {/* League tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {LEAGUES.map((lg) => (
-          <button
-            key={lg}
-            onClick={() => {
-              setActiveLeague(lg);
-              setSelectedEventId(null);
-              setSelectedPlayerName(null);
-            }}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 10,
-              fontSize: 12,
-              fontWeight: 700,
-              background: activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24",
-              border: activeLeague === lg ? "1px solid #c9a84c" : "1px solid #1e293b",
-              color: activeLeague === lg ? "#c9a84c" : "#94a3b8",
-              cursor: "pointer",
-            }}
-          >
+          <button key={lg} onClick={() => { setActiveLeague(lg); resetFilters(); }}
+            style={{ padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24", border: activeLeague === lg ? "1px solid #c9a84c" : "1px solid #1e293b", color: activeLeague === lg ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>
             {lg}
           </button>
         ))}
       </div>
 
-      {loading && (
-        <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>
-          Loading events...
-        </div>
-      )}
-      {error && (
-        <div style={{ textAlign: "center", padding: 40, color: "#ef4444" }}>{error}</div>
-      )}
+      {loading && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Loading events...</div>}
+      {error && <div style={{ textAlign: "center", padding: 40, color: "#ef4444" }}>{error}</div>}
 
-      {/* Event selector */}
-      {!loading && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
-          {events.map((evt) => {
-            const isSel = evt.id === selectedEventId;
-            return (
-              <button
-                key={evt.id}
-                onClick={() => {
-                  setSelectedEventId(evt.id);
-                  setSelectedPlayerName(null);
-                }}
-                style={{
-                  padding: "10px 16px",
-                  borderRadius: 12,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  border: isSel ? "1px solid #c9a84c" : "1px solid #1e293b",
-                  background: isSel ? "rgba(201,168,76,0.1)" : "#0a0f24",
-                  color: isSel ? "#c9a84c" : "#f0f6fc",
-                  cursor: "pointer",
-                }}
-              >
-                {(evt.away_team.abbreviation || "AWY").substring(0, 3)} @{" "}
-                {(evt.home_team.abbreviation || "HOM").substring(0, 3)}
-                <span
-                  style={{ display: "block", fontSize: 10, color: "#64748b", marginTop: 2 }}
-                >
-                  {evt.away_team.name} @ {evt.home_team.name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Player props display */}
-      {selectedEventId && playerNames.length > 0 && (
+      {!loading && !error && (
         <>
-          {/* Player selector with search */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ position: "relative", marginBottom: 12 }}>
-              <Search
-                size={14}
-                style={{
-                  position: "absolute",
-                  left: 10,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  color: "#64748b",
-                }}
-              />
-              <input
-                type="text"
-                placeholder="Search players..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setSelectedPlayerName(null);
-                }}
-                style={{
-                  padding: "10px 14px 10px 32px",
-                  borderRadius: 10,
-                  fontSize: 14,
-                  background: "#0a0f24",
-                  border: "1px solid #1e293b",
-                  color: "#f0f6fc",
-                  outline: "none",
-                  width: "100%",
-                  maxWidth: 400,
-                }}
-              />
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {filteredPlayers.slice(0, 40).map((name) => {
-                const isSel = name === selectedPlayerName;
-                const propCount = playerPropMap.get(name)?.length ?? 0;
-                return (
-                  <button
-                    key={name}
-                    onClick={() => setSelectedPlayerName(name)}
-                    style={{
-                      padding: "10px 16px",
-                      borderRadius: 12,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      border: isSel ? "1px solid #c9a84c" : "1px solid #1e293b",
-                      background: isSel ? "rgba(201,168,76,0.1)" : "#0a0f24",
-                      color: isSel ? "#c9a84c" : "#f0f6fc",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {name}
-                    <span
-                      style={{
-                        display: "block",
-                        fontSize: 10,
-                        color: "#64748b",
-                        marginTop: 2,
-                      }}
-                    >
-                      {propCount} market{propCount !== 1 ? "s" : ""}
-                    </span>
-                  </button>
-                );
-              })}
+          {/* Game filter — ALL GAMES default */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+            <button onClick={() => { setSelectedEventId(null); setSelectedPlayerId(null); }}
+              style={{ padding: "10px 16px", borderRadius: 12, fontSize: 13, fontWeight: 800, border: selectedEventId === null ? "1px solid #c9a84c" : "1px solid #1e293b", background: selectedEventId === null ? "rgba(201,168,76,0.1)" : "#0a0f24", color: selectedEventId === null ? "#c9a84c" : "#f0f6fc", cursor: "pointer" }}>
+              ALL GAMES
+            </button>
+            {events.map((evt) => {
+              const isSel = evt.id === selectedEventId;
+              return (
+                <button key={evt.id} onClick={() => { setSelectedEventId(evt.id); setSelectedPlayerId(null); }}
+                  style={{ padding: "10px 16px", borderRadius: 12, fontSize: 13, fontWeight: 600, border: isSel ? "1px solid #c9a84c" : "1px solid #1e293b", background: isSel ? "rgba(201,168,76,0.1)" : "#0a0f24", color: isSel ? "#c9a84c" : "#f0f6fc", cursor: "pointer" }}>
+                  {(evt.away_team.abbreviation || "AWY").substring(0, 3)} @ {(evt.home_team.abbreviation || "HOM").substring(0, 3)}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Filters */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20, alignItems: "center" }}>
+            <button onClick={resetFilters} title="Reset all filters"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: "#0a0f24", border: "1px solid #1e293b", color: "#94a3b8", cursor: "pointer" }}>
+              <RotateCcw size={13} /> All Players
+            </button>
+            <FilterSelect label="Team" value={teamFilter} options={teamOptions} onChange={setTeamFilter} />
+            <FilterSelect label="Prop Type" value={propTypeFilter} options={propTypeOptions} onChange={setPropTypeFilter} />
+            <FilterSelect label="Bookmaker" value={bookmakerFilter} options={bookmakerOptions} onChange={setBookmakerFilter} />
+            <div style={{ position: "relative", marginLeft: "auto" }}>
+              <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
+              <input type="text" placeholder="Search players..." value={search} onChange={(e) => setSearch(e.target.value)}
+                style={{ padding: "8px 14px 8px 32px", borderRadius: 10, fontSize: 13, background: "#0a0f24", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none", width: 220 }} />
             </div>
           </div>
 
-          {/* Selected player props */}
-          {selectedProps.length > 0 ? (
-            <div style={{ display: "grid", gap: 14 }}>
-              {selectedProps.map((prop, pi) => {
-                // Find best over/under across all lines
-                let bestOverPrice = -Infinity;
-                let bestUnderPrice = -Infinity;
-                for (const l of prop.lines) {
-                  if (l.overPrice != null && l.overPrice > bestOverPrice)
-                    bestOverPrice = l.overPrice;
-                  if (l.underPrice != null && l.underPrice > bestUnderPrice)
-                    bestUnderPrice = l.underPrice;
-                }
+          {/* Player pool table */}
+          <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", overflow: "hidden", marginBottom: 24 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #1e293b" }}>
+                  <th style={thStyle}>Player</th>
+                  <th style={thStyle}>Team</th>
+                  <th style={thStyle}>Opponent</th>
+                  <th style={thStyle}>Game</th>
+                  <th style={{ ...thStyle, textAlign: "right" }}>Markets</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiblePool.length === 0 ? (
+                  <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", color: "#64748b", padding: 40 }}>No players match the current filters.</td></tr>
+                ) : (
+                  visiblePool.slice(0, 300).map((p) => {
+                    const isSel = p.playerId === selectedPlayerId;
+                    return (
+                      <tr key={p.playerId} onClick={() => setSelectedPlayerId(isSel ? null : p.playerId)}
+                        style={{ cursor: "pointer", borderBottom: "1px solid #1e293b20", background: isSel ? "rgba(201,168,76,0.08)" : "transparent" }}>
+                        <td style={{ ...tdStyle, color: "#f0f6fc", fontWeight: 700 }}>{p.playerName}</td>
+                        <td style={{ ...tdStyle, color: "#c9a84c", fontWeight: 700 }}>{p.teamAbbr || "—"}</td>
+                        <td style={{ ...tdStyle, color: "#94a3b8" }}>{p.opponentAbbr || "—"}</td>
+                        <td style={{ ...tdStyle, color: "#64748b" }}>{p.game}</td>
+                        <td style={{ ...tdStyle, color: "#c9a84c", fontWeight: 700, textAlign: "right" }}>{p.marketCount}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
 
-                // Compute line range
-                const lines = prop.lines.map((l) => l.line).filter((l) => l != null) as number[];
-                const lineRange =
-                  lines.length > 0
-                    ? Math.min(...lines) === Math.max(...lines)
-                      ? `${Math.min(...lines)}`
-                      : `${Math.min(...lines)} – ${Math.max(...lines)}`
-                    : "—";
+          {/* Selected player's prop markets */}
+          {selectedPlayer ? (
+            <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: "20px 22px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div>
+                  <h2 style={{ fontSize: 18, fontWeight: 800, color: "#c9a84c", margin: 0 }}>{selectedPlayer.playerName}</h2>
+                  <p style={{ fontSize: 12, color: "#64748b", margin: "2px 0 0" }}>
+                    {selectedPlayer.teamAbbr} vs {selectedPlayer.opponentAbbr} · {selectedPlayer.game}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedPlayerId(null)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#94a3b8", cursor: "pointer" }}>Close</button>
+              </div>
 
-                return (
-                  <div
-                    key={pi}
-                    style={{
-                      background: "#0a0f24",
-                      borderRadius: 14,
-                      border: "1px solid #1e293b",
-                      padding: "18px 20px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: 12,
-                      }}
-                    >
-                      <span style={{ fontSize: 15, fontWeight: 700, color: "#f0f6fc" }}>
-                        {prop.marketName}
-                      </span>
-                      {prop.lines.length > 1 && (
-                        <span
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                            fontSize: 11,
-                            color: "#c9a84c",
-                            fontWeight: 600,
-                          }}
-                        >
-                          <CheckCircle size={12} /> {prop.lines.length} books
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Best over + line range */}
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: 12,
-                        marginBottom: 12,
-                      }}
-                    >
-                      <div
-                        style={{
-                          background: "rgba(201,168,76,0.05)",
-                          borderRadius: 8,
-                          padding: "8px 12px",
-                        }}
-                      >
-                        <div style={{ fontSize: 10, color: "#64748b", marginBottom: 2 }}>
-                          Line Range
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#c9a84c" }}>
-                          {lineRange}
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          background: "rgba(201,168,76,0.05)",
-                          borderRadius: 8,
-                          padding: "8px 12px",
-                        }}
-                      >
-                        <div style={{ fontSize: 10, color: "#64748b", marginBottom: 2 }}>
-                          Books
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#c9a84c" }}>
-                          {prop.lines.length} bookmaker{prop.lines.length !== 1 ? "s" : ""}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bookmaker lines table */}
-                    <div style={{ borderTop: "1px solid #1e293b", paddingTop: 10 }}>
-                      {/* Header */}
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "2fr 1fr 1fr",
-                          padding: "6px 0",
-                          borderBottom: "1px solid #1e293b",
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: "#64748b",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        <span>Bookmaker</span>
-                        <span style={{ textAlign: "center" }}>Line</span>
-                        <span style={{ textAlign: "right" }}>O / U</span>
-                      </div>
-                      {prop.lines.slice(0, 12).map((line, li) => {
-                        const isBestOver =
-                          line.overPrice != null &&
-                          bestOverPrice !== -Infinity &&
-                          line.overPrice === bestOverPrice;
-                        const isBestUnder =
-                          line.underPrice != null &&
-                          bestUnderPrice !== -Infinity &&
-                          line.underPrice === bestUnderPrice;
-
-                        return (
-                          <div
-                            key={li}
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "2fr 1fr 1fr",
-                              padding: "8px 0",
-                              borderBottom: "1px solid #1e293b20",
-                              alignItems: "center",
-                            }}
-                          >
-                            <span style={{ fontSize: 12, color: "#94a3b8" }}>
-                              {line.bookmaker}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 700,
-                                color: "#f0f6fc",
-                                textAlign: "center",
-                              }}
-                            >
-                              {line.line ?? "—"}
-                            </span>
-                            <span style={{ fontSize: 12, textAlign: "right" }}>
-                              <span
-                                style={{
-                                  color: isBestOver ? "#c9a84c" : "#94a3b8",
-                                  fontWeight: isBestOver ? 800 : 400,
-                                }}
-                              >
-                                O {fmtOdds(line.overPrice)}
-                              </span>
-                              {" / "}
-                              <span
-                                style={{
-                                  color: isBestUnder ? "#c9a84c" : "#94a3b8",
-                                  fontWeight: isBestUnder ? 800 : 400,
-                                }}
-                              >
-                                U {fmtOdds(line.underPrice)}
-                              </span>
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+              {marketRows.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>No prop markets match the current filters.</div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #1e293b" }}>
+                        <th style={thStyle}>Prop</th>
+                        <th style={thStyle}>Line</th>
+                        <th style={{ ...thStyle, textAlign: "center" }}>Over</th>
+                        <th style={{ ...thStyle, textAlign: "center" }}>Under</th>
+                        <th style={thStyle}>Bookmaker</th>
+                        <th style={{ ...thStyle, textAlign: "center" }}>Best Price</th>
+                        <th style={{ ...thStyle, textAlign: "center" }}>Fair Odds</th>
+                        <th style={{ ...thStyle, textAlign: "center" }}>Consensus</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {marketRows.map((r, i) => (
+                        <tr key={i} style={{ borderBottom: "1px solid #1e293b20" }}>
+                          <td style={{ ...tdStyle, color: "#f0f6fc", fontWeight: 600 }}>{r.propType}</td>
+                          <td style={{ ...tdStyle, color: "#c9a84c", fontWeight: 700 }}>{r.line ?? "—"}</td>
+                          <td style={{ ...tdStyle, textAlign: "center", color: r.isBestOver ? "#c9a84c" : "#94a3b8", fontWeight: r.isBestOver ? 800 : 400 }}>O {fmtOdds(r.overPrice)}</td>
+                          <td style={{ ...tdStyle, textAlign: "center", color: r.isBestUnder ? "#c9a84c" : "#94a3b8", fontWeight: r.isBestUnder ? 800 : 400 }}>U {fmtOdds(r.underPrice)}</td>
+                          <td style={{ ...tdStyle, color: "#94a3b8" }}>{r.bookmaker}</td>
+                          <td style={{ ...tdStyle, textAlign: "center", color: "#c9a84c", fontWeight: 700, fontSize: 11 }}>
+                            {r.overPrice != null || r.underPrice != null ? `O ${fmtOdds(r.overPrice)} · U ${fmtOdds(r.underPrice)}` : "—"}
+                          </td>
+                          <td style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>{fmtOdds(r.fairOdds)}</td>
+                          <td style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>{r.consensus ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          ) : selectedPlayerName ? (
-            <div style={{ textAlign: "center", padding: 60, color: "#64748b" }}>
-              No props available for this player.
-            </div>
-          ) : (
-            <div style={{ textAlign: "center", padding: 60, color: "#64748b" }}>
-              Select a player to view their prop markets.
-            </div>
-          )}
+          ) : null}
         </>
       )}
+    </div>
+  );
+}
 
-      {selectedEventId && playerNames.length === 0 && !loading && (
-        <div style={{ textAlign: "center", padding: 60, color: "#64748b" }}>
-          No player props available for this event.
-        </div>
-      )}
-
-      {!selectedEventId && !loading && (
-        <div style={{ textAlign: "center", padding: 60, color: "#64748b" }}>
-          Select an event to view player props.
-        </div>
-      )}
+function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ padding: "8px 10px", borderRadius: 10, fontSize: 12, fontWeight: 600, background: "#0a0f24", border: "1px solid #1e293b", color: value ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>
+        <option value="">All</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
     </div>
   );
 }
