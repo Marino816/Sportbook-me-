@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import List, Dict, Any
+import logging
 
 from models.database import get_db
 from models.schemas import LineupRequest, LineupResponse, ProjectionSchema
@@ -12,6 +13,8 @@ from optimizer.core import DFSOptimizer
 from api.utils import wrap_data
 from api.auth import get_current_user
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
