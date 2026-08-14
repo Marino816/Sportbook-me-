@@ -94,10 +94,10 @@ export default function TermsPage() {
 
       <H2>10. No Guaranteed Results</H2>
       <P>
-        SB ME DFS.AI does not guarantee winnings, profits, successful wagers, or successful DFS lineups.
-        All analytics and projections are estimates, and actual outcomes may differ materially. You acknowledge
-        that using the Service involves risk and that you are solely responsible for your decisions and for any
-        outcomes resulting from them.
+        SB ME DFS.AI does not guarantee winnings, profits, or successful DFS lineups.
+        All analytics and projections are estimates, and actual outcomes may differ materially. Sports outcomes
+        are inherently uncertain, and you acknowledge that you are solely responsible for your decisions and
+        for any outcomes resulting from them.
       </P>
 
       <H2>11. Third-Party Sportsbooks and DFS Platforms</H2>

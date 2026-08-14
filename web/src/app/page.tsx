@@ -186,7 +186,7 @@ export default function LandingPage() {
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.1] mb-4" style={{ color: textPrimary }}>
               Build Smarter.<br />
-              <span style={{ color: gold }}>Win More.</span>
+              <span style={{ color: gold }}>Analyze Better.</span>
             </h1>
 
             <p className="text-lg font-semibold mb-4" style={{ color: gold }}>
@@ -273,7 +273,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* ── Line Movement + EV Edge card ── */}
+            {/* ── Market Movement + Odds Comparison card ── */}
             <div className="rounded-2xl border p-3.5 relative z-10 mb-3 flex items-center gap-4"
               style={{ background: cardElevated, borderColor: border }}>
               <div className="flex items-center gap-2">
@@ -287,28 +287,28 @@ export default function LandingPage() {
               <div className="flex items-center gap-2">
                 <Zap size={16} style={{ color: gold }} />
                 <div>
-                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>EV EDGE</div>
+                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>MARKET MOVEMENT</div>
                   <div className="text-sm font-extrabold" style={{ color: gold }}>+2.4%</div>
                 </div>
               </div>
             </div>
 
-            {/* ── Sharp Money card ── */}
+            {/* ── Market Intelligence card ── */}
             <div className="rounded-2xl border p-3.5 relative z-10 flex items-center gap-4"
               style={{ background: cardElevated, borderColor: border }}>
               <div className="flex items-center gap-2">
                 <Brain size={16} style={{ color: gold }} />
                 <div>
-                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>SHARP MONEY</div>
-                  <div className="text-sm font-extrabold" style={{ color: textPrimary }}>64% on Over</div>
+                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>MARKET INTELLIGENCE</div>
+                  <div className="text-sm font-extrabold" style={{ color: textPrimary }}>64% consensus</div>
                 </div>
               </div>
               <div className="w-px h-8" style={{ background: border }} />
               <div className="flex items-center gap-2">
                 <BarChart3 size={16} style={{ color: gold }} />
                 <div>
-                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>TICKETS</div>
-                  <div className="text-sm font-extrabold" style={{ color: textSecondary }}>12.4K tracked</div>
+                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>ODDS COMPARISON</div>
+                  <div className="text-sm font-extrabold" style={{ color: textSecondary }}>12.4K markets</div>
                 </div>
               </div>
             </div>
@@ -335,7 +335,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
             {[
               { icon: TrendingUp, title: "AI Projections", desc: "Advanced player projections powered by machine learning and real-time data.", metric: "229", metricLabel: "players projected" },
-              { icon: Activity, title: "Real-Time Odds", desc: "Live lines, movement tracking, and sharp insights across sportsbooks.", metric: "50+", metricLabel: "live events" },
+              { icon: Activity, title: "Real-Time Odds", desc: "Live lines, market movement, and consensus data across sportsbooks.", metric: "50+", metricLabel: "live events" },
               { icon: Target, title: "Player Props", desc: "Deep prop analysis with edge detection and fair value comparison.", metric: "15K", metricLabel: "prop markets" },
               { icon: Layers, title: "Lineup Optimizer", desc: "Build optimized DFS lineups with CP-SAT solver in seconds.", metric: "1-3s", metricLabel: "optimization time" },
               { icon: Bot, title: "SB ME AI", desc: "Ask anything. Get smarter. AI-powered insights 24/7.", metric: "24/7", metricLabel: "intelligence" },
@@ -382,7 +382,7 @@ export default function LandingPage() {
             {
               icon: BarChart3,
               title: "Game Intelligence",
-              desc: "Real-time odds, sharp money tracking, and line movement alerts for every game.",
+              desc: "Real-time odds, market intelligence, and line movement analysis for every game.",
               chart: <Sparkline data={[1,2,1.5,3,2.5,4,3.5,5,4.2]} width={100} height={36} stroke={gold} />,
               stat: "50 live",
               statVal: "events tracked",
@@ -497,10 +497,10 @@ export default function LandingPage() {
           <div className="absolute top-0 right-0 w-48 h-48 opacity-10 pointer-events-none"
             style={{ background: `radial-gradient(circle, ${gold} 0%, transparent 70%)` }} />
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight mb-4" style={{ color: textPrimary }}>
-            Dominate Every Slate with <span style={{ color: gold }}>SB ME Intelligence</span>
+            Analyze Every Slate with <span style={{ color: gold }}>SB ME Intelligence</span>
           </h2>
           <p className="text-base max-w-lg mx-auto mb-8" style={{ color: textSecondary }}>
-            Join thousands of DFS players using SB ME Intelligence to gain an edge.
+            Sports analytics and DFS intelligence software for sharper, more informed decisions.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <GoldButton href="/register">

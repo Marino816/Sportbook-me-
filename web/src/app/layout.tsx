@@ -19,9 +19,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sportsbook Me DFS AI — MLB, NBA, NFL & More",
+  title: "SB ME DFS.AI — Sports Analytics & DFS Intelligence Software",
   description:
-    "The most powerful DFS AI platform. Optimize lineups across MLB, NBA, NFL, NHL, Soccer, MLS, UFC, PGA, NCAAF, NCAAM, NCAAW, and Boxing.",
+    "Subscription-based sports analytics and daily fantasy sports intelligence software with projections, lineup optimization, odds comparison, player-prop analytics, and AI insights. No wagering or contest-entry services.",
 };
 
 export default function RootLayout({
