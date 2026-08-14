@@ -80,6 +80,8 @@ class NativeProjection:
     sport: str
     position: str
     salary: int
+    team: str = ""
+    opponent: Optional[str] = None
     base_projection: float = 0.0
     projection_source: str = "UNAVAILABLE"  # SGO_FANTASY_MARKET | PROP_BASED | HYBRID | UNAVAILABLE
     projection_confidence: float = 0.0
@@ -113,6 +115,8 @@ def compute_projections(
         proj = NativeProjection(
             player_id=pid, player_name=name, sport=sport,
             position=pos, salary=int(salary),
+            team=p.get("team") or "",
+            opponent=p.get("opponent"),
         )
 
         # Check SGO intelligence enrichment
@@ -151,12 +155,20 @@ def compute_projections(
 
 
 def projections_to_pool(projections: list[NativeProjection]) -> list[dict]:
-    """Convert NativeProjection list to optimizer-compatible pool dicts."""
+    """Convert NativeProjection list to optimizer-compatible pool dicts.
+
+    Emits both `position` and `roster_position` (the CP-SAT optimizer reads
+    `roster_position`) plus `team`/`opponent` so stacking and pitcher-conflict
+    constraints survive the projection pass.
+    """
     return [{
         "id": p.player_id,
         "name": p.player_name,
         "position": p.position,
+        "roster_position": p.position,
         "salary": p.salary,
+        "team": p.team,
+        "opponent": p.opponent,
         "projected_fp": p.base_projection,
         "projection_source": p.projection_source,
         "projection_confidence": p.projection_confidence,

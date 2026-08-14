@@ -140,20 +140,16 @@ def from_sdk_event(sdk_event) -> SBEvent:
             bet_type = "other"
             side = ""
             mid = (o.market_name or odd_id).lower()
+            seid = o.stat_entity_id or ""
+            pid = o.player_id or ""
             if "moneyline" in mid or "ml" in mid.split("-"):
                 bet_type = "moneyline"
             elif "spread" in mid or "handicap" in mid:
                 bet_type = "spread"
             elif "over" in mid or "under" in mid or "total" in mid:
                 bet_type = "total"
-                if "over" in mid:
-                    side = "over"
-                elif "under" in mid:
-                    side = "under"
-            
+
             # Player prop detection via stat_entity_id / player_id
-            seid = o.stat_entity_id or ""
-            pid = o.player_id or ""
             player_name = ""
             if pid or (seid and seid not in ("home", "away", "all", "")):
                 bet_type = "player_prop"
@@ -163,12 +159,15 @@ def from_sdk_event(sdk_event) -> SBEvent:
                     if p_sdk:
                         player_name = p_sdk.name or f"{p_sdk.first_name or ''} {p_sdk.last_name or ''}".strip()
 
-            if side:
-                pass  # already set (over/under for totals)
-            elif "home" in mid:
+            # Side — authoritative from stat_entity_id (home/away), otherwise the
+            # odd_id's final segment (over/under/draw/not_draw/yes/no/even/odd).
+            if seid == "home":
                 side = "home"
-            elif "away" in mid:
+            elif seid == "away":
                 side = "away"
+            else:
+                parts = (odd_id or "").split("-")
+                side = parts[-1] if parts else ""
 
             # Parse books
             books = []

@@ -52,31 +52,43 @@ export default function OptimizerPage() {
   // Results
   const [lineups, setLineups] = useState<LineupResponse[]>([]);
   const [resolvedSlateId, setResolvedSlateId] = useState<number | null>(null);
+  const [slatesLoading, setSlatesLoading] = useState(true);
 
   // ── Resolve DFS slate ──────────────────────────────────────
   useEffect(() => {
+    let cancelled = false;
     async function load() {
+      setSlatesLoading(true);
       try {
         const res = await fetchDFSSlates(platform, sport);
         const pub = (res?.data ?? []).filter((s: any) => s.status === "PUBLISHED");
-        setResolvedSlateId(pub.length > 0 ? pub[0].id : null);
+        if (!cancelled) setResolvedSlateId(pub.length > 0 ? pub[0].id : null);
       } catch {
-        setResolvedSlateId(null);
+        if (!cancelled) setResolvedSlateId(null);
+      } finally {
+        if (!cancelled) setSlatesLoading(false);
       }
     }
     load();
+    return () => { cancelled = true; };
   }, [sport, platform]);
 
   // ── Optimize mutation (defensive onSuccess) ──────────────
   const optimizeMutation = useMutation({
-    mutationFn: () =>
-      runOptimizer(resolvedSlateId ?? 1, {
+    mutationFn: () => {
+      if (resolvedSlateId == null) {
+        throw new Error(
+          `No ${platform === "draftkings" ? "DraftKings" : "FanDuel"} contest salary data for ${sport}.`,
+        );
+      }
+      return runOptimizer(resolvedSlateId, {
         sport,
         platform,
         strategy,
         num_lineups: lineupCount,
         event_id: selectedEvent?.id ?? null,
-      }),
+      });
+    },
     onSuccess: (res: unknown) => {
       try {
         if (!res || typeof res !== "object") { setLineups([]); return; }
@@ -135,6 +147,8 @@ export default function OptimizerPage() {
   const liveEvents = events.filter((e) => liveClass(e.status));
   const upcomingEvents = events.filter((e) => !liveClass(e.status));
 
+  const canGenerate = !!selectedEvent && !slatesLoading && resolvedSlateId != null;
+
   // ── Render ────────────────────────────────────────────────
   return (
     <div style={{ background: "#060b1a", minHeight: "100vh", color: "#f0f6fc" }}>
@@ -160,10 +174,10 @@ export default function OptimizerPage() {
               <input type="range" min={1} max={50} value={lineupCount} onChange={(e) => setLineupCount(+e.target.value)} style={{ flex: 1, accentColor: "#c9a84c" }} />
               <span style={{ fontSize: 12, fontWeight: 700, color: "#c9a84c" }}>{lineupCount}</span>
             </div>
-            <button onClick={() => optimizeMutation.mutate()} disabled={!selectedEvent || optimizeMutation.isPending} style={{ width: "100%", padding: "14px", borderRadius: 14, fontWeight: 800, fontSize: 15, textTransform: "uppercase", background: selectedEvent ? "#c9a84c" : "#1e293b", color: selectedEvent ? "#060b1a" : "#64748b", border: "none", cursor: selectedEvent ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: selectedEvent ? "0 4px 20px rgba(201,168,76,0.3)" : "none" }}>
+            <button onClick={() => optimizeMutation.mutate()} disabled={!canGenerate || optimizeMutation.isPending} style={{ width: "100%", padding: "14px", borderRadius: 14, fontWeight: 800, fontSize: 15, textTransform: "uppercase", background: canGenerate ? "#c9a84c" : "#1e293b", color: canGenerate ? "#060b1a" : "#64748b", border: "none", cursor: canGenerate ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: canGenerate ? "0 4px 20px rgba(201,168,76,0.3)" : "none" }}>
               {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> Solving...</> : <><Play size={18} /> Generate</>}
             </button>
-            {!resolvedSlateId && <Muted>No contest salary data for {platform} {sport} — projections only.</Muted>}
+            {!slatesLoading && resolvedSlateId == null && <Muted>No {platform === "draftkings" ? "DraftKings" : "FanDuel"} contest salary data for {sport} — Generate is unavailable until a {platform} slate is published.</Muted>}
           </Section>
         </div>
         <div style={{ flex: 1, overflow: "auto", padding: 24 }}>

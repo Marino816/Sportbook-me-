@@ -120,7 +120,7 @@ class MLBOptimizer:
                 continue
             idx = len(self.players)
             self.players.append(p)
-            pos = _normalize_mlb_pos(p.get("roster_position", ""), self.platform)
+            pos = _normalize_mlb_pos(p.get("roster_position") or p.get("position") or "", self.platform)
             self.pos_mask[idx] = pos
             self.idx_by_id[p.get("id", idx)] = idx
             team = p.get("team", "")

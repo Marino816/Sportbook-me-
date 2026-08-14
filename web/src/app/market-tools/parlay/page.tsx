@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Layers, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
+import { formatBookmakerName, buildBookmakerUniverse } from "@/lib/bookmakers";
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 type League = (typeof LEAGUES)[number];
@@ -14,6 +15,7 @@ interface Leg {
   market: string;
   selection: string;
   odds: number;
+  bookmaker: string;
 }
 
 function fmtOdds(v: number | null | undefined): string {
@@ -26,31 +28,10 @@ function fmtSpreadVal(v: number | null | undefined): string {
   return v > 0 ? `+${v}` : `${v}`;
 }
 
-/** Best available moneyline odds from the market's books */
-function bestMoneyline(books: SBBookLine[]): number | null {
-  const odds = books
-    .filter((b) => b.available && b.moneyline != null)
-    .map((b) => b.moneyline!);
-  if (!odds.length) return null;
-  return odds.reduce((best, o) => (o > best ? o : best), odds[0]);
-}
-
-/** Best available spread odds from the market's books (for the spread side) */
-function bestSpreadOdds(books: SBBookLine[]): number | null {
-  const odds = books
-    .filter((b) => b.available && b.spread != null)
-    .map((b) => b.spread!);
-  if (!odds.length) return null;
-  return odds.reduce((best, o) => (o > best ? o : best), odds[0]);
-}
-
-/** Best over/under odds from the market's books */
-function bestTotalOdds(books: SBBookLine[]): number | null {
-  const odds = books
-    .filter((b) => b.available && b.over_under != null)
-    .map((b) => b.over_under!);
-  if (!odds.length) return null;
-  return odds.reduce((best, o) => (o > best ? o : best), odds[0]);
+/** Get the specific sportsbook's line from a market's book list. */
+function getBook(books: SBBookLine[], bookmaker: string): SBBookLine | undefined {
+  if (!bookmaker) return undefined;
+  return books.find((b) => b.bookmaker === bookmaker);
 }
 
 function americanToDecimal(am: number): number {
@@ -63,8 +44,22 @@ export default function ParlayBuilderPage() {
   const [stake, setStake] = useState("10");
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [selectedBetType, setSelectedBetType] = useState<string>("moneyline");
+  const [selectedBook, setSelectedBook] = useState<string>("");
 
   const { events, loading } = useEvents(activeLeague);
+
+  // ── Dynamic bookmaker universe from live SGO availability ──
+  const availableBooks = useMemo(
+    () => buildBookmakerUniverse(events.map((e) => e.bookmakers)),
+    [events],
+  );
+
+  // If the selected book is no longer available in this league, reset it.
+  useMemo(() => {
+    if (selectedBook && !availableBooks.includes(selectedBook)) {
+      setSelectedBook("");
+    }
+  }, [availableBooks, selectedBook]);
 
   const toggleExpand = (id: string) => {
     setExpandedEventId((prev) => (prev === id ? null : id));
@@ -76,7 +71,7 @@ export default function ParlayBuilderPage() {
     selection: string,
     odds: number,
   ) => {
-    const evName = `${event.away_team.abbreviation || "AWY"} @ ${event.home_team.abbreviation || "HOM"}`;
+    const evName = `${event.away_team?.abbreviation || "AWY"} @ ${event.home_team?.abbreviation || "HOM"}`;
     setLegs([
       ...legs,
       {
@@ -85,6 +80,7 @@ export default function ParlayBuilderPage() {
         market,
         selection,
         odds,
+        bookmaker: selectedBook,
       },
     ]);
   };
@@ -141,7 +137,7 @@ export default function ParlayBuilderPage() {
             Parlay Builder
           </h1>
           <p style={{ fontSize: 13, color: "#94a3b8", margin: "2px 0 0" }}>
-            Build multi-leg parlays with live pricing — SportsGameOdds
+            Pick one sportsbook, then add its live legs — SportsGameOdds
           </p>
         </div>
       </div>
@@ -154,18 +150,16 @@ export default function ParlayBuilderPage() {
             onClick={() => {
               setActiveLeague(lg);
               setExpandedEventId(null);
+              setSelectedBook("");
+              setLegs([]);
             }}
             style={{
               padding: "8px 14px",
               borderRadius: 10,
               fontSize: 12,
               fontWeight: 700,
-              background:
-                activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24",
-              border:
-                activeLeague === lg
-                  ? "1px solid #c9a84c"
-                  : "1px solid #1e293b",
+              background: activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24",
+              border: activeLeague === lg ? "1px solid #c9a84c" : "1px solid #1e293b",
               color: activeLeague === lg ? "#c9a84c" : "#94a3b8",
               cursor: "pointer",
             }}
@@ -173,6 +167,65 @@ export default function ParlayBuilderPage() {
             {lg}
           </button>
         ))}
+      </div>
+
+      {/* Sportsbook selector */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 20,
+          background: "#0a0f24",
+          borderRadius: 14,
+          border: "1px solid #1e293b",
+          padding: "16px 20px",
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: "#64748b",
+            textTransform: "uppercase",
+            letterSpacing: 1,
+          }}
+        >
+          Sportsbook
+        </span>
+        <select
+          value={selectedBook}
+          onChange={(e) => {
+            setSelectedBook(e.target.value);
+            setLegs([]);
+          }}
+          style={{
+            padding: "10px 14px",
+            borderRadius: 10,
+            fontSize: 14,
+            fontWeight: 700,
+            background: "#1a1f33",
+            border: "1px solid #1e293b",
+            color: "#c9a84c",
+            cursor: "pointer",
+            minWidth: 220,
+          }}
+        >
+          <option value="" disabled>
+            {loading ? "Loading books…" : `Select a sportsbook (${availableBooks.length} available)`}
+          </option>
+          {availableBooks.map((b) => (
+            <option key={b} value={b}>
+              {formatBookmakerName(b)}
+            </option>
+          ))}
+        </select>
+        {selectedBook && (
+          <span style={{ fontSize: 12, color: "#94a3b8" }}>
+            Showing {formatBookmakerName(selectedBook)} lines only
+          </span>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
@@ -191,6 +244,20 @@ export default function ParlayBuilderPage() {
               <span style={{ fontSize: 16, fontWeight: 800, color: "#c9a84c" }}>
                 Parlay ({legs.length} legs)
               </span>
+              {selectedBook && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "#94a3b8",
+                    padding: "3px 8px",
+                    borderRadius: 4,
+                    background: "#1a1f33",
+                  }}
+                >
+                  {formatBookmakerName(selectedBook)}
+                </span>
+              )}
               {allSameEvent && (
                 <span
                   style={{
@@ -209,7 +276,7 @@ export default function ParlayBuilderPage() {
 
             {legs.length === 0 && (
               <p style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 20 }}>
-                Add legs from the games on the right.
+                Select a sportsbook, then add legs from the games on the right.
               </p>
             )}
 
@@ -323,115 +390,128 @@ export default function ParlayBuilderPage() {
             </div>
           )}
 
-          {!loading && events.length === 0 && (
+          {!loading && !selectedBook && (
+            <div
+              style={{
+                color: "#64748b",
+                padding: 40,
+                textAlign: "center",
+                background: "#0a0f24",
+                borderRadius: 14,
+                border: "1px solid #1e293b",
+              }}
+            >
+              Select a sportsbook above to see its available legs.
+            </div>
+          )}
+
+          {!loading && selectedBook && events.length === 0 && (
             <div style={{ color: "#64748b", padding: 40, textAlign: "center" }}>
               No events found for {activeLeague}.
             </div>
           )}
 
-          <div style={{ display: "grid", gap: 10 }}>
-            {events.map((game) => {
-              const isOpen = expandedEventId === game.id;
-              const groups = getMarketGroups(game);
-              const betTypes = Object.keys(groups);
+          {!loading && selectedBook && (
+            <div style={{ display: "grid", gap: 10 }}>
+              {events.map((game) => {
+                const isOpen = expandedEventId === game.id;
+                const groups = getMarketGroups(game);
+                const betTypes = Object.keys(groups);
 
-              return (
-                <div
-                  key={game.id}
-                  style={{
-                    background: "#0a0f24",
-                    borderRadius: 14,
-                    border: "1px solid #1e293b",
-                    overflow: "hidden",
-                  }}
-                >
-                  <button
-                    onClick={() => toggleExpand(game.id)}
+                return (
+                  <div
+                    key={game.id}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      width: "100%",
-                      padding: "16px 18px",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "#f0f6fc",
-                      fontSize: 14,
-                      fontWeight: 600,
+                      background: "#0a0f24",
+                      borderRadius: 14,
+                      border: "1px solid #1e293b",
+                      overflow: "hidden",
                     }}
                   >
-                    <span>
-                      {game.away_team.abbreviation || game.away_team.name} @{" "}
-                      {game.home_team.abbreviation || game.home_team.name}
-                    </span>
-                    {isOpen ? (
-                      <ChevronUp size={18} color="#94a3b8" />
-                    ) : (
-                      <ChevronDown size={18} color="#94a3b8" />
-                    )}
-                  </button>
+                    <button
+                      onClick={() => toggleExpand(game.id)}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        width: "100%",
+                        padding: "16px 18px",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "#f0f6fc",
+                        fontSize: 14,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>
+                        {game.away_team?.abbreviation || game.away_team?.name} @{" "}
+                        {game.home_team?.abbreviation || game.home_team?.name}
+                      </span>
+                      {isOpen ? (
+                        <ChevronUp size={18} color="#94a3b8" />
+                      ) : (
+                        <ChevronDown size={18} color="#94a3b8" />
+                      )}
+                    </button>
 
-                  {isOpen && betTypes.length > 0 && (
-                    <div style={{ padding: "0 18px 18px", borderTop: "1px solid #1e293b" }}>
-                      {/* Bet type tabs */}
-                      <div style={{ display: "flex", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
-                        {betTypes.map((bt) => (
-                          <button
-                            key={bt}
-                            onClick={() => setSelectedBetType(bt)}
-                            style={{
-                              padding: "6px 14px",
-                              borderRadius: 8,
-                              fontSize: 11,
-                              fontWeight: 600,
-                              border:
-                                selectedBetType === bt
-                                  ? "1px solid #c9a84c"
-                                  : "1px solid #1e293b",
-                              background:
-                                selectedBetType === bt
-                                  ? "rgba(201,168,76,0.1)"
-                                  : "#1a1f33",
-                              color:
-                                selectedBetType === bt ? "#c9a84c" : "#94a3b8",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {bt === "moneyline"
-                              ? "Moneyline"
-                              : bt === "spread"
-                                ? "Spread"
-                                : bt === "total"
-                                  ? "Total"
-                                  : bt}
-                          </button>
-                        ))}
+                    {isOpen && betTypes.length > 0 && (
+                      <div style={{ padding: "0 18px 18px", borderTop: "1px solid #1e293b" }}>
+                        <div style={{ display: "flex", gap: 6, margin: "12px 0", flexWrap: "wrap" }}>
+                          {betTypes.map((bt) => (
+                            <button
+                              key={bt}
+                              onClick={() => setSelectedBetType(bt)}
+                              style={{
+                                padding: "6px 14px",
+                                borderRadius: 8,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                border:
+                                  selectedBetType === bt
+                                    ? "1px solid #c9a84c"
+                                    : "1px solid #1e293b",
+                                background:
+                                  selectedBetType === bt ? "rgba(201,168,76,0.1)" : "#1a1f33",
+                                color: selectedBetType === bt ? "#c9a84c" : "#94a3b8",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {bt === "moneyline"
+                                ? "Moneyline"
+                                : bt === "spread"
+                                  ? "Spread"
+                                  : bt === "total"
+                                    ? "Total"
+                                    : bt}
+                            </button>
+                          ))}
+                        </div>
+
+                        <MarketLegs
+                          betType={selectedBetType}
+                          markets={groups[selectedBetType] || []}
+                          event={game}
+                          bookmaker={selectedBook}
+                          onAdd={(market: string, selection: string, odds: number) =>
+                            addLeg(game, market, selection, odds)
+                          }
+                        />
                       </div>
+                    )}
 
-                      {/* Market legs for selected bet type */}
-                      <MarketLegs
-                        betType={selectedBetType}
-                        markets={groups[selectedBetType] || []}
-                        event={game}
-                        onAdd={(market: string, selection: string, odds: number) =>
-                          addLeg(game, market, selection, odds)
-                        }
-                      />
-                    </div>
-                  )}
-
-                  {isOpen && betTypes.length === 0 && (
-                    <div style={{ padding: "0 18px 18px", borderTop: "1px solid #1e293b" }}>
-                      <p style={{ color: "#64748b", fontSize: 12, textAlign: "center", padding: 16 }}>
-                        No markets available for this event.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    {isOpen && betTypes.length === 0 && (
+                      <div style={{ padding: "0 18px 18px", borderTop: "1px solid #1e293b" }}>
+                        <p style={{ color: "#64748b", fontSize: 12, textAlign: "center", padding: 16 }}>
+                          No markets available for this event.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -444,11 +524,13 @@ function MarketLegs({
   betType,
   markets,
   event,
+  bookmaker,
   onAdd,
 }: {
   betType: string;
   markets: SBMarket[];
   event: SBEvent;
+  bookmaker: string;
   onAdd: (market: string, selection: string, odds: number) => void;
 }) {
   if (!markets.length) {
@@ -462,25 +544,29 @@ function MarketLegs({
   if (betType === "moneyline") {
     const home = markets.find((m) => m.side?.toLowerCase() === "home");
     const away = markets.find((m) => m.side?.toLowerCase() === "away");
+    const homeB = home ? getBook(home.books, bookmaker) : undefined;
+    const awayB = away ? getBook(away.books, bookmaker) : undefined;
     return (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {away && (
           <SelectionBtn
-            label={event.away_team.abbreviation || event.away_team.name || "Away"}
-            odds={fmtOdds(bestMoneyline(away.books))}
+            label={event.away_team?.abbreviation || event.away_team?.name || "Away"}
+            odds={fmtOdds(awayB?.moneyline ?? null)}
+            disabled={!awayB}
             onClick={() => {
-              const o = bestMoneyline(away.books) ?? -110;
-              onAdd("Moneyline", event.away_team.abbreviation || "Away", o);
+              if (!awayB) return;
+              onAdd("Moneyline", event.away_team?.abbreviation || "Away", awayB.moneyline ?? -110);
             }}
           />
         )}
         {home && (
           <SelectionBtn
-            label={event.home_team.abbreviation || event.home_team.name || "Home"}
-            odds={fmtOdds(bestMoneyline(home.books))}
+            label={event.home_team?.abbreviation || event.home_team?.name || "Home"}
+            odds={fmtOdds(homeB?.moneyline ?? null)}
+            disabled={!homeB}
             onClick={() => {
-              const o = bestMoneyline(home.books) ?? -110;
-              onAdd("Moneyline", event.home_team.abbreviation || "Home", o);
+              if (!homeB) return;
+              onAdd("Moneyline", event.home_team?.abbreviation || "Home", homeB.moneyline ?? -110);
             }}
           />
         )}
@@ -496,25 +582,37 @@ function MarketLegs({
   if (betType === "spread") {
     const home = markets.find((m) => m.side?.toLowerCase() === "home");
     const away = markets.find((m) => m.side?.toLowerCase() === "away");
+    const homeB = home ? getBook(home.books, bookmaker) : undefined;
+    const awayB = away ? getBook(away.books, bookmaker) : undefined;
     return (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         {away && (
           <SelectionBtn
-            label={`${event.away_team.abbreviation || "Away"} ${fmtSpreadVal(away.fair_spread)}`}
-            odds={fmtOdds(bestSpreadOdds(away.books))}
+            label={`${event.away_team?.abbreviation || "Away"} ${fmtSpreadVal(away.fair_spread)}`}
+            odds={fmtOdds(awayB?.moneyline ?? null)}
+            disabled={!awayB}
             onClick={() => {
-              const o = bestSpreadOdds(away.books) ?? -110;
-              onAdd("Spread", `${event.away_team.abbreviation || "Away"} ${fmtSpreadVal(away.fair_spread)}`, o);
+              if (!awayB) return;
+              onAdd(
+                "Spread",
+                `${event.away_team?.abbreviation || "Away"} ${fmtSpreadVal(away.fair_spread)}`,
+                awayB.moneyline ?? -110,
+              );
             }}
           />
         )}
         {home && (
           <SelectionBtn
-            label={`${event.home_team.abbreviation || "Home"} ${fmtSpreadVal(home.fair_spread)}`}
-            odds={fmtOdds(bestSpreadOdds(home.books))}
+            label={`${event.home_team?.abbreviation || "Home"} ${fmtSpreadVal(home.fair_spread)}`}
+            odds={fmtOdds(homeB?.moneyline ?? null)}
+            disabled={!homeB}
             onClick={() => {
-              const o = bestSpreadOdds(home.books) ?? -110;
-              onAdd("Spread", `${event.home_team.abbreviation || "Home"} ${fmtSpreadVal(home.fair_spread)}`, o);
+              if (!homeB) return;
+              onAdd(
+                "Spread",
+                `${event.home_team?.abbreviation || "Home"} ${fmtSpreadVal(home.fair_spread)}`,
+                homeB.moneyline ?? -110,
+              );
             }}
           />
         )}
@@ -530,23 +628,27 @@ function MarketLegs({
   if (betType === "total") {
     const over = markets.find((m) => m.side?.toLowerCase() === "over");
     const under = markets.find((m) => m.side?.toLowerCase() === "under");
+    const overB = over ? getBook(over.books, bookmaker) : undefined;
+    const underB = under ? getBook(under.books, bookmaker) : undefined;
     const line = over?.fair_over_under ?? under?.fair_over_under ?? null;
     return (
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <SelectionBtn
           label={`Over ${line ?? "—"}`}
-          odds={fmtOdds(over ? bestTotalOdds(over.books) : null)}
+          odds={fmtOdds(overB?.moneyline ?? null)}
+          disabled={!overB}
           onClick={() => {
-            const o = over ? (bestTotalOdds(over.books) ?? -110) : -110;
-            onAdd("Total", `Over ${line ?? "—"}`, o);
+            if (!overB) return;
+            onAdd("Total", `Over ${line ?? "—"}`, overB.moneyline ?? -110);
           }}
         />
         <SelectionBtn
           label={`Under ${line ?? "—"}`}
-          odds={fmtOdds(under ? bestTotalOdds(under.books) : null)}
+          odds={fmtOdds(underB?.moneyline ?? null)}
+          disabled={!underB}
           onClick={() => {
-            const o = under ? (bestTotalOdds(under.books) ?? -110) : -110;
-            onAdd("Total", `Under ${line ?? "—"}`, o);
+            if (!underB) return;
+            onAdd("Total", `Under ${line ?? "—"}`, underB.moneyline ?? -110);
           }}
         />
       </div>
@@ -560,13 +662,17 @@ function MarketLegs({
         const label = m.player_name
           ? `${m.player_name} ${m.market_name || m.stat_id || ""}`
           : m.market_name || m.side || m.odd_id;
-        const bestOdds = bestMoneyline(m.books);
+        const book = getBook(m.books, bookmaker);
         return (
           <SelectionBtn
             key={m.odd_id}
             label={label}
-            odds={fmtOdds(bestOdds)}
-            onClick={() => onAdd(m.bet_type, label, bestOdds ?? -110)}
+            odds={fmtOdds(book?.moneyline ?? null)}
+            disabled={!book}
+            onClick={() => {
+              if (!book) return;
+              onAdd(m.bet_type, label, book.moneyline ?? -110);
+            }}
           />
         );
       })}
@@ -580,25 +686,29 @@ function SelectionBtn({
   label,
   odds,
   onClick,
+  disabled,
 }: {
   label: string;
   odds: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         padding: "14px",
         borderRadius: 10,
-        background: "#1a1f33",
-        border: "1px solid #1e293b",
-        cursor: "pointer",
+        background: disabled ? "#12162a" : "#1a1f33",
+        border: disabled ? "1px solid #1e293b" : "1px solid #1e293b",
+        cursor: disabled ? "not-allowed" : "pointer",
         textAlign: "center",
         transition: "all 0.15s",
+        opacity: disabled ? 0.5 : 1,
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.borderColor = "#c9a84c";
+        if (!disabled) (e.currentTarget as HTMLElement).style.borderColor = "#c9a84c";
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLElement).style.borderColor = "#1e293b";
