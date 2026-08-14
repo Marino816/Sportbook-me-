@@ -5,6 +5,7 @@ import Providers from "@/lib/providers";
 import { AuthProvider } from "@/lib/auth";
 import { TopNav } from "@/components/TopNav";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { WorkspaceProvider } from "@/lib/workspace-context";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
@@ -37,10 +38,12 @@ export default function RootLayout({
       >
         <Providers>
           <AuthProvider>
-            <TopNav />
-            <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-              <ProtectedRoute>{children}</ProtectedRoute>
-            </main>
+            <WorkspaceProvider>
+              <TopNav />
+              <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
+                <ProtectedRoute>{children}</ProtectedRoute>
+              </main>
+            </WorkspaceProvider>
           </AuthProvider>
         </Providers>
         <Analytics />

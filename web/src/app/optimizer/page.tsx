@@ -3,10 +3,11 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { fetchDFSSlates, fetchDFSSlate, runOptimizer, type LineupResponse, type DFSSlatePlayer } from "@/lib/api";
-import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp } from "lucide-react";
+import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, type LineupResponse, type DFSSlatePlayer, type CanonicalPlayer } from "@/lib/api";
+import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
+import { useWorkspace } from "@/lib/workspace-context";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 const PLATFORMS = ["draftkings", "fanduel"] as const;
@@ -81,8 +82,25 @@ function slotEligible(pos: string | undefined | null, slot: string): boolean {
   return eligible.includes(slot);
 }
 
+function exportLineups(lineups: any[], meta: any): void {
+  if (!lineups.length) return;
+  const rows = [["Lineup","Total Salary","Projected FP","Players"].join(",")];
+  lineups.forEach((lu, i) => {
+    const players = (lu.players || []).map((p: any) => `${p.roster_slot || p.position} ${p.name}`).join(" | ");
+    rows.push([i + 1, lu.total_salary, (lu.projected_score || 0).toFixed(1), `"${players}"`].join(","));
+  });
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `lineups_${meta?.sport || "sbme"}_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function OptimizerPage() {
   const router = useRouter();
+  const ws = useWorkspace();
 
   // ── State ──
   const [sport, setSport] = useState<string>("MLB");
@@ -91,6 +109,8 @@ export default function OptimizerPage() {
   const [strategy, setStrategy] = useState<string>("balanced");
   const [lineupCount, setLineupCount] = useState(4);
   const { events, loading: sgoLoading } = useEvents(sport);
+
+  const [canonicalPool, setCanonicalPool] = useState<Record<string, CanonicalPlayer>>({});
 
   const [excludedGameIds, setExcludedGameIds] = useState<Set<string>>(new Set());
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
@@ -144,6 +164,23 @@ export default function OptimizerPage() {
     })();
     return () => { cancelled = true; };
   }, [resolvedSlateId]);
+
+  // Canonical pool (Own% / Leverage / Ceiling / Floor)
+  useEffect(() => {
+    if (!resolvedSlateId) { setCanonicalPool({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchDataHubSlate(resolvedSlateId, platform);
+        if (!cancelled) {
+          const map: Record<string, CanonicalPlayer> = {};
+          for (const p of res?.data?.players ?? []) map[(p.name || "").toLowerCase()] = p;
+          setCanonicalPool(map);
+        }
+      } catch { if (!cancelled) setCanonicalPool({}); }
+    })();
+    return () => { cancelled = true; };
+  }, [resolvedSlateId, platform]);
 
   useEffect(() => { setPlayerSearch(""); setPosFilter("ALL"); setLineups([]); setLastGenMeta(null); }, [sport, platform]);
 
@@ -438,7 +475,7 @@ export default function OptimizerPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: "#060b1a", position: "sticky", top: 0, zIndex: 1 }}>
-                        <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th><Th>Exp%</Th><Th>Own%</Th><Th>Props</Th><Th>Action</Th>
+                        <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th><Th>Own%</Th><Th>Leverage</Th><Th>Optimal%</Th><Th>Ceiling</Th><Th>Floor</Th><Th>Props</Th><Th>Action</Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -457,6 +494,11 @@ export default function OptimizerPage() {
                         const salary = dfs?.salary ?? 0;
                         const effectiveProj = myProj[p.player_id] != null ? myProj[p.player_id] : sbProj;
                         const value = salary > 0 && effectiveProj != null ? (effectiveProj / (salary / 1000)).toFixed(2) : "—";
+                        const canon = canonicalPool[p.name.toLowerCase()];
+                        const ownPct = canon?.sbme_ownership_pct ?? null;
+                        const leverage = canon?.leverage ?? null;
+                        const ceiling = canon?.ceiling ?? null;
+                        const floor = canon?.floor ?? null;
                         return (
                           <tr key={p.player_id} style={{ borderBottom: "1px solid #1e293b20", opacity: isExcluded ? 0.35 : 1, background: isLocked ? "rgba(201,168,76,0.08)" : isLiked ? "rgba(201,168,76,0.03)" : "transparent" }}>
                             <Td>{teamName}</Td>
@@ -475,8 +517,11 @@ export default function OptimizerPage() {
                               <input type="number" step="0.1" value={myProj[p.player_id] ?? sbProj ?? ""} placeholder={sbProj != null ? "" : "—"} onChange={(e) => setMyProj((prev) => ({ ...prev, [p.player_id]: Number(e.target.value) }))} style={{ width: 56, padding: "4px 6px", borderRadius: 6, fontSize: 11, background: "#1a1f33", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
                             </Td>
                             <Td style={{ color: value !== "—" ? "#c9a84c" : "#64748b", fontWeight: value !== "—" ? 700 : 400 }}>{value}</Td>
-                            <Td style={{ color: "#64748b" }}>{isLocked || isExcluded ? "—" : "100%"}</Td>
+                            <Td style={{ color: ownPct != null ? "#94a3b8" : "#64748b" }}>{ownPct != null ? `${ownPct.toFixed(1)}%` : "N/A"}</Td>
+                            <Td style={{ color: leverage != null ? (leverage > 0 ? "#4ade80" : "#f87171") : "#64748b" }}>{leverage != null ? leverage.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: "#64748b" }}>N/A</Td>
+                            <Td style={{ color: ceiling != null ? "#94a3b8" : "#64748b" }}>{ceiling != null ? ceiling.toFixed(1) : "N/A"}</Td>
+                            <Td style={{ color: floor != null ? "#94a3b8" : "#64748b" }}>{floor != null ? floor.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: mCount ? "#c9a84c" : "#64748b" }}>{mCount || "—"}</Td>
                             <Td>
                               <div style={{ display: "flex", gap: 4 }}>
@@ -506,6 +551,8 @@ export default function OptimizerPage() {
                     <div style={{ display: "flex", gap: 6 }}>
                       <MiniBtn icon={<Save size={13} />} label={savedNote ? "Saved ✓" : "Save"} onClick={markSaved} />
                       <MiniBtn icon={<RefreshCw size={13} />} label="Regenerate" onClick={regenerate} disabled={optimizeMutation.isPending} />
+                      <MiniBtn icon={<BarChart3 size={13} />} label="Simulate" onClick={() => { ws.setPendingLineups(lineups); router.push("/sims"); }} />
+                      <MiniBtn icon={<Download size={13} />} label="Export" onClick={() => exportLineups(lineups, lastGenMeta)} />
                       <MiniBtn icon={<Trash2 size={13} />} label="Clear" onClick={clearLineups} />
                       <MiniBtn icon={<List size={13} />} label="View Saved" onClick={() => router.push("/lineups")} />
                     </div>

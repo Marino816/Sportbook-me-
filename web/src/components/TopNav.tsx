@@ -5,14 +5,18 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Home, MessageCircle, Flame, List, User, LogOut, LogIn, UserPlus,
+  Database, BarChart3, Layers,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Suspense } from "react";
 
 const TABS = [
   { name: "Home", href: "/dashboard", icon: Home },
-  { name: "AI", href: "/ai", icon: MessageCircle },
+  { name: "Data Hub", href: "/data-hub", icon: Database },
   { name: "Optimizer", href: "/optimizer", icon: Flame },
+  { name: "Sims", href: "/sims", icon: BarChart3 },
+  { name: "Stacks", href: "/top-stacks", icon: Layers },
+  { name: "AI", href: "/ai", icon: MessageCircle },
   { name: "Lineups", href: "/lineups", icon: List },
   { name: "Profile", href: "/profile", icon: User },
 ];

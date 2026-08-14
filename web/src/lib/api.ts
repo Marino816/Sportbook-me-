@@ -337,3 +337,88 @@ export interface IntelligenceSlatePlayer {
 export async function fetchSlateIntelligence(slateId: number): Promise<ApiResponse<any>> {
   return apiFetch<any>(`/intelligence/slate/${slateId}`);
 }
+
+// ── SB ME Data Hub / Sims / Top Stacks API ──────────────────────
+
+export interface CanonicalPlayer {
+  id: string;
+  name: string;
+  position: string;
+  roster_position: string;
+  salary: number;
+  team: string;
+  opponent: string | null;
+  eligible_positions: string[];
+  projected_fp: number;
+  projection_source: string;
+  projection_confidence: number;
+  value: number;
+  sbme_ownership_pct: number | null;
+  leverage: number | null;
+  ceiling: number | null;
+  floor: number | null;
+  mapping_status: string;
+}
+
+export async function fetchDataHubSlate(slateId: number, platform: string): Promise<ApiResponse<{ players: CanonicalPlayer[]; metadata: any }>> {
+  return apiFetch<any>(`/data-hub/slate?slate_id=${slateId}&platform=${platform}`);
+}
+
+export interface SimPlayer {
+  id: string;
+  name: string;
+  position: string;
+  team: string;
+  salary: number;
+  sim_score: number;
+  optimal_pct: number;
+  top1_pct: number;
+  ownership_pct: number;
+  leverage: number;
+}
+
+export interface SimLineupResult {
+  lineup_index: number;
+  sim_score: number;
+  cash_pct: number | null;
+  win_pct: number | null;
+  sim_roi: number | null;
+  players: any[];
+}
+
+export async function runSims(body: { slate_id: number; platform: string; n_sims: number; lineups?: any[] }): Promise<ApiResponse<{ players: SimPlayer[]; lineups: SimLineupResult[] | null; metadata: any }>> {
+  return apiFetch<any>(`/sims/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export interface StackPlayer {
+  id: string;
+  name: string;
+  position: string;
+  salary: number;
+  projected_fp: number;
+  ownership_pct: number | null;
+  leverage: number | null;
+}
+
+export interface TopStack {
+  team: string;
+  opponent: string;
+  stack_size: number;
+  implied_total: number | null;
+  sb_projection: number;
+  stack_ownership: number;
+  optimal_stack_pct: number | null;
+  leverage: number;
+  value: number;
+  rating: string;
+  salary: number;
+  players: StackPlayer[];
+}
+
+export async function fetchTopStacks(slateId: number, platform: string): Promise<ApiResponse<{ stacks: TopStack[]; metadata: any }>> {
+  return apiFetch<any>(`/top-stacks?slate_id=${slateId}&platform=${platform}`);
+}
