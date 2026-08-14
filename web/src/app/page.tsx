@@ -529,15 +529,24 @@ export default function LandingPage() {
 
             {/* Links */}
             {[
-              ["Product", ["Dashboard", "Optimizer", "Player Props", "Live Odds", "Lineups"]],
-              ["Company", ["About", "Blog", "Careers", "Contact"]],
-              ["Legal", ["Terms of Service", "Privacy Policy", "Refund Policy"]],
+              ["Product", [
+                ["Dashboard", "/dashboard"], ["Optimizer", "/optimizer"], ["Player Props", "/market-tools/player-props"],
+                ["Live Odds", "/market-tools/live-odds"], ["Lineups", "/lineups"],
+              ]],
+              ["Company", [
+                ["About", "/about"], ["Blog", "/blog"], ["Careers", "/careers"], ["Contact", "/contact"],
+              ]],
+              ["Legal", [
+                ["Terms of Service", "/terms"], ["Privacy Policy", "/privacy"], ["Refund & Cancellation Policy", "/refund-policy"],
+              ]],
             ].map(([heading, links]) => (
               <div key={heading as string}>
                 <h4 className="text-xs font-bold tracking-widest uppercase mb-3" style={{ color: textSecondary }}>{heading as string}</h4>
                 <ul className="space-y-2">
-                  {(links as string[]).map((l) => (
-                    <li key={l}><a href="#" className="text-sm transition-colors duration-150 hover:text-[#c9a84c]" style={{ color: textMuted }}>{l}</a></li>
+                  {(links as [string, string][]).map(([label, href]) => (
+                    <li key={label}>
+                      <Link href={href} className="text-sm transition-colors duration-150 hover:text-[#c9a84c]" style={{ color: textMuted }}>{label}</Link>
+                    </li>
                   ))}
                 </ul>
               </div>
