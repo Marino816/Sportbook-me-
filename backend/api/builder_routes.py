@@ -458,12 +458,15 @@ def _generate_lineups(
     randomness: float,
     platform: str = "draftkings",
     is_mlb: bool = False,
+    constraints: Optional[dict] = None,
 ) -> list:
     """
     Generate lineups for the given platform.
 
     MLB path uses MLBOptimizer (OR-Tools CP-SAT constrained optimization)
-    strategy-based diversification and exposure control.
+    strategy-based diversification and exposure control. `constraints` carries
+    optional user BUILD & STACKING RULES overrides (max_hitters_per_team,
+    stack_size, pitcher_conflict, min_salary, max_salary, max_exposure_pct).
 
     NBA path uses the original greedy flex-based approach.
     """
@@ -475,7 +478,11 @@ def _generate_lineups(
     # MLB path — MLBOptimizer (OR-Tools CP-SAT)
     if is_mlb:
         from optimizer.mlb_optimizer import MLBOptimizer
-        opt = MLBOptimizer(eligible, platform=platform, strategy=strategy)
+        opt = MLBOptimizer(
+            eligible, platform=platform, strategy=strategy,
+            locks=locks, excludes=excludes,
+            **(constraints or {}),
+        )
         return opt.generate(count=count)
 
     # ── NBA path (unchanged) ──────────────────────────────────────

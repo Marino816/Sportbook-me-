@@ -156,10 +156,30 @@ async def run_optimizer(
     # MLB uses the builder's platform-aware roster generator
     if sport == "MLB":
         from api.builder_routes import _generate_lineups, _normalize_platform, get_strategy as builder_strategy
-        platform = _normalize_platform(request.settings.get("platform", "draftkings") if isinstance(request.settings, dict) else getattr(request.settings, 'platform', 'draftkings'))
-        strategy = request.settings.get("strategy", "balanced") if isinstance(request.settings, dict) else getattr(request.settings, 'strategy', 'balanced')
+        settings = request.settings
+        platform = _normalize_platform(settings.get("platform", "draftkings") if isinstance(settings, dict) else getattr(settings, 'platform', 'draftkings'))
+        strategy = settings.get("strategy", "balanced") if isinstance(settings, dict) else getattr(settings, 'strategy', 'balanced')
+
+        def _sget(key, default=None):
+            return settings.get(key, default) if isinstance(settings, dict) else getattr(settings, key, default)
+
+        locks = _sget("locked_player_ids", []) or []
+        excludes = _sget("excluded_player_ids", []) or []
+        constraints = {
+            "max_hitters_per_team": _sget("max_hitters_per_team"),
+            "stack_size": _sget("stack_size"),
+            "pitcher_conflict": _sget("pitcher_conflict"),
+            "min_salary": _sget("min_salary"),
+            "max_salary": _sget("max_salary"),
+            "max_exposure_pct": _sget("max_exposure_pct"),
+        }
+
         pool = projections_list
-        lineups = _generate_lineups(pool, strategy, requested_lineups, [], [], 0.0, platform, is_mlb=True)
+        lineups = _generate_lineups(
+            pool, strategy, requested_lineups,
+            locks, excludes, 0.0, platform,
+            is_mlb=True, constraints=constraints,
+        )
         # Format response using actual builder field names
         formatted = []
         for lu in lineups:

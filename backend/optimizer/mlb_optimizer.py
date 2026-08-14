@@ -93,6 +93,14 @@ class MLBOptimizer:
         pool: list[dict],
         platform: str = "draftkings",
         strategy: str = "balanced",
+        locks: Optional[list] = None,
+        excludes: Optional[list] = None,
+        max_hitters_per_team: Optional[int] = None,
+        stack_size: Optional[int] = None,
+        pitcher_conflict: Optional[bool] = None,
+        min_salary: Optional[int] = None,
+        max_salary: Optional[int] = None,
+        max_exposure_pct: Optional[float] = None,
     ):
         self.pool = pool
         self.platform = platform
@@ -101,11 +109,28 @@ class MLBOptimizer:
         self.slots = self.config["slots"]
         self.strat = STRATEGY_CONFIG.get(strategy, STRATEGY_CONFIG["balanced"])
 
+        # Constraint overrides (from user BUILD & STACKING RULES controls).
+        self.locks = set(str(x) for x in (locks or []) if x is not None and str(x).strip())
+        self.excludes = set(str(x) for x in (excludes or []) if x is not None and str(x).strip())
+        self.max_hitters_per_team = max_hitters_per_team
+        self.stack_size = stack_size if stack_size is not None else self.strat.get("stack_size", 0)
+        self.pitcher_conflict = (
+            pitcher_conflict if pitcher_conflict is not None else self.strat.get("pitch_conflict", True)
+        )
+        self.min_salary = min_salary if min_salary is not None else self.config["min_salary"]
+        self.max_salary = max_salary if max_salary is not None else self.config["salary_cap"]
+        self.max_exposure_pct = (
+            max_exposure_pct if max_exposure_pct is not None else self.strat.get("max_exposure_pct")
+        )
+
         # Build index maps
         self._build_maps()
 
     def _build_maps(self):
-        """Build position eligibility and index lookups."""
+        """Build position eligibility and index lookups.
+
+        Excluded players (by id OR name) are dropped from the pool. Locked
+        players are resolved to indices so they can be force-included."""
         self.players = []  # eligible player dicts
         self.pos_mask = {}  # player_idx -> normalized slot
         self.team_map = {}  # team_name -> list of player indices
@@ -113,7 +138,15 @@ class MLBOptimizer:
         self.pitchers = set()
         self.hitters = set()
 
+        def _excluded(p):
+            if str(p.get("id", "")) in self.excludes:
+                return True
+            nm = (p.get("name") or "").strip().lower()
+            return bool(nm) and nm in self.excludes
+
         for p in self.pool:
+            if _excluded(p):
+                continue
             if (p.get("salary", 0) or 0) <= 0:
                 continue
             if (p.get("projected_fp", 0) or 0) <= 0:
@@ -131,6 +164,15 @@ class MLBOptimizer:
                 self.pitchers.add(idx)
             else:
                 self.hitters.add(idx)
+
+        # Resolve locked players to indices (by id OR name)
+        self.lock_indices = set()
+        lock_names = {x.lower() for x in self.locks}
+        for i, p in enumerate(self.players):
+            if str(p.get("id", "")) in self.locks:
+                self.lock_indices.add(i)
+            elif (p.get("name") or "").strip().lower() in lock_names:
+                self.lock_indices.add(i)
 
     def _eligible_for_slot(self, player_idx: int, slot_name: str) -> bool:
         """Check if player can fill a slot."""
@@ -161,8 +203,8 @@ class MLBOptimizer:
             return None
 
         forbidden = forbidden_ids or set()
-        cap = self.config["salary_cap"]
-        min_sal = self.config["min_salary"]
+        cap = self.max_salary
+        min_sal = self.min_salary
         total_slots = self.config["player_count"]
 
         model = cp_model.CpModel()
@@ -177,6 +219,11 @@ class MLBOptimizer:
 
         # Exactly total_slots players
         model.Add(sum(x[i] for i in range(n)) == total_slots)
+
+        # Locked players must be selected
+        for idx in self.lock_indices:
+            if idx not in forbidden:
+                model.Add(x[idx] == 1)
 
         # Salary cap
         model.Add(
@@ -198,7 +245,7 @@ class MLBOptimizer:
             model.Add(sum(x[i] for i in eligible) >= needed)
 
         # Pitcher/opposing-hitter conflict
-        if self.strat.get("pitch_conflict", True):
+        if self.pitcher_conflict:
             for pi in self.pitchers:
                 if pi in forbidden:
                     continue
@@ -209,7 +256,7 @@ class MLBOptimizer:
                     model.Add(x[pi] + x[hi] <= 1)
 
         # Team stacking
-        stack_size = self.strat.get("stack_size", 0)
+        stack_size = self.stack_size
         if stack_size >= 2:
             # At least one team must have >= stack_size hitters selected
             stack_vars = []
@@ -221,6 +268,13 @@ class MLBOptimizer:
                     stack_vars.append(stack_var)
             if stack_vars:
                 model.Add(sum(stack_vars) >= 1)
+
+        # Maximum hitters per team
+        if self.max_hitters_per_team and self.max_hitters_per_team > 0:
+            for team, indices in self.team_map.items():
+                hitter_indices = [i for i in indices if i in self.hitters and i not in forbidden]
+                if len(hitter_indices) > self.max_hitters_per_team:
+                    model.Add(sum(x[i] for i in hitter_indices) <= self.max_hitters_per_team)
 
         # No-good constraints: prevent reproducing prior lineups
         prior_ids = prior_ids or []
@@ -329,9 +383,9 @@ class MLBOptimizer:
                 continue
 
             # Exposure check
-            if self.strat["max_exposure_pct"]:
+            if self.max_exposure_pct:
                 import math
-                max_uses = max(1, math.ceil(count * self.strat["max_exposure_pct"] / 100.0))
+                max_uses = max(1, math.ceil(count * self.max_exposure_pct / 100.0))
                 skip = False
                 for pid in new_ids:
                     if player_exposure.get(pid, 0) >= max_uses:

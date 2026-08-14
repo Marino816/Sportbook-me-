@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
 class PlayerSchema(BaseModel):
@@ -40,6 +40,7 @@ class OptimizerSettings(BaseModel):
     """Settings for the lineup optimizer.
 
     All player-ID fields reference the canonical player ID in the players table.
+    Supports both numeric IDs and player names for locking/exclusion.
     """
     platform: str = "draftkings"  # draftkings / fanduel
     strategy: str = "balanced"    # balanced / cash / gpp / aggressive / nuclear
@@ -49,12 +50,20 @@ class OptimizerSettings(BaseModel):
     randomness: float = 0.0
 
     # Canonical field names — use these in new code
-    locked_player_ids: List[int] = []
-    excluded_player_ids: List[int] = []
+    locked_player_ids: List[Union[int, str]] = []
+    excluded_player_ids: List[Union[int, str]] = []
 
     # Legacy aliases — preserved for backward compatibility
     # (mapped automatically by the optimizer)
     team_stacks: List[Dict[str, Any]] = []
+
+    # Build & stacking rules (CP-SAT constraints)
+    max_hitters_per_team: Optional[int] = None
+    stack_size: Optional[int] = None
+    pitcher_conflict: Optional[bool] = None
+    min_salary: Optional[int] = None
+    max_salary: Optional[int] = None
+    max_exposure_pct: Optional[float] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
