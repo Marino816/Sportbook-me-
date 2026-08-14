@@ -207,11 +207,37 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Right — dashboard visual */}
+          {/* Right — dashboard visual with athlete artwork */}
           <div className="relative">
-            {/* Main card */}
-            <div className="rounded-3xl border overflow-hidden shadow-2xl" style={{ background: cardElevated, borderColor: border }}>
-              {/* Card header */}
+            {/* ── Athlete silhouettes ── */}
+            <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden" style={{ opacity: 0.12 }}>
+              <svg width="100%" height="100%" viewBox="0 0 400 500" preserveAspectRatio="xMidYMid slice" fill="none">
+                {/* Basketball — top-left */}
+                <g transform="translate(20, 30) scale(0.7)" stroke={gold} strokeWidth="3" fill="none" opacity="0.6">
+                  <circle cx="40" cy="20" r="12" /><path d="M40 32v28 M28 50h24" />
+                  <path d="M40 60l-18 35 M40 60l18 35 M40 38l-22-15 M40 38l22-15" /><circle cx="65" cy="12" r="8" />
+                </g>
+                {/* Football — bottom-left */}
+                <g transform="translate(60, 270) scale(0.7)" stroke={gold} strokeWidth="3" fill="none" opacity="0.5">
+                  <ellipse cx="30" cy="18" rx="14" ry="16" /><path d="M16 18l-8 6 M44 18l8 6" strokeWidth="4" />
+                  <path d="M30 34v32 M30 42l-22-8 M30 42l22 10 M30 66l-20 32 M30 66l22 28" />
+                </g>
+                {/* Baseball — center-right */}
+                <g transform="translate(280, 80) scale(0.7)" stroke={gold} strokeWidth="3" fill="none" opacity="0.6">
+                  <ellipse cx="35" cy="16" rx="13" ry="9" /><path d="M22 16v-4" strokeWidth="4" />
+                  <path d="M35 25v35 M35 32l30-22 M35 32l-18 8 M35 60l-18 35 M35 60l18 35" />
+                  <line x1="65" y1="10" x2="82" y2="-5" strokeWidth="4" />
+                </g>
+                {/* Hockey — top-right */}
+                <g transform="translate(300, 250) scale(0.7)" stroke={gold} strokeWidth="3" fill="none" opacity="0.5">
+                  <circle cx="35" cy="18" r="11" /><path d="M35 29v32 M35 38l-24 6 M35 38l28 10 M35 61l-20 32 M35 61l22 28" />
+                  <line x1="63" y1="48" x2="68" y2="82" strokeWidth="3" />
+                </g>
+              </svg>
+            </div>
+
+            {/* ── Live Projections card ── */}
+            <div className="rounded-3xl border overflow-hidden shadow-2xl relative z-10 mb-4" style={{ background: cardElevated, borderColor: border }}>
               <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: border }}>
                 <div className="flex items-center gap-2.5">
                   <div className="live-dot" />
@@ -220,7 +246,6 @@ export default function LandingPage() {
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${gold}18`, color: gold }}>SB ME INTELLIGENCE</span>
               </div>
 
-              {/* Sport pills */}
               <div className="flex gap-1.5 px-4 py-3 border-b" style={{ borderColor: border }}>
                 {["MLB", "NFL", "NBA", "NHL"].map((s) => (
                   <span key={s} className="text-[10px] font-bold px-2.5 py-1 rounded-md"
@@ -230,7 +255,6 @@ export default function LandingPage() {
                 ))}
               </div>
 
-              {/* Player projection rows */}
               <div className="px-5 py-3 space-y-3">
                 {[
                   { name: "Chris Sale", pos: "P", proj: 36.5, sal: "$9,600", trend: [28,30,33,35,36.5] },
@@ -247,29 +271,59 @@ export default function LandingPage() {
                   </div>
                 ))}
               </div>
+            </div>
 
-              {/* Edge stat card */}
-              <div className="mx-5 mb-4 p-3 rounded-xl flex items-center justify-between" style={{ background: `${gold}08`, border: `1px solid ${gold}18` }}>
-                <div className="flex items-center gap-2">
-                  <Zap size={14} style={{ color: gold }} />
-                  <span className="text-xs font-semibold" style={{ color: textPrimary }}>AI EDGE DETECTED</span>
+            {/* ── Line Movement + EV Edge card ── */}
+            <div className="rounded-2xl border p-3.5 relative z-10 mb-3 flex items-center gap-4"
+              style={{ background: cardElevated, borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <TrendingUp size={16} style={{ color: gold }} />
+                <div>
+                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>LINE MOVEMENT</div>
+                  <div className="text-sm font-extrabold" style={{ color: textPrimary }}>MIL +12.5¢</div>
                 </div>
-                <span className="text-xs font-bold" style={{ color: gold }}>+12.5 EV</span>
+              </div>
+              <div className="w-px h-8" style={{ background: border }} />
+              <div className="flex items-center gap-2">
+                <Zap size={16} style={{ color: gold }} />
+                <div>
+                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>EV EDGE</div>
+                  <div className="text-sm font-extrabold" style={{ color: gold }}>+2.4%</div>
+                </div>
               </div>
             </div>
 
-            {/* Floating stat cards */}
-            <div className="absolute -bottom-4 -left-6 rounded-2xl border px-4 py-3 shadow-xl hidden lg:block"
-              style={{ background: cardBg, borderColor: border }}>
-              <div className="text-[10px] font-bold tracking-wider mb-1" style={{ color: textMuted }}>PROJ ACCURACY</div>
-              <div className="text-lg font-extrabold" style={{ color: gold }}>92.4%</div>
-              <MiniBarChart values={[85,88,87,90,92,91,94,92]} width={72} height={22} />
+            {/* ── Sharp Money card ── */}
+            <div className="rounded-2xl border p-3.5 relative z-10 flex items-center gap-4"
+              style={{ background: cardElevated, borderColor: border }}>
+              <div className="flex items-center gap-2">
+                <Brain size={16} style={{ color: gold }} />
+                <div>
+                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>SHARP MONEY</div>
+                  <div className="text-sm font-extrabold" style={{ color: textPrimary }}>64% on Over</div>
+                </div>
+              </div>
+              <div className="w-px h-8" style={{ background: border }} />
+              <div className="flex items-center gap-2">
+                <BarChart3 size={16} style={{ color: gold }} />
+                <div>
+                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>TICKETS</div>
+                  <div className="text-sm font-extrabold" style={{ color: textSecondary }}>12.4K tracked</div>
+                </div>
+              </div>
             </div>
-            <div className="absolute -top-4 -right-4 rounded-2xl border px-4 py-3 shadow-xl hidden lg:block"
-              style={{ background: cardBg, borderColor: border }}>
-              <div className="text-[10px] font-bold tracking-wider mb-1" style={{ color: textMuted }}>COVERED POSITIONS</div>
-              <div className="text-lg font-extrabold" style={{ color: gold }}>All 9</div>
-              <div className="text-[10px]" style={{ color: textMuted }}>DFS roster slots</div>
+
+            {/* ── Coverage indicator ── */}
+            <div className="mt-3 relative z-10 flex items-center justify-center gap-4 py-2 rounded-xl"
+              style={{ background: `${gold}06`, border: `1px solid ${gold}15` }}>
+              {["MLB", "NFL", "NBA", "NHL"].map((s, i) => (
+                <div key={s} className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full" style={{ background: gold }} />
+                  <span className="text-[10px] font-bold tracking-wider" style={{ color: textSecondary }}>{s}</span>
+                  {i < 3 && <div className="w-px h-3" style={{ background: border }} />}
+                </div>
+              ))}
+              <div className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${gold}15`, color: gold }}>ALL SPORTS</div>
             </div>
           </div>
         </div>
@@ -280,11 +334,11 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
             {[
-              { icon: TrendingUp, title: "AI Projections", desc: "Advanced player projections powered by machine learning and real-time data." },
-              { icon: Activity, title: "Real-Time Odds", desc: "Live lines, movement tracking, and sharp insights across sportsbooks." },
-              { icon: Target, title: "Player Props", desc: "Deep prop analysis with edge detection and fair value comparison." },
-              { icon: Layers, title: "Lineup Optimizer", desc: "Build optimized DFS lineups with CP-SAT solver in seconds." },
-              { icon: Bot, title: "SB ME AI", desc: "Ask anything. Get smarter. AI-powered insights 24/7." },
+              { icon: TrendingUp, title: "AI Projections", desc: "Advanced player projections powered by machine learning and real-time data.", metric: "229", metricLabel: "players projected" },
+              { icon: Activity, title: "Real-Time Odds", desc: "Live lines, movement tracking, and sharp insights across sportsbooks.", metric: "50+", metricLabel: "live events" },
+              { icon: Target, title: "Player Props", desc: "Deep prop analysis with edge detection and fair value comparison.", metric: "15K", metricLabel: "prop markets" },
+              { icon: Layers, title: "Lineup Optimizer", desc: "Build optimized DFS lineups with CP-SAT solver in seconds.", metric: "1-3s", metricLabel: "optimization time" },
+              { icon: Bot, title: "SB ME AI", desc: "Ask anything. Get smarter. AI-powered insights 24/7.", metric: "24/7", metricLabel: "intelligence" },
             ].map((f, i) => {
               const Icon = f.icon;
               return (
@@ -294,7 +348,9 @@ export default function LandingPage() {
                     <Icon size={22} style={{ color: gold }} />
                   </div>
                   <h3 className="text-sm font-bold mb-1.5" style={{ color: textPrimary }}>{f.title}</h3>
-                  <p className="text-xs leading-relaxed" style={{ color: textMuted }}>{f.desc}</p>
+                  <p className="text-xs leading-relaxed mb-2.5" style={{ color: textMuted }}>{f.desc}</p>
+                  <span className="text-lg font-extrabold" style={{ color: gold }}>{f.metric}</span>
+                  <div className="text-[10px] font-bold tracking-wider uppercase" style={{ color: textMuted }}>{f.metricLabel}</div>
                 </div>
               );
             })}
@@ -390,7 +446,7 @@ export default function LandingPage() {
             {([
               { name: "Starter", price: "Free", features: ["1 daily lineup", "MLB projections", "Real-time odds", "Player props", "AI chat (10 msgs/day)"], cta: "Get Started", href: "/register", featured: false, goldPrice: false, period: null as string | null },
               { name: "Pro Arena", price: "$29", period: "/mo", features: ["10 daily lineups", "All-sport projections", "Live odds & movement", "Player props + edge detection", "AI chat (unlimited)", "Lineup optimizer", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
-              { name: "Elite Stack", price: "$99", period: "/mo", features: ["Unlimited lineups", "All-sport projections", "Custom projections", "Full AI intelligence", "Priority support", "Early features", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
+              { name: "Elite Stack", price: "$79", period: "/mo", features: ["Unlimited lineups", "All-sport projections", "Custom projections", "Full AI intelligence", "Priority support", "Early features", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
             ] as const).map((plan, i) => (
               <div key={i} className={`relative rounded-3xl border p-6 lg:p-8 flex flex-col transition-all duration-300 hover:shadow-xl
                 ${plan.featured ? "scale-[1.03] z-10" : ""}`}
@@ -441,14 +497,14 @@ export default function LandingPage() {
           <div className="absolute top-0 right-0 w-48 h-48 opacity-10 pointer-events-none"
             style={{ background: `radial-gradient(circle, ${gold} 0%, transparent 70%)` }} />
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight mb-4" style={{ color: textPrimary }}>
-            Ready to <span style={{ color: gold }}>Build Smarter?</span>
+            Dominate Every Slate with <span style={{ color: gold }}>SB ME Intelligence</span>
           </h2>
           <p className="text-base max-w-lg mx-auto mb-8" style={{ color: textSecondary }}>
             Join thousands of DFS players using SB ME Intelligence to gain an edge.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <GoldButton href="/register">
-              <Star size={16} /> Start Free Today
+              <Star size={16} /> Get Started Now
             </GoldButton>
             <GhostButton href="/login">
               Sign In
