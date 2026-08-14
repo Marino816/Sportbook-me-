@@ -113,7 +113,7 @@ async def run_optimizer(
                     from projection.sgo_intelligence import build_sgo_intelligence
 
                     # Fetch SGO prop data from cached events for real projections
-                    sgo_intel = build_sgo_intelligence(sport, projections_list)
+                    sgo_intel = await build_sgo_intelligence(sport, projections_list)
                     projs = compute_projections(sport, projections_list, sgo_intelligence=sgo_intel)
                     projected_count = sum(1 for p in projs if p.projection_source != "UNAVAILABLE")
                     projections_list = projections_to_pool(projs)

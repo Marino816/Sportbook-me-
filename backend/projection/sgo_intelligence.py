@@ -69,13 +69,14 @@ def _market_to_prop_key(market_name: str, stat_id: str) -> Optional[str]:
     return None
 
 
-def build_sgo_intelligence(sport: str, dfs_players: list[dict]) -> dict[str, dict]:
+async def build_sgo_intelligence(sport: str, dfs_players: list[dict]) -> dict[str, dict]:
     """
     Build a sgo_intelligence dict keyed by DFS player ID.
 
     Reads cached SGO SBEvent dicts from Redis for the given sport, then
     name-matches DFS players to SGO market data and extracts prop values
-    from fair_over_under lines.
+    from fair_over_under lines. Falls back to a live SDK fetch on cache miss
+    so /optimize never silently degrades to the 0.01 placeholder.
 
     Returns {dfs_player_id: {"props": {"hits": 1.2, ...}, "fantasyScore": ...}}
     """
@@ -87,7 +88,16 @@ def build_sgo_intelligence(sport: str, dfs_players: list[dict]) -> dict[str, dic
     events = _rget(cache_key)
 
     if not events or not isinstance(events, list):
-        logger.info("No cached SGO events for %s — projections will be unavailable.", sport_upper)
+        logger.info("No cached SGO events for %s — fetching live SDK events.", sport_upper)
+        try:
+            from api.sgo_data import _canonical_event_provider, _sb_event_to_dict
+            sb_events = await _canonical_event_provider().get_sb_events(sport_upper)
+            events = [_sb_event_to_dict(e) for e in (sb_events or [])]
+        except Exception as exc:
+            logger.warning("Live SGO fetch failed for %s: %s", sport_upper, exc)
+            return {}
+
+    if not events or not isinstance(events, list):
         return {}
 
     # Build SGO player_name → {props, fantasyScore}
