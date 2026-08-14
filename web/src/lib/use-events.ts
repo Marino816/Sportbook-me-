@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { SBEvent } from "./sbevent";
+import { SBEvent, normalizeEvents } from "./sbevent";
 import { getApiBaseUrl } from "./api-base-url";
 
 const API_BASE = getApiBaseUrl(
@@ -10,9 +10,18 @@ const API_BASE = getApiBaseUrl(
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("sbme_dfs_token");
+  try {
+    return localStorage.getItem("sbme_dfs_token");
+  } catch {
+    return null;
+  }
 }
 
+/**
+ * Shared hook that loads SGO events for a league through the canonical
+ * `/sgo/events` endpoint and normalizes every entry through the SBEvent
+ * safe contract so a malformed/missing field can never crash a consumer.
+ */
 export function useEvents(league: string) {
   const [events, setEvents] = useState<SBEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +41,9 @@ export function useEvents(league: string) {
         const json = await res.json();
         if (!cancelled) {
           // /sgo/events has one contract: { status: "success", data: SBEvent[] }.
-          setEvents(Array.isArray(json?.data) ? json.data : []);
+          // Normalize defensively so any unexpected wrapper or bad field
+          // degrades to an empty list instead of throwing during render.
+          setEvents(normalizeEvents(json?.data));
         }
       } catch (err: unknown) {
         if (!cancelled) {

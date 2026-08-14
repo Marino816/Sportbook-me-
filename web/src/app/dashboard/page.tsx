@@ -91,8 +91,8 @@ export default function DashboardPage() {
           if (!existing) {
             result.push({
               bookmaker: book.bookmaker,
-              home_team: evt.home_team.abbreviation || evt.home_team.name,
-              away_team: evt.away_team.abbreviation || evt.away_team.name,
+              home_team: evt.home_team?.abbreviation || evt.home_team?.name || "HOM",
+              away_team: evt.away_team?.abbreviation || evt.away_team?.name || "AWY",
               home_ml: mkt.side === "home" ? book.moneyline : null,
               away_ml: mkt.side === "away" ? book.moneyline : null,
             });
@@ -145,7 +145,7 @@ export default function DashboardPage() {
           best_line: bestLine,
           best_odds: bestOdds,
           bookmaker: bestBook,
-          event_label: `${evt.away_team.abbreviation || evt.away_team.name} @ ${evt.home_team.abbreviation || evt.home_team.name}`,
+          event_label: `${evt.away_team?.abbreviation || evt.away_team?.name || "AWY"} @ ${evt.home_team?.abbreviation || evt.home_team?.name || "HOM"}`,
         });
       }
     }
@@ -482,11 +482,11 @@ function EventCard({ event }: { event: SBEvent }) {
             }}
           >
             <span style={{ color: live ? "#c9a84c" : "#f0f6fc" }}>
-              {event.away_team.abbreviation || event.away_team.name}
+              {event.away_team?.abbreviation || event.away_team?.name || "AWY"}
             </span>
             {" @ "}
             <span style={{ color: live ? "#c9a84c" : "#f0f6fc" }}>
-              {event.home_team.abbreviation || event.home_team.name}
+              {event.home_team?.abbreviation || event.home_team?.name || "HOM"}
             </span>
           </div>
           <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
@@ -534,11 +534,11 @@ function LiveScoreCard({ event }: { event: SBEvent }) {
           style={{ fontSize: 15, fontWeight: 700, color: "#f0f6fc" }}
         >
           <span style={{ color: "#c9a84c" }}>
-            {event.away_team.abbreviation || event.away_team.name}
+            {event.away_team?.abbreviation || event.away_team?.name || "AWY"}
           </span>
           {" @ "}
           <span style={{ color: "#c9a84c" }}>
-            {event.home_team.abbreviation || event.home_team.name}
+            {event.home_team?.abbreviation || event.home_team?.name || "HOM"}
           </span>
         </div>
         <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
@@ -570,8 +570,8 @@ function CompletedCard({ event }: { event: SBEvent }) {
       <div
         style={{ fontSize: 15, fontWeight: 600, color: "#94a3b8" }}
       >
-        {event.away_team.abbreviation || event.away_team.name} @{" "}
-        {event.home_team.abbreviation || event.home_team.name}
+        {event.away_team?.abbreviation || event.away_team?.name || "AWY"} @{" "}
+        {event.home_team?.abbreviation || event.home_team?.name || "HOM"}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span
