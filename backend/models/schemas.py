@@ -64,6 +64,7 @@ class OptimizerSettings(BaseModel):
     min_salary: Optional[int] = None
     max_salary: Optional[int] = None
     max_exposure_pct: Optional[float] = None
+    projection_overrides: List[Dict[str, Any]] = []
 
     model_config = ConfigDict(populate_by_name=True)
 

@@ -36,6 +36,16 @@ function opponentFor(player: SBPlayer, event: SBEvent): string {
   return "";
 }
 
+/** Normalize a position for MLB filter matching. Returns array of eligible filter labels. */
+function normalizePosForFilter(pos: string | undefined | null): string[] {
+  const p = (pos || "").toUpperCase().trim();
+  if (!p) return [];
+  if (p.includes("/")) return p.split("/").map((s) => s.trim()).filter(Boolean);
+  if (p === "SP" || p === "RP" || p === "P") return ["P"];
+  if (p === "LF" || p === "RF" || p === "CF" || p === "DH") return ["OF"];
+  return [p];
+}
+
 function countPlayerMarkets(playerId: string, markets: SBMarket[]): number {
   return (markets || []).filter((m) => m.player_id === playerId).length;
 }
@@ -62,6 +72,14 @@ function matchDFS(
 
 const SLOT_LABELS: Record<string, string> = { C1B: "C/1B", UTIL: "UTIL" };
 function slotLabel(s: string): string { return SLOT_LABELS[s] || s; }
+
+/** Determine if a player (with SGO or DFS position) is eligible for a roster slot. */
+function slotEligible(pos: string | undefined | null, slot: string): boolean {
+  const eligible = normalizePosForFilter(pos);
+  if (slot === "UTIL") return eligible.length > 0 && !eligible.every((p) => p === "P");
+  if (slot === "C1B") return eligible.some((p) => p === "C" || p === "1B");
+  return eligible.includes(slot);
+}
 
 export default function OptimizerPage() {
   const router = useRouter();
@@ -96,6 +114,9 @@ export default function OptimizerPage() {
   const [globalMaxExposure, setGlobalMaxExposure] = useState<number | undefined>();
   const [savedNote, setSavedNote] = useState(false);
   const [lastGenMeta, setLastGenMeta] = useState<{ sport: string; platform: string; strategy: string; gameCount: number } | null>(null);
+  const [selectedLineupIndex, setSelectedLineupIndex] = useState(0);
+  const [projPool, setProjPool] = useState<Record<string, { projected_fp: number; salary: number; position: string; team: string; opponent: string; projection_source: string }>>({});
+  const [myProj, setMyProj] = useState<Record<string, number>>({});
 
   // ── DFS slate ──
   useEffect(() => {
@@ -161,14 +182,23 @@ export default function OptimizerPage() {
     else if (subTab === "liked") pool = players.filter((p) => likedIds.has(p.player_id));
     else pool = players.filter((p) => !excludedPlayerIds.has(p.player_id));
     return pool.filter((p) => {
-      if (posFilter !== "ALL" && p.position !== posFilter) return false;
+      if (posFilter !== "ALL") {
+        // Match SGO position first, then DFS contest eligible_positions
+        let eligible = normalizePosForFilter(p.position);
+        const dfs = matchDFS({ name: p.name, team_id: p.team_id, position: p.position }, dfsPlayers);
+        if (dfs) {
+          const dfsEligible = (dfs.eligible_positions || [dfs.position]).flatMap((ep) => normalizePosForFilter(ep));
+          eligible = Array.from(new Set([...eligible, ...dfsEligible]));
+        }
+        if (!eligible.includes(posFilter)) return false;
+      }
       if (!playerSearch) return true;
       const q = playerSearch.toLowerCase();
       if (p.name.toLowerCase().includes(q)) return true;
       const evt = filteredEvents.find((e) => (e.players ?? []).some((ep) => ep.player_id === p.player_id));
       return evt ? resolveTeamName(p.team_id, evt).toLowerCase().includes(q) : false;
     });
-  }, [players, subTab, excludedPlayerIds, likedIds, posFilter, playerSearch, filteredEvents]);
+  }, [players, subTab, excludedPlayerIds, likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers]);
 
   const upcomingEvents = events.filter((e) => !liveClass(e.status));
   const canGenerate = !slatesLoading && resolvedSlateId != null && filteredEvents.length > 0;
@@ -212,6 +242,11 @@ export default function OptimizerPage() {
       if (minSalaryOverride != null) setting.min_salary = minSalaryOverride;
       if (maxSalaryOverride != null) setting.max_salary = maxSalaryOverride;
       if (globalMaxExposure != null) setting.max_exposure_pct = globalMaxExposure;
+      // My Proj overrides — send player name + custom projection to the solver
+      const overrides = Object.entries(myProj)
+        .map(([pid, proj]) => ({ name: players.find((x) => x.player_id === pid)?.name, projected_fp: proj }))
+        .filter((x) => x.name && x.projected_fp != null && !Number.isNaN(x.projected_fp));
+      if (overrides.length > 0) setting.projection_overrides = overrides;
       return runOptimizer(resolvedSlateId, setting);
     },
     onSuccess: (res: unknown) => {
@@ -225,9 +260,21 @@ export default function OptimizerPage() {
           const inner = (data as Record<string, unknown>)?.lineups;
           setLineups(Array.isArray(inner) ? (inner as LineupResponse[]) : []);
         } else setLineups([]);
-      } catch { setLineups([]); }
+
+        // Store projection pool (keyed by name for frontend matching)
+        const pool = (data as Record<string, unknown>)?.pool;
+        if (Array.isArray(pool)) {
+          const poolMap: Record<string, any> = {};
+          for (const p of pool) {
+            const nm = (p?.name || "").toLowerCase().trim();
+            if (nm) poolMap[nm] = p;
+          }
+          setProjPool(poolMap);
+        } else { setProjPool({}); }
+      } catch { setLineups([]); setProjPool({}); }
       setLastGenMeta({ sport, platform, strategy, gameCount: filteredEvents.length });
       setMainTab("built");
+      setSelectedLineupIndex(0);
     },
     onError: () => { setLineups([]); setLastGenMeta(null); },
   });
@@ -238,6 +285,54 @@ export default function OptimizerPage() {
 
   const slots = platform === "fanduel" ? FD_SLOTS : DK_SLOTS;
   const lockedPlayers = players.filter((p) => lockedPlayerIds.has(p.player_id));
+
+  // Selected generated lineup (for right-side builder)
+  const selectedLineup = lineups[selectedLineupIndex] ?? null;
+  const selectedSlotPlayers = (selectedLineup?.players as any[]) ?? [];
+
+  // Roster rows: generated lineup populates slots; manual locks fill them before optimize.
+  const rosterRows = useMemo(() => {
+    if (selectedSlotPlayers.length > 0) {
+      return slots.map((slot, i) => {
+        const p = selectedSlotPlayers[i] ?? null;
+        return p ? { slot, name: p.name || `#${p.id}`, salary: p.salary || 0, proj: p.projected_fp || 0, opponent: p.opponent || "", team: p.team || "" } : { slot, name: "", salary: 0, proj: 0, opponent: "", team: "" };
+      });
+    }
+    // Manual locks — assign to first eligible slot
+    const rows = slots.map((s) => ({ slot: s, name: "", salary: 0, proj: 0, opponent: "", team: "" }));
+    const used = new Set<number>();
+    for (const lp of lockedPlayers) {
+      const evt = filteredEvents.find((e) => (e.players ?? []).some((ep) => ep.player_id === lp.player_id));
+      const opp = evt ? opponentFor(lp, evt) : "";
+      const dfs = matchDFS({ name: lp.name, team_id: lp.team_id, position: lp.position }, dfsPlayers);
+      for (let i = 0; i < slots.length; i++) {
+        if (used.has(i)) continue;
+        if (slotEligible(lp.position || (dfs?.position ?? ""), slots[i])) {
+          rows[i] = { slot: slots[i], name: lp.name, salary: dfs?.salary || 0, proj: 0, opponent: opp, team: evt ? resolveTeamName(lp.team_id, evt) : "" };
+          used.add(i);
+          break;
+        }
+      }
+    }
+    return rows;
+  }, [selectedSlotPlayers, slots, lockedPlayers, filteredEvents, dfsPlayers]);
+
+  // Right-side metrics
+  const builderMetrics = useMemo(() => {
+    if (!selectedLineup) {
+      const cap = platform === "fanduel" ? 35000 : 50000;
+      const lockedSal = lockedPlayers.reduce((s, lp) => {
+        const dfs = matchDFS({ name: lp.name, team_id: lp.team_id, position: lp.position }, dfsPlayers);
+        return s + (dfs?.salary || 0);
+      }, 0);
+      return { cap, remaining: cap - lockedSal, projFP: 0, value: "—", ownership: "N/A" };
+    }
+    const cap = platform === "fanduel" ? 35000 : 50000;
+    const rem = (selectedLineup as any).remaining_salary ?? (cap - selectedLineup.total_salary);
+    const fp = selectedLineup.projected_score;
+    const val = selectedLineup.total_salary > 0 ? (fp / (selectedLineup.total_salary / 1000)).toFixed(2) : "—";
+    return { cap, remaining: rem, projFP: fp, value: val, ownership: "N/A" };
+  }, [selectedLineup, platform, lockedPlayers, dfsPlayers]);
 
   return (
     <div style={{ background: "#060b1a", minHeight: "100vh", color: "#f0f6fc" }}>
@@ -357,6 +452,11 @@ export default function OptimizerPage() {
                         const isExcluded = excludedPlayerIds.has(p.player_id);
                         const isLocked = lockedPlayerIds.has(p.player_id);
                         const startT = evt?.start_time ? new Date(evt.start_time).toLocaleString([], { hour: "numeric", minute: "2-digit" }) : "";
+                        const poolEntry = projPool[p.name.toLowerCase()];
+                        const sbProj = poolEntry?.projected_fp != null && poolEntry?.projection_source !== "UNAVAILABLE" ? poolEntry.projected_fp : null;
+                        const salary = dfs?.salary ?? 0;
+                        const effectiveProj = myProj[p.player_id] != null ? myProj[p.player_id] : sbProj;
+                        const value = salary > 0 && effectiveProj != null ? (effectiveProj / (salary / 1000)).toFixed(2) : "—";
                         return (
                           <tr key={p.player_id} style={{ borderBottom: "1px solid #1e293b20", opacity: isExcluded ? 0.35 : 1, background: isLocked ? "rgba(201,168,76,0.08)" : isLiked ? "rgba(201,168,76,0.03)" : "transparent" }}>
                             <Td>{teamName}</Td>
@@ -370,11 +470,13 @@ export default function OptimizerPage() {
                             </Td>
                             <Td style={{ color: "#f0f6fc", fontWeight: 600 }}>{p.name}</Td>
                             <Td style={{ color: dfs ? "#c9a84c" : "#64748b", fontWeight: dfs ? 700 : 400 }}>{dfs ? `$${dfs.salary.toLocaleString()}` : "—"}</Td>
-                            <Td style={{ color: "#64748b" }}>—</Td>
-                            <Td style={{ color: "#64748b" }}>—</Td>
-                            <Td style={{ color: "#64748b" }}>—</Td>
+                            <Td style={{ color: sbProj != null ? "#c9a84c" : "#64748b", fontWeight: sbProj != null ? 700 : 400 }}>{sbProj != null ? sbProj.toFixed(1) : "N/A"}</Td>
+                            <Td>
+                              <input type="number" step="0.1" value={myProj[p.player_id] ?? sbProj ?? ""} placeholder={sbProj != null ? "" : "—"} onChange={(e) => setMyProj((prev) => ({ ...prev, [p.player_id]: Number(e.target.value) }))} style={{ width: 56, padding: "4px 6px", borderRadius: 6, fontSize: 11, background: "#1a1f33", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
+                            </Td>
+                            <Td style={{ color: value !== "—" ? "#c9a84c" : "#64748b", fontWeight: value !== "—" ? 700 : 400 }}>{value}</Td>
                             <Td style={{ color: "#64748b" }}>{isLocked || isExcluded ? "—" : "100%"}</Td>
-                            <Td style={{ color: "#64748b" }}>—</Td>
+                            <Td style={{ color: "#64748b" }}>N/A</Td>
                             <Td style={{ color: mCount ? "#c9a84c" : "#64748b" }}>{mCount || "—"}</Td>
                             <Td>
                               <div style={{ display: "flex", gap: 4 }}>
@@ -424,23 +526,39 @@ export default function OptimizerPage() {
         <div style={{ flex: 1, minWidth: 280, maxWidth: 380, background: "#0a0f24", display: "flex", flexDirection: "column", gap: 12, padding: 16, overflow: "auto" }}>
           <SectionTitle>LIVE LINEUP BUILDER</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <MetricBox label="Salary Remaining" value={platform === "fanduel" ? "$35,000" : "$50,000"} />
-            <MetricBox label="Projected FP" value="—" />
-            <MetricBox label="Value" value="—" />
-            <MetricBox label="Proj Ownership" value="—" />
+            <MetricBox label="Salary Remaining" value={`$${(builderMetrics.remaining >= 0 ? builderMetrics.remaining : 0).toLocaleString()}`} />
+            <MetricBox label="Projected FP" value={builderMetrics.projFP ? builderMetrics.projFP.toFixed(1) : "—"} />
+            <MetricBox label="Value" value={String(builderMetrics.value)} />
+            <MetricBox label="Proj Ownership" value={builderMetrics.ownership} />
           </div>
+
+          {/* Lineup switcher (after generate) */}
+          {lineups.length > 1 && (
+            <>
+              <SectionTitle>BUILT LINE</SectionTitle>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {lineups.map((_, i) => (
+                  <button key={i} onClick={() => setSelectedLineupIndex(i)} style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: selectedLineupIndex === i ? "rgba(201,168,76,0.2)" : "#1a1f33", border: selectedLineupIndex === i ? "1px solid #c9a84c" : "1px solid #1e293b", color: selectedLineupIndex === i ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>Line {i + 1}</button>
+                ))}
+              </div>
+            </>
+          )}
+
           <SectionTitle>ROSTER · {platform === "fanduel" ? "FanDuel (9)" : "DraftKings (10)"}</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {slots.map((s, i) => {
-              const lp = lockedPlayers[i];
-              return (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, background: lp ? "rgba(201,168,76,0.1)" : "#1a1f33", border: lp ? "1px solid #c9a84c" : "1px solid #1e293b", minHeight: 40 }}>
-                  <span style={{ width: 50, fontSize: 10, fontWeight: 800, color: "#c9a84c", textTransform: "uppercase" }}>{slotLabel(s)}</span>
-                  {lp ? <span style={{ fontSize: 12, fontWeight: 600, color: "#f0f6fc", flex: 1 }}>{lp.name}</span> : <span style={{ fontSize: 11, color: "#64748b", flex: 1 }}>Lock a player to fill</span>}
-                  {lp && <button onClick={() => toggleLock(lp.player_id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} color="#ef4444" /></button>}
-                </div>
-              );
-            })}
+            {rosterRows.map((row, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, background: row.name ? "rgba(201,168,76,0.1)" : "#1a1f33", border: row.name ? "1px solid #c9a84c" : "1px solid #1e293b", minHeight: 40 }}>
+                <span style={{ width: 50, fontSize: 10, fontWeight: 800, color: "#c9a84c", textTransform: "uppercase" }}>{slotLabel(row.slot)}</span>
+                {row.name ? (
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#f0f6fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>{row.team} vs {row.opponent || "—"}{row.salary ? ` · $${row.salary.toLocaleString()}` : ""}</div>
+                  </div>
+                ) : (
+                  <span style={{ fontSize: 11, color: "#64748b", flex: 1 }}>{selectedLineup ? "" : "Lock a player to fill"}</span>
+                )}
+              </div>
+            ))}
           </div>
           <SectionTitle>LINEUP COUNT</SectionTitle>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

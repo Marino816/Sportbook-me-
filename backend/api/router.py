@@ -110,18 +110,25 @@ async def run_optimizer(
                 # Compute native projections from SGO intelligence
                 try:
                     from projection.native import compute_projections, projections_to_pool
-                    projs = compute_projections(sport, projections_list)
+                    from projection.sgo_intelligence import build_sgo_intelligence
+
+                    # Fetch SGO prop data from cached events for real projections
+                    sgo_intel = build_sgo_intelligence(sport, projections_list)
+                    projs = compute_projections(sport, projections_list, sgo_intelligence=sgo_intel)
                     projected_count = sum(1 for p in projs if p.projection_source != "UNAVAILABLE")
                     projections_list = projections_to_pool(projs)
                     logger.info(f"Native projections: {projected_count}/{len(projections_list)} projected")
-                    
-                    # If no SGO projections available, assign minimum positive
-                    # value so optimizer can produce valid rosters from salary+position.
-                    # Explicitly labeled as UNAVAILABLE in response.
+
+                    # Unprojected players get minimum positive so optimizer
+                    # can still fill roster slots; projected FP dominates CP-SAT.
                     if projected_count == 0:
                         for pl in projections_list:
                             pl["projected_fp"] = 0.01
                         logger.warning("Native DFS: 0 projections — using minimum placeholder for roster building")
+                    else:
+                        for pl in projections_list:
+                            if pl.get("projection_source") == "UNAVAILABLE":
+                                pl["projected_fp"] = 0.01
                 except Exception as e:
                     logger.warning(f"Native projection engine unavailable: {e}")
                     # Same fallback
@@ -174,6 +181,22 @@ async def run_optimizer(
             "max_exposure_pct": _sget("max_exposure_pct"),
         }
 
+        # Apply customer "My Projection" overrides (keyed by player name)
+        projection_overrides = _sget("projection_overrides", []) or []
+        if projection_overrides:
+            override_by_name = {}
+            for ov in projection_overrides:
+                if isinstance(ov, dict) and ov.get("name"):
+                    try:
+                        override_by_name[str(ov["name"]).strip().lower()] = float(ov.get("projected_fp", 0))
+                    except (ValueError, TypeError):
+                        continue
+            if override_by_name:
+                for pl in projections_list:
+                    nm = (pl.get("name") or "").strip().lower()
+                    if nm in override_by_name:
+                        pl["projected_fp"] = override_by_name[nm]
+
         pool = projections_list
         lineups = _generate_lineups(
             pool, strategy, requested_lineups,
@@ -225,6 +248,19 @@ async def run_optimizer(
                     "history_saved": history_saved,
                     "dfs_source": dfs_source,
                     "slate_id": request.slate_id,
+                    "pool": [
+                        {
+                            "id": str(p.get("id", "")),
+                            "name": p.get("name", ""),
+                            "position": p.get("roster_position") or p.get("position", ""),
+                            "team": p.get("team", ""),
+                            "opponent": p.get("opponent", ""),
+                            "salary": p.get("salary", 0),
+                            "projected_fp": p.get("projected_fp", 0.0),
+                            "projection_source": p.get("projection_source", "UNAVAILABLE"),
+                        }
+                        for p in projections_list
+                    ],
                 }, source="builder_engine")
 
     # NBA path — DFSOptimizer
