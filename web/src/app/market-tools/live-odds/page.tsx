@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { TrendingUp, AlertTriangle, Search } from "lucide-react";
-import { useEvents } from "@/lib/use-events";
+import { useLiveScores, ScoreBadge, GameStatusBadge } from "@/lib/live-scores";
+import { BookmakerLogo } from "@/lib/assets";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
@@ -101,7 +102,7 @@ export default function LiveOddsPage() {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const { events, loading, error } = useEvents(activeLeague);
+  const { events, loading, error } = useLiveScores(activeLeague);
 
   const toggleExpand = (eventId: string) => {
     setExpanded((prev) => ({ ...prev, [eventId]: !prev[eventId] }));
@@ -290,15 +291,10 @@ export default function LiveOddsPage() {
                 </div>
                 {/* Live score + expand icon */}
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  {live && (evt.home_score != null || evt.away_score != null) && (
-                    <span style={{ fontSize: 16, fontWeight: 800, color: "#c9a84c" }}>
-                      {evt.away_score ?? 0} – {evt.home_score ?? 0}
-                      {evt.period && (
-                        <span style={{ fontSize: 10, color: "#64748b", marginLeft: 4 }}>
-                          {evt.period}
-                        </span>
-                      )}
-                    </span>
+                  {live && (evt.home_score != null || evt.away_score != null) ? (
+                    <ScoreBadge evt={evt} />
+                  ) : (
+                    <GameStatusBadge evt={evt} />
                   )}
                   <span style={{ color: "#64748b", fontSize: 18 }}>
                     {isExpanded ? "▲" : "▼"}
@@ -374,7 +370,7 @@ export default function LiveOddsPage() {
                             <span
                               style={{ fontSize: 12, color: "#94a3b8", fontWeight: 500 }}
                             >
-                              {r.bookmaker}
+                              <BookmakerLogo bookmaker={r.bookmaker} />
                             </span>
                             <span
                               style={{

@@ -14,6 +14,7 @@ export interface SBTeam {
   name: string;
   abbreviation: string;
   team_id: string;
+  logo_url?: string | null;
 }
 
 export interface SBPlayer {
@@ -21,6 +22,7 @@ export interface SBPlayer {
   name: string;
   team_id: string;
   position: string;
+  headshot_url?: string | null;
 }
 
 export interface SBBookLine {
@@ -101,6 +103,7 @@ function asTeam(v: unknown): SBTeam {
     name,
     abbreviation: abbreviation || name,
     team_id: asStr(t.team_id ?? t.id),
+    logo_url: (t.logo_url as string) || null,
   };
 }
 
@@ -111,7 +114,26 @@ function asPlayer(v: unknown): SBPlayer {
     name: asStr(p.name ?? p.player_name),
     team_id: asStr(p.team_id ?? p.team),
     position: asStr(p.position),
+    headshot_url: (p.headshot_url as string) || null,
   };
+}
+
+/** Extract a numeric score from either a number or an SGO score dict {points}. */
+function asScore(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "object") {
+    const d = v as Record<string, unknown>;
+    const pts = d.points;
+    if (typeof pts === "number") return pts;
+    if (pts !== null && pts !== undefined) {
+      const n = Number(pts);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function asBook(v: unknown): SBBookLine {
@@ -166,8 +188,8 @@ export function normalizeEvent(v: unknown): SBEvent | null {
     venue: asStr(e.venue),
     home_team: asTeam(e.home_team),
     away_team: asTeam(e.away_team),
-    home_score: asNum(e.home_score),
-    away_score: asNum(e.away_score),
+    home_score: asScore(e.home_score),
+    away_score: asScore(e.away_score),
     period: typeof e.period === "string" ? e.period : null,
     players: asArray(e.players)
       .filter((p): p is Record<string, unknown> => p !== null && typeof p === "object")

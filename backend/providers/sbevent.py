@@ -200,14 +200,24 @@ def from_sdk_event(sdk_event) -> SBEvent:
                 books=books,
             ))
 
-    # Scores
+    # Scores — extract numeric points from SGO score dict if needed
     home_score = None
     away_score = None
     if event.results:
         game = event.results.get("game", {})
         if game:
-            home_score = game.get("home")
-            away_score = game.get("away")
+
+            def _extract_score(val):
+                if isinstance(val, dict):
+                    pts = val.get("points")
+                    if pts is not None:
+                        return float(pts)
+                if isinstance(val, (int, float)):
+                    return float(val)
+                return None
+
+            home_score = _extract_score(game.get("home"))
+            away_score = _extract_score(game.get("away"))
 
     return SBEvent(
         id=event_id,

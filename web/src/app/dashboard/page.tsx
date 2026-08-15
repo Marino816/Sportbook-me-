@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { Flame, MessageCircle, List, TrendingUp, Activity, Clock } from "lucide-react";
 import { useState, useMemo } from "react";
-import { useEvents } from "@/lib/use-events";
+import { useLiveScores, ScoreBadge } from "@/lib/live-scores";
 import type { SBEvent, SBMarket } from "@/lib/sbevent";
 
 // ── leagues as surfaced by SGO ──
@@ -56,7 +56,7 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const name = user?.email?.split("@")[0] || "Player";
   const [activeLeague, setActiveLeague] = useState<League>("MLB");
-  const { events, loading, error } = useEvents(activeLeague);
+  const { events, loading, error } = useLiveScores(activeLeague);
 
   const liveEvents = useMemo(
     () => events.filter((e) => isLive(e.status)),

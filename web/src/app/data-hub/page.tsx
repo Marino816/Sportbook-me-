@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Database, Search, Lock, Ban, Heart, Send, Loader2, BarChart3, Layers, X } from "lucide-react";
 import { fetchDataHubSlate, fetchDFSSlates, runSims, type CanonicalPlayer, type DFSSlateSummary } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
+import { PlayerAvatar, TeamLogo } from "@/lib/assets";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"];
 const PLATFORMS = ["draftkings", "fanduel"];
@@ -174,9 +175,17 @@ export default function DataHubPage() {
                 const myProj = ws.projOverrides[p.name];
                 return (
                   <tr key={p.id} onClick={() => setDrawerPlayer(p)} style={{ borderBottom: `1px solid ${border}40`, cursor: "pointer", background: locked ? `${gold}10` : excluded ? "rgba(239,68,68,0.05)" : "transparent", opacity: excluded ? 0.5 : 1 }}>
-                    <td style={{ padding: "8px 10px", fontWeight: 700, color: textPrimary }}>{p.name}</td>
+                    <td style={{ padding: "8px 10px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: 8 }}>
+                      <PlayerAvatar player={{ name: p.name, player_id: p.id }} size={22} />
+                      {p.name}
+                    </td>
                     <td style={{ padding: "8px 10px", color: gold, fontWeight: 700, textTransform: "uppercase", fontSize: 10 }}>{p.roster_position}</td>
-                    <td style={{ padding: "8px 10px", color: textSecondary }}>{p.team}</td>
+                    <td style={{ padding: "8px 10px", color: textSecondary }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <TeamLogo team={{ abbreviation: p.team, name: p.team }} size={16} />
+                        {p.team}
+                      </span>
+                    </td>
                     <td style={{ padding: "8px 10px", color: textMuted }}>{p.opponent || "—"}</td>
                     <td style={{ padding: "8px 10px", color: textSecondary }}>${p.salary.toLocaleString()}</td>
                     <td style={{ padding: "8px 10px", color: p.projection_source === "UNAVAILABLE" ? textMuted : gold, fontWeight: 700 }}>{p.projection_source === "UNAVAILABLE" ? "N/A" : p.projected_fp.toFixed(1)}</td>

@@ -188,4 +188,9 @@ body {
   box-shadow: 0 6px 24px rgba(201, 168, 76, 0.5);
 }
 
+@keyframes sbme-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 .parlay-accent { border-left: 3px solid var(--primary); }
