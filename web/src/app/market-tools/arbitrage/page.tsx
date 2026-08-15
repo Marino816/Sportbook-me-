@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { Calculator, Scan, AlertTriangle, Info } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
+import { formatBookmakerName } from "@/lib/bookmakers";
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 type League = (typeof LEAGUES)[number];
@@ -320,14 +321,14 @@ export default function ArbitragePage() {
                   }}
                 >
                   <div style={{ textAlign: "center", minWidth: 60 }}>
-                    <div style={{ fontSize: 10, color: "#64748b" }}>{opp.home_book}</div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>{formatBookmakerName(opp.home_book)}</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: "#c9a84c" }}>
                       {fmtOdds(opp.home_odds)}
                     </div>
                   </div>
                   <span style={{ color: "#64748b" }}>→</span>
                   <div style={{ textAlign: "center", minWidth: 60 }}>
-                    <div style={{ fontSize: 10, color: "#64748b" }}>{opp.away_book}</div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>{formatBookmakerName(opp.away_book)}</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: "#c9a84c" }}>
                       {fmtOdds(opp.away_odds)}
                     </div>

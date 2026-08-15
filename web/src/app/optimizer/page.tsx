@@ -8,6 +8,7 @@ import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart,
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
 import { useWorkspace } from "@/lib/workspace-context";
+import { formatBookmakerName } from "@/lib/bookmakers";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 const PLATFORMS = ["draftkings", "fanduel"] as const;
@@ -395,7 +396,7 @@ export default function OptimizerPage() {
       <div style={{ padding: "12px 24px", borderBottom: "1px solid #1e293b", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <Selector label="Sport" value={sport} options={[...SPORTS]} onChange={setSport} />
-          <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} />
+          <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
             Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${filteredEvents.length} Games · ${players.length} Players` : "No slate"}

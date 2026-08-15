@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { GitCompare, Trophy, Search } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
+import { formatBookmakerName } from "@/lib/bookmakers";
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 type League = (typeof LEAGUES)[number];

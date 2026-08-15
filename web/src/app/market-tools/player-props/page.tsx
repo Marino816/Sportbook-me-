@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { UserCheck, Search, RotateCcw } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket } from "@/lib/sbevent";
+import { formatBookmakerName } from "@/lib/bookmakers";
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 type League = (typeof LEAGUES)[number];
@@ -316,7 +317,7 @@ export default function PlayerPropsPage() {
             </button>
             <FilterSelect label="Team" value={teamFilter} options={teamOptions} onChange={setTeamFilter} />
             <FilterSelect label="Prop Type" value={propTypeFilter} options={propTypeOptions} onChange={setPropTypeFilter} />
-            <FilterSelect label="Bookmaker" value={bookmakerFilter} options={bookmakerOptions} onChange={setBookmakerFilter} />
+            <FilterSelect label="Bookmaker" value={bookmakerFilter} options={bookmakerOptions} onChange={setBookmakerFilter} formatLabel={formatBookmakerName} />
             <div style={{ position: "relative", marginLeft: "auto" }}>
               <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
               <input type="text" placeholder="Search players..." value={search} onChange={(e) => setSearch(e.target.value)}
@@ -395,7 +396,7 @@ export default function PlayerPropsPage() {
                           <td style={{ ...tdStyle, color: "#c9a84c", fontWeight: 700 }}>{r.line ?? "—"}</td>
                           <td style={{ ...tdStyle, textAlign: "center", color: r.isBestOver ? "#c9a84c" : "#94a3b8", fontWeight: r.isBestOver ? 800 : 400 }}>O {fmtOdds(r.overPrice)}</td>
                           <td style={{ ...tdStyle, textAlign: "center", color: r.isBestUnder ? "#c9a84c" : "#94a3b8", fontWeight: r.isBestUnder ? 800 : 400 }}>U {fmtOdds(r.underPrice)}</td>
-                          <td style={{ ...tdStyle, color: "#94a3b8" }}>{r.bookmaker}</td>
+                          <td style={{ ...tdStyle, color: "#94a3b8" }}>{formatBookmakerName(r.bookmaker)}</td>
                           <td style={{ ...tdStyle, textAlign: "center", color: "#c9a84c", fontWeight: 700, fontSize: 11 }}>
                             {r.overPrice != null || r.underPrice != null ? `O ${fmtOdds(r.overPrice)} · U ${fmtOdds(r.underPrice)}` : "—"}
                           </td>
@@ -415,14 +416,15 @@ export default function PlayerPropsPage() {
   );
 }
 
-function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+function FilterSelect({ label, value, options, onChange, formatLabel }: { label: string; value: string; options: string[]; onChange: (v: string) => void; formatLabel?: (v: string) => string }) {
+  const fmt = formatLabel ?? ((v: string) => v);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{label}</span>
       <select value={value} onChange={(e) => onChange(e.target.value)}
         style={{ padding: "8px 10px", borderRadius: 10, fontSize: 12, fontWeight: 600, background: "#0a0f24", border: "1px solid #1e293b", color: value ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>
         <option value="">All</option>
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        {options.map((o) => <option key={o} value={o}>{fmt(o)}</option>)}
       </select>
     </div>
   );
