@@ -76,7 +76,7 @@ def _parse_game_info(game_info: str) -> tuple[str, str, Optional[datetime]]:
     return team, opponent, start_time
 
 
-def parse_draftkings_csv(csv_content: str, slate_name: str = "DK Main") -> DFSSlate:
+def parse_draftkings_csv(csv_content: str, slate_name: str = "DK Main") -> tuple[DFSSlate, list[DFSContestPlayer]]:
     """
     Parse a DraftKings contest CSV file into normalized DFS data.
 
@@ -187,11 +187,18 @@ def parse_fanduel_csv(csv_content: str, slate_name: str = "FD Main") -> tuple[DF
         pos = DK_POSITION_MAP.get(pos_raw, pos_raw)
         positions_seen.add(pos)
 
+        # Extract team/opponent/start_time from the game field
+        # (FD "Game" field is typically "TEAM@OPP MM/DD/YYYY HH:MM PM ET").
+        team_abbrev, opp_abbrev, game_start = _parse_game_info(game)
+        team = team or team_abbrev
+        opponent = opponent or opp_abbrev
+
         players.append(DFSContestPlayer(
             platform="fanduel",
             slate_id=slate_id,
             slate_name=slate_name,
             sport="",
+            start_time=game_start,
             player_id=pid or name,
             player_name=name,
             team=team,
@@ -213,11 +220,15 @@ def parse_fanduel_csv(csv_content: str, slate_name: str = "FD Main") -> tuple[DF
     for p in players:
         p.sport = sport
 
+    # Derive slate start_time from the first player with a parsed game time
+    start_time = next((p.start_time for p in players if p.start_time), None)
+
     return DFSSlate(
         platform="fanduel",
         slate_id=slate_id,
         slate_name=slate_name,
         sport=sport,
+        start_time=start_time,
         player_count=len(players),
         salary_cap=35000,
         data_source="native",

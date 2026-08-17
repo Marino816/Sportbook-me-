@@ -13,6 +13,7 @@ from dfs.db import DFSSlate as SlateDB, DFSPlayer as PlayerDB
 from dfs.parsers import parse_draftkings_csv, parse_fanduel_csv
 from dfs.reconciliation import reconcile_player
 from dfs.models import DFSContestPlayer
+from dfs.import_service import import_slate_file, ImportResult
 from api.utils import wrap_data
 
 router = APIRouter(prefix="/admin/dfs", tags=["Admin DFS"])
@@ -101,23 +102,31 @@ async def upload_slate(
     filename = file.filename or "unnamed.csv"
     platform = "fanduel" if "fan" in filename.lower() else "draftkings"
 
-    try:
-        if platform == "fanduel":
-            slate_obj, players = parse_fanduel_csv(content, slate_name=filename.replace(".csv", ""))
-        else:
-            slate_obj, players = parse_draftkings_csv(content, slate_name=filename.replace(".csv", ""))
-    except Exception as e:
-        raise HTTPException(400, f"CSV parse error: {e}")
-
-    if not players:
+    # Canonical import + validation (shared DK/FD path)
+    result = await import_slate_file(content, platform, filename)
+    if not result.validation.passed:
+        raise HTTPException(400, {
+            "detail": "Slate validation failed",
+            "errors": result.validation.errors,
+            "warnings": result.validation.warnings,
+        })
+    if not result.players:
         raise HTTPException(400, "Zero players found in CSV")
-    if slate_obj.sport not in ("MLB", "NFL", "NBA", "NHL"):
-        raise HTTPException(400, f"Unsupported sport: {slate_obj.sport}")
+
+    slate_obj = result.slate_obj
+    players = result.players
+    if slate_obj is None:
+        raise HTTPException(400, "Slate parsing produced no metadata")
+
+    # A slate is optimizer-eligible only when it is CURRENT (today) — otherwise
+    # it is stored but never published to customers.
+    freshness = result.fresh_status
+    initial_status = "PUBLISHED" if freshness == "CURRENT" else "DRAFT"
 
     db_slate = SlateDB(
         platform=platform, sport=slate_obj.sport,
         external_slate_id=slate_obj.slate_id, slate_name=slate_obj.slate_name,
-        start_time=slate_obj.start_time, uploaded_by=admin.id, status="DRAFT",
+        start_time=slate_obj.start_time, uploaded_by=admin.id, status=initial_status,
         data_source="native", player_count=len(players),
         matched_count=0, review_count=0, unmatched_count=len(players),
     )
@@ -138,7 +147,9 @@ async def upload_slate(
     return wrap_data({
         "slate_id": db_slate.id, "platform": platform, "sport": slate_obj.sport,
         "slate_name": db_slate.slate_name, "player_count": len(players),
-        "status": "DRAFT",
+        "game_count": result.game_count, "slate_date": result.slate_date,
+        "status": initial_status, "freshness": freshness,
+        "warnings": result.validation.warnings,
     })
 
 
