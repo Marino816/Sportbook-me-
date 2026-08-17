@@ -245,6 +245,7 @@ export interface DFSSlateSummary {
   start_time: string | null;
   slate_date: string | null;
   is_current: boolean;
+  game_count: number;
   player_count: number;
   status: string;
   data_source: string;

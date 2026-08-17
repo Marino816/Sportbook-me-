@@ -30,6 +30,18 @@ async def list_published_slates(
     result = await db.execute(q)
     slates = result.scalars().all()
 
+    # Compute per-slate game count from distinct game_info values
+    game_counts: dict[int, int] = {}
+    if slates:
+        from sqlalchemy import func
+        slate_ids = [s.id for s in slates]
+        gc_rows = await db.execute(
+            select(PlayerDB.slate_id, func.count(func.distinct(PlayerDB.game_info)))
+            .where(PlayerDB.slate_id.in_(slate_ids))
+            .group_by(PlayerDB.slate_id)
+        )
+        game_counts = {row[0]: row[1] for row in gc_rows}
+
     def _is_current(s_start) -> bool:
         if not s_start:
             return False
@@ -50,6 +62,7 @@ async def list_published_slates(
         "start_time": str(s.start_time) if s.start_time else None,
         "slate_date": s.start_time.date().isoformat() if s.start_time else None,
         "is_current": _is_current(s.start_time),
+        "game_count": game_counts.get(s.id, 0),
         "player_count": s.player_count,
         "status": s.status,
         "data_source": s.data_source,
