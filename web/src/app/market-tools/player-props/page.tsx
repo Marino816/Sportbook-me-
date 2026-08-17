@@ -5,6 +5,7 @@ import { UserCheck, Search, RotateCcw } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket } from "@/lib/sbevent";
 import { formatBookmakerName } from "@/lib/bookmakers";
+import { LastFive } from "@/lib/last-five";
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 type League = (typeof LEAGUES)[number];
@@ -408,6 +409,9 @@ export default function PlayerPropsPage() {
                   </table>
                 </div>
               )}
+              <div style={{ marginTop: 12 }}>
+                <LastFive player={{ name: selectedPlayer.playerName, player_id: selectedPlayer.playerId }} platform="draftkings" />
+              </div>
             </div>
           ) : null}
         </>

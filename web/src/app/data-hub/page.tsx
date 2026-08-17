@@ -6,6 +6,7 @@ import { Database, Search, Lock, Ban, Heart, Send, Loader2, BarChart3, Layers, X
 import { fetchDataHubSlate, fetchDFSSlates, runSims, type CanonicalPlayer, type DFSSlateSummary } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import { PlayerAvatar, TeamLogo } from "@/lib/assets";
+import { LastFive } from "@/lib/last-five";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"];
 const PLATFORMS = ["draftkings", "fanduel"];
@@ -239,6 +240,7 @@ export default function DataHubPage() {
               <ActionBtn label={ws.likedIds.includes(drawerPlayer.name) ? "Unlike" : "Like"} icon={<Heart size={14} />} onClick={() => ws.toggleLike(drawerPlayer.name)} />
               <ActionBtn label="Send to Optimizer" icon={<Send size={14} />} gold onClick={() => { ws.toggleLock(drawerPlayer.name); router.push("/optimizer"); }} />
             </div>
+            <LastFive player={{ name: drawerPlayer.name, player_id: drawerPlayer.id }} platform={ws.platform} />
           </div>
         </div>
       )}

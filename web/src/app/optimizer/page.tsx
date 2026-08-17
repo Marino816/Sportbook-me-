@@ -3,12 +3,13 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, type LineupResponse, type DFSSlatePlayer, type CanonicalPlayer } from "@/lib/api";
+import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
 import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatBookmakerName } from "@/lib/bookmakers";
+import { LastFive } from "@/lib/last-five";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 const PLATFORMS = ["draftkings", "fanduel"] as const;
@@ -83,6 +84,20 @@ function slotEligible(pos: string | undefined | null, slot: string): boolean {
   return eligible.includes(slot);
 }
 
+// DFS → SGO team abbreviation reconciliation (canonical identity layer).
+const TEAM_ABBR_MAP: Record<string, string> = {
+  ATH: "OAK", // Athletics (DFS "ATH" ↔ SGO "OAK")
+  LAA: "LAA", ARI: "ARI", ATL: "ATL", BAL: "BAL", BOS: "BOS", CHC: "CHC",
+  CIN: "CIN", CLE: "CLE", COL: "COL", CWS: "CWS", DET: "DET", HOU: "HOU",
+  KC: "KC", LAD: "LAD", MIA: "MIA", MIL: "MIL", MIN: "MIN", NYM: "NYM",
+  NYY: "NYY", PHI: "PHI", PIT: "PIT", SD: "SD", SEA: "SEA", SF: "SF",
+  STL: "STL", TB: "TB", TEX: "TEX", TOR: "TOR", WSH: "WSH",
+};
+function mapTeamAbbr(abbr: string | null | undefined): string {
+  const a = (abbr || "").toUpperCase();
+  return TEAM_ABBR_MAP[a] || a;
+}
+
 function exportLineups(lineups: any[], meta: any): void {
   if (!lineups.length) return;
   const rows = [["Lineup","Total Salary","Projected FP","Players"].join(",")];
@@ -124,6 +139,7 @@ export default function OptimizerPage() {
   const [subTab, setSubTab] = useState<SubTab>("all");
 
   const [lineups, setLineups] = useState<LineupResponse[]>([]);
+  const [slates, setSlates] = useState<DFSSlateSummary[]>([]);
   const [resolvedSlateId, setResolvedSlateId] = useState<number | null>(null);
   const [slatesLoading, setSlatesLoading] = useState(true);
   const [showStackingRules, setShowStackingRules] = useState(false);
@@ -147,8 +163,8 @@ export default function OptimizerPage() {
       try {
         const res = await fetchDFSSlates(platform, sport);
         const pub = (res?.data ?? []).filter((s: any) => s.status === "PUBLISHED");
-        if (!cancelled) setResolvedSlateId(pub.length > 0 ? pub[0].id : null);
-      } catch { if (!cancelled) setResolvedSlateId(null); }
+        if (!cancelled) { setSlates(pub); setResolvedSlateId(pub.length > 0 ? pub[0].id : null); }
+      } catch { if (!cancelled) { setSlates([]); setResolvedSlateId(null); } }
       finally { if (!cancelled) setSlatesLoading(false); }
     }
     load();
@@ -186,10 +202,31 @@ export default function OptimizerPage() {
   useEffect(() => { setPlayerSearch(""); setPosFilter("ALL"); setLineups([]); setLastGenMeta(null); }, [sport, platform]);
 
   // ── Derived ──
+  // DFS slate membership: the set of team abbreviations present in the
+  // selected contest slate. SGO events/players are then filtered to ONLY
+  // those teams so an SGO game can never leak into a DK/FD slate simply
+  // because it shares a sport.
+  const slateTeamAbbrs = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of dfsPlayers) {
+      if (p.team) s.add(mapTeamAbbr(p.team));
+      if (p.opponent) s.add(mapTeamAbbr(p.opponent));
+    }
+    return s;
+  }, [dfsPlayers]);
+
   const filteredEvents = useMemo(() => {
-    if (excludedGameIds.size === 0) return events;
-    return events.filter((e) => !excludedGameIds.has(e.id));
-  }, [events, excludedGameIds]);
+    let evts = events;
+    if (resolvedSlateId != null && slateTeamAbbrs.size > 0) {
+      evts = events.filter((e) => {
+        const h = mapTeamAbbr(e.home_team?.abbreviation);
+        const a = mapTeamAbbr(e.away_team?.abbreviation);
+        return slateTeamAbbrs.has(h) || slateTeamAbbrs.has(a);
+      });
+    }
+    if (excludedGameIds.size === 0) return evts;
+    return evts.filter((e) => !excludedGameIds.has(e.id));
+  }, [events, excludedGameIds, resolvedSlateId, slateTeamAbbrs]);
 
   const players = useMemo(() => {
     const seen = new Map<string, SBPlayer>();
@@ -396,6 +433,7 @@ export default function OptimizerPage() {
       <div style={{ padding: "12px 24px", borderBottom: "1px solid #1e293b", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <Selector label="Sport" value={sport} options={[...SPORTS]} onChange={setSport} />
+          <Selector label="Slate" value={resolvedSlateId == null ? "" : String(resolvedSlateId)} options={slates.map((s) => String(s.id))} onChange={(v) => setResolvedSlateId(v ? Number(v) : null)} format={(v) => { const s = slates.find((x) => String(x.id) === v); return s ? `${s.slate_name} (${s.player_count})` : v; }} />
           <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
@@ -529,6 +567,7 @@ export default function OptimizerPage() {
                                 <IconBtn icon={<Lock size={12} />} active={isLocked} title="Lock player" onClick={() => toggleLock(p.player_id)} />
                                 <IconBtn icon={<Ban size={12} />} active={isExcluded} title="Exclude player" onClick={() => toggleExclude(p.player_id)} />
                               </div>
+                              <LastFive player={{ name: p.name, player_id: p.player_id }} platform={platform} />
                             </Td>
                           </tr>
                         );
