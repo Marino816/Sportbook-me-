@@ -5,6 +5,7 @@ import { Layers, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { formatBookmakerName, buildBookmakerUniverse } from "@/lib/bookmakers";
+import { LastFive } from "@/lib/last-five";
 
 const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 type League = (typeof LEAGUES)[number];
@@ -656,26 +657,32 @@ function MarketLegs({
   }
 
   // Generic / player props / other bet types
+  const playerPropPlayer = markets.find((m) => m.player_name && m.player_id)?.player_name;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-      {markets.map((m) => {
-        const label = m.player_name
-          ? `${m.player_name} ${m.market_name || m.stat_id || ""}`
-          : m.market_name || m.side || m.odd_id;
-        const book = getBook(m.books, bookmaker);
-        return (
-          <SelectionBtn
-            key={m.odd_id}
-            label={label}
-            odds={fmtOdds(book?.moneyline ?? null)}
-            disabled={!book}
-            onClick={() => {
-              if (!book) return;
-              onAdd(m.bet_type, label, book.moneyline ?? -110);
-            }}
-          />
-        );
-      })}
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {markets.map((m) => {
+          const label = m.player_name
+            ? `${m.player_name} ${m.market_name || m.stat_id || ""}`
+            : m.market_name || m.side || m.odd_id;
+          const book = getBook(m.books, bookmaker);
+          return (
+            <SelectionBtn
+              key={m.odd_id}
+              label={label}
+              odds={fmtOdds(book?.moneyline ?? null)}
+              disabled={!book}
+              onClick={() => {
+                if (!book) return;
+                onAdd(m.bet_type, label, book.moneyline ?? -110);
+              }}
+            />
+          );
+        })}
+      </div>
+      {playerPropPlayer && (
+        <LastFive player={{ name: playerPropPlayer, player_id: markets.find((m) => m.player_name === playerPropPlayer)?.player_id }} />
+      )}
     </div>
   );
 }

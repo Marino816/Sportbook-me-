@@ -69,7 +69,7 @@ def _market_to_prop_key(market_name: str, stat_id: str) -> Optional[str]:
     return None
 
 
-async def build_sgo_intelligence(sport: str, dfs_players: list[dict]) -> dict[str, dict]:
+async def build_sgo_intelligence(sport: str, dfs_players: list[dict], event_date: Optional[str] = None) -> dict[str, dict]:
     """
     Build a sgo_intelligence dict keyed by DFS player ID.
 
@@ -99,6 +99,26 @@ async def build_sgo_intelligence(sport: str, dfs_players: list[dict]) -> dict[st
 
     if not events or not isinstance(events, list):
         return {}
+
+    # DATE-SAFE enrichment: when a slate date is supplied, restrict to events
+    # whose start_time falls on that date so a stale DFS salary slate is never
+    # enriched with current/upcoming SGO market data from a different game day.
+    if event_date:
+        before = len(events)
+        events = [
+            e for e in events
+            if isinstance(e, dict) and (e.get("start_time") or "").startswith(event_date)
+        ]
+        logger.info(
+            "SGO intelligence date filter %s: %d -> %d events",
+            event_date, before, len(events),
+        )
+        if not events:
+            logger.warning(
+                "SGO intelligence: no events match slate date %s — enrichment skipped (date-safe).",
+                event_date,
+            )
+            return {}
 
     # Build SGO player_name → {props, fantasyScore}
     sgo_by_name: dict[str, dict] = {}

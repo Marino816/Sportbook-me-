@@ -142,6 +142,7 @@ export default function OptimizerPage() {
   const [slates, setSlates] = useState<DFSSlateSummary[]>([]);
   const [resolvedSlateId, setResolvedSlateId] = useState<number | null>(null);
   const [slatesLoading, setSlatesLoading] = useState(true);
+  const [hasStaleSlates, setHasStaleSlates] = useState(false);
   const [showStackingRules, setShowStackingRules] = useState(false);
   const [maxHittersPerTeam, setMaxHittersPerTeam] = useState<number | undefined>();
   const [stackSize, setStackSize] = useState<number | undefined>();
@@ -163,8 +164,11 @@ export default function OptimizerPage() {
       try {
         const res = await fetchDFSSlates(platform, sport);
         const pub = (res?.data ?? []).filter((s: any) => s.status === "PUBLISHED");
-        if (!cancelled) { setSlates(pub); setResolvedSlateId(pub.length > 0 ? pub[0].id : null); }
-      } catch { if (!cancelled) { setSlates([]); setResolvedSlateId(null); } }
+        // Only CURRENT slates are eligible — stale salary slates (wrong date)
+        // are blocked so today's SGO games are never enriched onto an old slate.
+        const current = pub.filter((s: any) => s.is_current !== false);
+        if (!cancelled) { setSlates(current); setResolvedSlateId(current.length > 0 ? current[0].id : null); setHasStaleSlates(pub.length > current.length); }
+      } catch { if (!cancelled) { setSlates([]); setResolvedSlateId(null); setHasStaleSlates(false); } }
       finally { if (!cancelled) setSlatesLoading(false); }
     }
     load();
@@ -655,7 +659,13 @@ export default function OptimizerPage() {
           <button onClick={() => optimizeMutation.mutate()} disabled={!canGenerate || optimizeMutation.isPending} style={{ width: "100%", padding: "16px", borderRadius: 14, fontWeight: 900, fontSize: 16, textTransform: "uppercase", letterSpacing: 1, background: canGenerate ? "#c9a84c" : "#1e293b", color: canGenerate ? "#060b1a" : "#64748b", border: "none", cursor: canGenerate ? "pointer" : "not-allowed", boxShadow: canGenerate ? "0 4px 24px rgba(201,168,76,0.4)" : "none", marginTop: 8 }}>
             {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>OPTIMIZE</>}
           </button>
-          {!slatesLoading && resolvedSlateId == null && <Muted>No {platform === "draftkings" ? "DraftKings" : "FanDuel"} slate for {sport}. Generate unavailable.</Muted>}
+          {!slatesLoading && resolvedSlateId == null && (
+            <Muted>
+              {hasStaleSlates
+                ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} contest slate is available.`
+                : `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} contest salary data is available.`}
+            </Muted>
+          )}
           {(lockedPlayerIds.size > 0 || excludedPlayerIds.size > 0) && (
             <div style={{ fontSize: 10, color: "#64748b" }}>
               {lockedPlayerIds.size > 0 && <span>🔒 {lockedPlayerIds.size} locked · </span>}

@@ -98,13 +98,16 @@ async def build_canonical_pool(
     if len(projections_list) < 10:
         return [], {"error": "Slate has insufficient players", "player_count": len(projections_list)}
 
-    # Real projections from SGO intelligence
+    # Real projections from SGO intelligence (DATE-SAFE: restrict SGO events
+    # to the slate's own game date so a stale salary slate is never enriched
+    # with current/upcoming SGO market data).
+    slate_date = slate.start_time.date().isoformat() if slate.start_time else None
     try:
-        sgo_intel = await build_sgo_intelligence(sport, projections_list)
+        sgo_intel = await build_sgo_intelligence(sport, projections_list, event_date=slate_date)
         projs = compute_projections(sport, projections_list, sgo_intelligence=sgo_intel)
         projected_count = sum(1 for p in projs if p.projection_source != "UNAVAILABLE")
         pool = projections_to_pool(projs)
-        logger.info(f"Canonical pool: {projected_count}/{len(pool)} projected")
+        logger.info(f"Canonical pool: {projected_count}/{len(pool)} projected (slate date {slate_date})")
     except Exception as e:
         logger.warning(f"Projection engine unavailable in canonical pool: {e}")
         pool = projections_to_pool(

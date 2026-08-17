@@ -30,12 +30,26 @@ async def list_published_slates(
     result = await db.execute(q)
     slates = result.scalars().all()
 
+    def _is_current(s_start) -> bool:
+        if not s_start:
+            return False
+        try:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            slate_et = s_start.astimezone(ZoneInfo("America/New_York")).date()
+            now_et = datetime.now(ZoneInfo("America/New_York")).date()
+            return slate_et == now_et
+        except Exception:
+            return False
+
     return wrap_data([{
         "id": s.id,
         "platform": s.platform,
         "sport": s.sport,
         "slate_name": s.slate_name,
         "start_time": str(s.start_time) if s.start_time else None,
+        "slate_date": s.start_time.date().isoformat() if s.start_time else None,
+        "is_current": _is_current(s.start_time),
         "player_count": s.player_count,
         "status": s.status,
         "data_source": s.data_source,

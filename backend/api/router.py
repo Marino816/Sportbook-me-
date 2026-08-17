@@ -113,7 +113,9 @@ async def run_optimizer(
                     from projection.sgo_intelligence import build_sgo_intelligence
 
                     # Fetch SGO prop data from cached events for real projections
-                    sgo_intel = await build_sgo_intelligence(sport, projections_list)
+                    # DATE-SAFE: restrict SGO events to the slate's own game date.
+                    slate_date = native_slate.start_time.date().isoformat() if native_slate.start_time else None
+                    sgo_intel = await build_sgo_intelligence(sport, projections_list, event_date=slate_date)
                     projs = compute_projections(sport, projections_list, sgo_intelligence=sgo_intel)
                     projected_count = sum(1 for p in projs if p.projection_source != "UNAVAILABLE")
                     projections_list = projections_to_pool(projs)

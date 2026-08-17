@@ -243,6 +243,8 @@ export interface DFSSlateSummary {
   sport: string;
   slate_name: string;
   start_time: string | null;
+  slate_date: string | null;
+  is_current: boolean;
   player_count: number;
   status: string;
   data_source: string;
