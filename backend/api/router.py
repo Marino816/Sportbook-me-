@@ -81,6 +81,28 @@ async def run_optimizer(
         )
         native_slate = native_result.scalars().first()
         if native_slate:
+            # ── Server-side freshness gate ──
+            # A stale (past-date) published slate must never generate or
+            # save a lineup.  Reject it at the API layer so a client that
+            # bypasses the frontend *is_current* filter cannot create
+            # lineups from out-of-date salaries.
+            from dfs.freshness import is_stale_slate
+
+            if is_stale_slate(native_slate.start_time):
+                slate_d = (
+                    native_slate.start_time.date().isoformat()
+                    if native_slate.start_time
+                    else "unknown"
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Slate '{native_slate.slate_name}' is stale "
+                        f"(slate date {slate_d}). Please upload or select "
+                        f"a current {native_slate.platform} slate."
+                    ),
+                )
+
             sport = native_slate.sport.upper()
             platform = request.settings.get("platform", native_slate.platform) if isinstance(request.settings, dict) else getattr(request.settings, 'platform', native_slate.platform)
 

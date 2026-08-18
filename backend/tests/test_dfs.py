@@ -93,3 +93,204 @@ class TestReconciliation:
         result = reconcile_player(dp, SGO_PLAYERS)
         assert result is None
         assert dp.sbme_confidence == 0.0
+
+
+# ── Canonical Freshness (dfs/freshness.py) ──────────────────
+
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+from dfs.freshness import (
+    slate_freshness, is_stale_slate, is_current_slate, slate_date_et,
+)
+
+
+class TestFreshness:
+    def test_stale_past_date(self):
+        """A slate date 3 days in the past is STALE."""
+        past = datetime.now(ZoneInfo("America/New_York")) - timedelta(days=3)
+        assert slate_freshness(past) == "STALE"
+        assert is_stale_slate(past) is True
+
+    def test_current_today(self):
+        """Today in ET is CURRENT."""
+        today = datetime.now(ZoneInfo("America/New_York"))
+        assert slate_freshness(today) == "CURRENT"
+        assert is_current_slate(today) is True
+
+    def test_upcoming_future(self):
+        """A slate date 3 days in the future is UPCOMING."""
+        future = datetime.now(ZoneInfo("America/New_York")) + timedelta(days=3)
+        assert slate_freshness(future) == "UPCOMING"
+        assert is_stale_slate(future) is False
+        assert is_current_slate(future) is False
+
+    def test_none_start_time_is_stale(self):
+        """Missing start_time → STALE (cannot be proven current)."""
+        assert slate_freshness(None) == "STALE"
+        assert is_stale_slate(None) is True
+
+    def test_naive_datetime(self):
+        """Naive datetime is interpreted relative to current system tz
+        then converted to ET for comparison."""
+        naive = datetime(2026, 1, 1, 12, 0)  # well in the past
+        assert is_stale_slate(naive) is True
+
+    def test_utc_midnight_edge(self):
+        """A UTC time that maps to a different day in ET should be
+        evaluated by its ET date."""
+        utc = datetime(2026, 8, 11, 23, 0, tzinfo=timezone.utc)
+        et_date = slate_date_et(utc)
+        # 23:00 UTC = 19:00 ET, so it's still 8/11 in ET
+        assert et_date is not None
+        assert et_date.month == 8
+
+    def test_current_not_stale(self):
+        today = datetime.now(ZoneInfo("America/New_York"))
+        assert is_stale_slate(today) is False
+
+
+# ── Optimizer endpoint stale-slate gate ──────────────────────
+
+import pytest
+from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
+from main import app
+from models.database import Base, get_db
+from dfs.db import DFSSlate, DFSPlayer
+
+OPT_TEST_URL = "sqlite+aiosqlite://"
+_opt_engine = create_async_engine(OPT_TEST_URL, echo=False)
+_OptSession = async_sessionmaker(_opt_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def _opt_override_get_db():
+    async with _OptSession() as s: yield s
+
+
+app.dependency_overrides[get_db] = _opt_override_get_db
+
+
+async def _opt_reset_db():
+    async with _opt_engine.begin() as c:
+        await c.run_sync(Base.metadata.drop_all)
+        await c.run_sync(Base.metadata.create_all)
+
+
+async def _opt_login(client, email="fresh@test.com"):
+    await client.post("/api/auth/register", json={"email": email, "password": "securepass123"})
+    r = await client.post("/api/auth/login", json={"email": email, "password": "securepass123"})
+    return r.json()["access_token"]
+
+
+# A feasibly solvable pool: 2 SP, 2 C, 2 1B, 2 2B, 2 3B, 2 SS, 4 OF = 16 players
+_SLATE_POOL = [
+    # id, name,          team, salary, pos
+    ("1", "Ace Pitcher",   "HOU", 8500, "P"),
+    ("2", "Mid Pitcher",   "LAD", 7500, "P"),
+    ("3", "C1",            "NYY", 3500, "C"),
+    ("4", "C2",            "BOS", 3200, "C"),
+    ("5", "1B1",           "STL", 3700, "1B"),
+    ("6", "1B2",           "CHC", 3400, "1B"),
+    ("7", "2B1",           "ATL", 4000, "2B"),
+    ("8", "2B2",           "MIA", 3600, "2B"),
+    ("9", "3B1",           "TEX", 4000, "3B"),
+    ("10","3B2",           "SEA", 3700, "3B"),
+    ("11","SS1",           "SD",  4200, "SS"),
+    ("12","SS2",           "ARI", 3900, "SS"),
+    ("13","OF1",           "LAA", 3800, "OF"),
+    ("14","OF2",           "CIN", 3600, "OF"),
+    ("15","OF3",           "PIT", 3500, "OF"),
+    ("16","OF4",           "COL", 3200, "OF"),
+]
+
+
+def _make_players(slate_id: int, pool: list = _SLATE_POOL):
+    """Build DFSPlayer list from SLATE_POOL for insertion."""
+    return [
+        DFSPlayer(
+            slate_id=slate_id,
+            provider_player_id=pid,
+            player_name=name,
+            team=team,
+            opponent="",
+            position=pos,
+            eligible_positions=[pos],
+            salary=sal,
+            game_info=f"{team}@OPP 08/11/2026 07:00PM ET",
+        )
+        for (pid, name, team, sal, pos) in pool
+    ]
+
+
+@pytest.fixture(autouse=True, scope="module")
+async def _opt_module_setup():
+    """Lifetime: module — create/drop tables once per test module."""
+    await _opt_reset_db()
+    yield
+    await _opt_reset_db()
+
+
+@pytest.fixture
+async def opt_client():
+    t = ASGITransport(app=app)
+    async with AsyncClient(transport=t, base_url="http://test") as ac:
+        yield ac
+
+
+class TestOptimizerFreshnessGate:
+    async def test_stale_published_slate_rejected(self, opt_client):
+        """A published slate whose start_time is past → 400 stale error."""
+        token = await _opt_login(opt_client)
+
+        stale_time = datetime.now(timezone.utc) - timedelta(days=5)
+        async with _OptSession() as s:
+            s.add(DFSSlate(
+                id=101, platform="draftkings", sport="MLB",
+                slate_name="Old Slate", start_time=stale_time,
+                status="PUBLISHED", player_count=len(_SLATE_POOL),
+                data_source="native",
+            ))
+            for p in _make_players(101):
+                s.add(p)
+            await s.commit()
+
+        resp = await opt_client.post(
+            "/api/optimize",
+            json={"slate_id": 101, "settings": {"platform": "draftkings", "strategy": "balanced", "num_lineups": 1}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert "stale" in detail.lower()
+        assert "upload or select" in detail.lower()
+
+    async def test_current_published_slate_accepted(self, opt_client):
+        """A published slate whose start_time is today (ET) must not be
+        rejected by the freshness gate."""
+        token = await _opt_login(opt_client, "current@test.com")
+
+        today_et = datetime.now(ZoneInfo("America/New_York"))
+        async with _OptSession() as s:
+            s.add(DFSSlate(
+                id=102, platform="draftkings", sport="MLB",
+                slate_name="Today Slate", start_time=today_et,
+                status="PUBLISHED", player_count=len(_SLATE_POOL),
+                data_source="native",
+            ))
+            for p in _make_players(102):
+                s.add(p)
+            await s.commit()
+
+        resp = await opt_client.post(
+            "/api/optimize",
+            json={"slate_id": 102, "settings": {"platform": "draftkings", "strategy": "balanced", "num_lineups": 1}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # The freshness gate must not reject a current slate.
+        # With 0.01 fallback projections the optimizer should still produce
+        # at least one feasible roster from the 16-player pool.
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        body = resp.json()
+        assert body.get("data", {}).get("generated_lineups", -1) >= 1
+        assert body.get("data", {}).get("source") == "native"

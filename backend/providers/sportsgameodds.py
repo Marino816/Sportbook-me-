@@ -185,13 +185,19 @@ class SportsGameOddsProvider:
         params = {"sport": sport} if sport else None
         return await self._request("GET", "/leagues", params=params, paginated=True)
 
-    async def get_events(self, league_id: str = None, date: str = None) -> list:
-        """List events with leagueID (e.g., 'MLB', 'NFL', 'NBA')."""
+    async def get_events(self, league_id: str = None, date: str = None,
+                       extra_params: dict = None) -> list:
+        """List events with leagueID (e.g., 'MLB', 'NFL', 'NBA').
+
+        *extra_params* is merged into the query string for historical
+        lookups (e.g. include=results, finalized=true, teamID=…)."""
         params = {"oddsAvailable": "true", "limit": "50"}
         if league_id:
             params["leagueID"] = league_id
         if date:
             params["date"] = date
+        if extra_params:
+            params.update(extra_params)
         return await self._request("GET", "/events", params=params, paginated=True)
 
     async def get_event(self, event_id: str) -> dict:

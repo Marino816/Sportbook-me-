@@ -43,16 +43,9 @@ async def list_published_slates(
         game_counts = {row[0]: row[1] for row in gc_rows}
 
     def _is_current(s_start) -> bool:
-        if not s_start:
-            return False
-        try:
-            from datetime import datetime
-            from zoneinfo import ZoneInfo
-            slate_et = s_start.astimezone(ZoneInfo("America/New_York")).date()
-            now_et = datetime.now(ZoneInfo("America/New_York")).date()
-            return slate_et == now_et
-        except Exception:
-            return False
+        from dfs.freshness import is_current_slate
+
+        return is_current_slate(s_start) if s_start else False
 
     return wrap_data([{
         "id": s.id,
