@@ -70,6 +70,7 @@ async def get_player_game_log(
         "startsAfter": start.strftime("%Y-%m-%d"),
         "startsBefore": end.strftime("%Y-%m-%d"),
         "limit": str(MAX_HISTORICAL_EVENTS),
+        "oddsAvailable": "false",   # finalized events never have live odds
     }
 
     # ── Determine team from SGO player listing so we can filter ──
