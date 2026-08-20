@@ -46,7 +46,7 @@ export default function TermsPage() {
       <H2>4. Subscription Plans</H2>
       <P>
         The Service offers subscription plans, including a free Starter plan and paid plans such as Pro Arena
-        ($29/month) and Elite Stack ($79/month). Plan features and pricing are described on our website and are
+        ($39.99/month) and Elite Stack ($89.99/month). Plan features and pricing are described on our website and are
         subject to change. Paid subscriptions provide access to additional analytical features for the duration
         of the subscription period.
       </P>

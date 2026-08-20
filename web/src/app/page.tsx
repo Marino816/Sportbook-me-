@@ -445,8 +445,8 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-3 gap-6 lg:gap-8 max-w-4xl mx-auto">
             {([
               { name: "Starter", price: "Free", features: ["1 daily lineup", "MLB projections", "Real-time odds", "Player props", "AI chat (10 msgs/day)"], cta: "Get Started", href: "/register", featured: false, goldPrice: false, period: null as string | null },
-              { name: "Pro Arena", price: "$29", period: "/mo", features: ["10 daily lineups", "All-sport projections", "Live odds & movement", "Player props + edge detection", "AI chat (unlimited)", "Lineup optimizer", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
-              { name: "Elite Stack", price: "$79", period: "/mo", features: ["Unlimited lineups", "All-sport projections", "Custom projections", "Full AI intelligence", "Priority support", "Early features", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
+              { name: "Pro Arena", price: "$39", period: ".99/mo", features: ["10 daily lineups", "All-sport projections", "Live odds & movement", "Player props + edge detection", "AI chat (unlimited)", "Lineup optimizer", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
+              { name: "Elite Stack", price: "$89", period: ".99/mo", features: ["Unlimited lineups", "All-sport projections", "Custom projections", "Full AI intelligence", "Priority support", "Early features", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
             ] as const).map((plan, i) => (
               <div key={i} className={`relative rounded-3xl border p-6 lg:p-8 flex flex-col transition-all duration-300 hover:shadow-xl
                 ${plan.featured ? "scale-[1.03] z-10" : ""}`}

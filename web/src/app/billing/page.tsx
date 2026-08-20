@@ -175,8 +175,8 @@ export default function BillingPage() {
             Best Value
           </div>
           <h3 className="text-lg font-semibold mb-1 text-primary">Pro Arena Annual</h3>
-          <div className="text-3xl font-bold mb-1 text-white">$149<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
-          <p className="text-xs text-primary/80 mb-4">Save $330 vs monthly</p>
+          <div className="text-3xl font-bold mb-1 text-white">$249<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
+          <p className="text-xs text-primary/80 mb-4">Save $230 vs monthly</p>
 
           <button
             disabled={sub?.plan === "Pro Arena Annual" || !!actionLoading}
@@ -207,7 +207,7 @@ export default function BillingPage() {
             Pro
           </div>
           <h3 className="text-lg font-semibold mb-1 text-primary">Elite Stack</h3>
-          <div className="text-3xl font-bold mb-4 text-white">$79<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
+          <div className="text-3xl font-bold mb-4 text-white">$89<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
 
           <button
              disabled={sub?.plan === "Elite Stack" || !!actionLoading}
@@ -236,11 +236,11 @@ export default function BillingPage() {
             sub?.plan === "Elite Stack Annual" && "border-orange-500 bg-orange-500/10 scale-[1.02]"
         )}>
           <div className="absolute top-0 right-4 -translate-y-1/2 bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
-            Save $710
+            Save $580
           </div>
           <h3 className="text-lg font-semibold mb-1 text-orange-400">Elite Stack Annual</h3>
-          <div className="text-3xl font-bold mb-1 text-white">$249<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
-          <p className="text-xs text-orange-400/80 mb-4">$59.84/mo equivalent</p>
+          <div className="text-3xl font-bold mb-1 text-white">$499<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
+          <p className="text-xs text-orange-400/80 mb-4">$41.67/mo equivalent</p>
 
           <button
              disabled={sub?.plan === "Elite Stack Annual" || !!actionLoading}
@@ -257,7 +257,7 @@ export default function BillingPage() {
 
           <ul className="space-y-3 flex-1 text-sm">
             <Feature check text="All Elite Stack features" highlight />
-            <Feature check text="$710/yr savings" highlight />
+            <Feature check text="$580/yr savings" highlight />
             <Feature check text="Priority strategy calls" highlight />
           </ul>
         </div>
