@@ -53,12 +53,13 @@ export function useLiveScores(league: string): LiveScoresResult {
   const [loading, setLoading] = useState<boolean>(() => !cache[league]);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leagueRef = useRef(league);
 
   const refresh = useCallback(async () => {
     try {
-      const evs = await fetchLeague(league);
+      const evs = await fetchLeague(leagueRef.current);
       const hasLive = evs.some((e) => e.status === "LIVE");
-      cache[league] = { events: evs, lastFetch: Date.now(), hasLive };
+      cache[leagueRef.current] = { events: evs, lastFetch: Date.now(), hasLive };
       setEvents(evs);
       setError(null);
     } catch (e) {
@@ -66,7 +67,25 @@ export function useLiveScores(league: string): LiveScoresResult {
     } finally {
       setLoading(false);
     }
-  }, [league]);
+  }, []); // stable reference — reads league from ref
+
+  // Sync state when league changes: swap to cached data immediately,
+  // then fetch fresh. Prevents stale events from previous sport lingering.
+  useEffect(() => {
+    leagueRef.current = league;
+    const entry = cache[league];
+    if (entry) {
+      setEvents(entry.events);
+      setError(null);
+      setLoading(false);
+    } else {
+      setEvents([]);
+      setError(null);
+      setLoading(true);
+    }
+    // Always refresh on league switch
+    refresh();
+  }, [league, refresh]);
 
   useEffect(() => {
     let cancelled = false;

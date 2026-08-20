@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import {
-  Flame, MessageCircle, List, Activity, ChevronRight, Zap, Sparkles, BarChart3, Upload,
+  Flame, MessageCircle, List, Activity, ChevronRight, Sparkles, BarChart3, Upload,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLiveScores } from "@/lib/live-scores";
@@ -24,28 +24,45 @@ const C = { card: "#0a0f24", border: "#1e293b", text: "#f0f6fc", muted: "#94a3b8
 
 function fmtOdds(v: number|null|undefined) { if(v==null) return "\u2014"; return v>0?"+"+v:""+v; }
 function isLive(s: string) { return(s||"").toUpperCase()==="LIVE"; }
-function st(ev: SBEvent) {
-  if(ev.status_display)return ev.status_display;
-  if(isLive(ev.status))return"LIVE";
-  if((ev.status||"").toUpperCase()==="FINAL")return"Final";
-  if(!ev.start_time)return"TBD";
-  return new Date(ev.start_time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit",timeZoneName:"short"});
+
+// ── Date helpers (EDT) ──
+const EDT = "America/New_York";
+function todayEDT(): string { return new Date().toLocaleDateString("en-US",{timeZone:EDT}); }
+function tomorrowEDT(): string { const d=new Date();d.setDate(d.getDate()+1); return d.toLocaleDateString("en-US",{timeZone:EDT}); }
+function eventDateET(iso: string|null): string {
+  if(!iso)return""; return new Date(iso).toLocaleDateString("en-US",{timeZone:EDT,weekday:"short",month:"short",day:"numeric"});
 }
-function gameTime(ev: SBEvent): string {
-  if(isLive(ev.status))return"";
-  if((ev.status||"").toUpperCase()==="FINAL")return"";
-  if(!ev.start_time)return"";
-  return new Date(ev.start_time).toLocaleTimeString([],{hour:"numeric",minute:"2-digit",timeZoneName:"short"});
+function eventDateKey(iso: string|null): string {
+  if(!iso)return"9999"; return new Date(iso).toLocaleDateString("en-US",{timeZone:EDT});
+}
+function isNow(iso: string|null): boolean { return eventDateKey(iso)===todayEDT(); }
+function isNext(iso: string|null): boolean { return eventDateKey(iso)===tomorrowEDT(); }
+function dateLabel(iso: string|null): string {
+  const dk=eventDateKey(iso); if(!dk||dk==="9999")return"Upcoming";
+  const ts = iso || "";
+  if(dk===todayEDT())return "TODAY \u2014 "+new Date(ts).toLocaleDateString("en-US",{timeZone:EDT,weekday:"long",month:"long",day:"numeric"}).toUpperCase();
+  if(dk===tomorrowEDT())return "TOMORROW \u2014 "+new Date(ts).toLocaleDateString("en-US",{timeZone:EDT,weekday:"long",month:"long",day:"numeric"}).toUpperCase();
+  return new Date(ts).toLocaleDateString("en-US",{timeZone:EDT,weekday:"long",month:"long",day:"numeric"}).toUpperCase();
+}
+function timeEDT(iso: string|null): string {
+  if(!iso)return""; return new Date(iso).toLocaleTimeString("en-US",{timeZone:EDT,hour:"numeric",minute:"2-digit"})+" EDT";
+}
+function dayCtx(iso: string|null): string {
+  if(!iso)return"";
+  if(isNow(iso))return"Today \u00b7 ";
+  if(isNext(iso))return"Tomorrow \u00b7 ";
+  return eventDateET(iso)+" \u00b7 ";
 }
 
 function GameStrip({event}:{event:SBEvent}) {
   const live = isLive(event.status);
-  const t = gameTime(event);
+  const t = timeEDT(event.start_time);
+  const ctx = dayCtx(event.start_time);
   return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 14px",borderRadius:10,background:live?"rgba(201,168,76,0.03)":"rgba(255,255,255,0.01)",border:live?"1px solid rgba(201,168,76,0.12)":"1px solid rgba(30,41,59,0.5)",gap:8}}>
       <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
         <span style={{padding:"2px 6px",borderRadius:4,fontSize:8,fontWeight:800,background:live?"rgba(239,68,68,0.15)":"rgba(100,116,139,0.08)",color:live?"#ef4444":C.subtle,flexShrink:0,whiteSpace:"nowrap"}}>
-          {live?"LIVE":t||st(event)}
+          {live?"LIVE":ctx+t}
         </span>
         <span style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
           {event.away_team?.abbreviation||"AWY"} {"@"} {event.home_team?.abbreviation||"HOM"}
@@ -95,11 +112,38 @@ export default function DashboardPage() {
     return rawEvents.filter((e) => { if(seen.has(e.id))return false;seen.add(e.id);return true; });
   }, [rawEvents]);
 
-  const displayGames = useMemo(() => {
-    const live = events.filter((e) => isLive(e.status));
-    const up = events.filter((e) => !isLive(e.status) && (e.status||"").toUpperCase()!=="FINAL");
-    return [...live, ...up].slice(0, 8);
+  // Group events by date (EDT), sort chronologically
+  const dateGroups = useMemo(() => {
+    const groups: Record<string,SBEvent[]> = {};
+    for(const ev of events){
+      const dk = eventDateKey(ev.start_time) || "0000";
+      if(!groups[dk])groups[dk]=[];
+      groups[dk].push(ev);
+    }
+    const sorted = Object.entries(groups).sort(([a],[b])=>{
+      if(a==="9999")return 1;if(b==="9999")return -1;
+      return new Date(a).getTime()-new Date(b).getTime();
+    });
+    for(const [,list] of sorted){ list.sort((a,b)=>new Date(a.start_time||0).getTime()-new Date(b.start_time||0).getTime()); }
+    return sorted;
   }, [events]);
+
+  // For display: today first, then next 1-2 groups, up to 8 games
+  const displayGroups = useMemo(() => {
+    const td = todayEDT();
+    const result: {label:string,events:SBEvent[]}[] = [];
+    let count = 0;
+    for(const [dk,list] of dateGroups){
+      if(dk===td){ result.push({label:dateLabel(list[0].start_time),events:list}); count+=list.length; break; }
+    }
+    for(const [dk,list] of dateGroups){
+      if(dk===td)continue;
+      if(count>=8)break;
+      result.push({label:dateLabel(list[0].start_time),events:list.slice(0,8-count)});
+      count+=Math.min(list.length,8-count);
+    }
+    return result;
+  }, [dateGroups]);
 
   const mlBooks = useMemo(() => {
     const map:Record<string,{home:number|null,away:number|null}> = {};
@@ -120,7 +164,7 @@ export default function DashboardPage() {
   }, [events]);
 
   const now = new Date();
-  const dateStr = now.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});
+  const dateStr = now.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric",timeZone:EDT});
   const sec:React.CSSProperties={fontSize:11,fontWeight:700,color:C.subtle,textTransform:"uppercase",letterSpacing:1,margin:0};
 
   return (
@@ -164,10 +208,20 @@ export default function DashboardPage() {
             <h2 style={sec}>{activeSport} {"\u2014"} Today&apos;s Games</h2>
             <Link href="/data-hub" style={{fontSize:10,color:C.gold,textDecoration:"none",display:"flex",alignItems:"center",gap:2}}>View All <ChevronRight size={10}/></Link>
           </div>
-          {loading?<div style={{textAlign:"center",padding:36,color:C.muted,fontSize:12}}><Activity size={16} style={{marginBottom:4,opacity:0.3}}/><p style={{margin:0}}>Loading...</p></div>
-          :error?<div style={{textAlign:"center",padding:36,color:"#ef4444",fontSize:12}}>Unable to load games</div>
-          :displayGames.length===0?<div style={{textAlign:"center",padding:36,color:C.subtle,fontSize:12}}>No {activeSport} games scheduled.</div>
-          :<div style={{display:"grid",gap:5}}>{displayGames.map(evt=><GameStrip key={evt.id} event={evt}/>)}</div>}
+          {loading ? (
+            <div style={{textAlign:"center",padding:36,color:C.muted,fontSize:12}}><Activity size={16} style={{marginBottom:4,opacity:0.3}}/><p style={{margin:0}}>Loading {activeSport} games...</p></div>
+          ) : error ? (
+            <div style={{textAlign:"center",padding:36,color:"#ef4444",fontSize:12}}>Unable to load {activeSport} games</div>
+          ) : displayGroups.length===0 ? (
+            <div style={{textAlign:"center",padding:36,color:C.subtle,fontSize:12}}>No {activeSport} games scheduled.</div>
+          ) : (
+            displayGroups.map((grp,gi)=>(
+              <div key={gi} style={{marginBottom:gi<displayGroups.length-1?14:0}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.gold,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{grp.label}</div>
+                <div style={{display:"grid",gap:5}}>{grp.events.map(evt=><GameStrip key={evt.id} event={evt}/>)}</div>
+              </div>
+            ))
+          )}
         </div>
 
         <div style={{background:C.card,borderRadius:14,border:"1px solid "+C.border,padding:14}}>
