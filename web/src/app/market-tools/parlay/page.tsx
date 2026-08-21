@@ -49,6 +49,11 @@ function buildDateList(events:SBEvent[]):{date:string,label:string,sh:string}[] 
   return out.sort((a,b)=>new Date(a.date).getTime()-new Date(b.date).getTime());
 }
 
+/** Check if a leg for the given event+market+selection already exists. */
+function isLegAdded(legs:Leg[],eventName:string,market:string,selection:string):boolean {
+  return legs.some(l=>l.eventName===eventName&&l.market===market&&l.selection===selection);
+}
+
 function getBook(books:SBBookLine[],bookmaker:string):SBBookLine|undefined {
   if(!bookmaker)return undefined; return books.find(b=>b.bookmaker===bookmaker);
 }
@@ -82,8 +87,9 @@ function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
     const ab=away?getBook(away.books,bookmaker):undefined;
     const awName=event.away_team?.abbreviation||"Away";
     const hmName=event.home_team?.abbreviation||"Home";
-    const awAdded=legs.some(l=>l.eventName.includes(awName)&&l.market==="Moneyline");
-    const hmAdded=legs.some(l=>l.eventName.includes(hmName)&&l.market==="Moneyline");
+    const evName=awName+" @ "+hmName;
+    const awAdded=isLegAdded(legs,evName,"Moneyline",awName);
+    const hmAdded=isLegAdded(legs,evName,"Moneyline",hmName);
     return (
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <SelectorBtn label={awName} odds={fmtOdds(ab?.moneyline)} selected={awAdded} disabled={!ab} onClick={()=>{if(ab)onAdd("Moneyline",awName,ab.moneyline??-110);}}/>
@@ -99,10 +105,13 @@ function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
     const ab=away?getBook(away.books,bookmaker):undefined;
     const awName=event.away_team?.abbreviation||"Away";
     const hmName=event.home_team?.abbreviation||"Home";
+    const evName=awName+" @ "+hmName;
+    const awSel=awName+" "+fmtSpread(ab?.spread);
+    const hmSel=hmName+" "+fmtSpread(hb?.spread);
     return (
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        <SelectorBtn label={awName+" "+fmtSpread(ab?.spread)} odds={fmtOdds(ab?.moneyline)} disabled={!ab} onClick={()=>{if(ab)onAdd("Spread",awName+" "+fmtSpread(ab.spread),ab.moneyline??-110);}}/>
-        <SelectorBtn label={hmName+" "+fmtSpread(hb?.spread)} odds={fmtOdds(hb?.moneyline)} disabled={!hb} onClick={()=>{if(hb)onAdd("Spread",hmName+" "+fmtSpread(hb.spread),hb.moneyline??-110);}}/>
+        <SelectorBtn label={awSel} odds={fmtOdds(ab?.moneyline)} selected={isLegAdded(legs,evName,"Spread",awSel)} disabled={!ab} onClick={()=>{if(ab)onAdd("Spread",awSel,ab.moneyline??-110);}}/>
+        <SelectorBtn label={hmSel} odds={fmtOdds(hb?.moneyline)} selected={isLegAdded(legs,evName,"Spread",hmSel)} disabled={!hb} onClick={()=>{if(hb)onAdd("Spread",hmSel,hb.moneyline??-110);}}/>
       </div>
     );
   }
@@ -113,25 +122,35 @@ function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
     const ob=over?getBook(over.books,bookmaker):undefined;
     const ub=under?getBook(under.books,bookmaker):undefined;
     const line=ob?.over_under??ub?.over_under??null;
+    const awName=event.away_team?.abbreviation||"Away";
+    const hmName=event.home_team?.abbreviation||"Home";
+    const evName=awName+" @ "+hmName;
+    const ovSel="Over "+(line??"?");
+    const unSel="Under "+(line??"?");
     return (
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        <SelectorBtn label={"Over "+(line??"?")} odds={fmtOdds(ob?.moneyline)} disabled={!ob} onClick={()=>{if(ob)onAdd("Total","Over "+(line??"?"),ob.moneyline??-110);}}/>
-        <SelectorBtn label={"Under "+(line??"?")} odds={fmtOdds(ub?.moneyline)} disabled={!ub} onClick={()=>{if(ub)onAdd("Total","Under "+(line??"?"),ub.moneyline??-110);}}/>
+        <SelectorBtn label={ovSel} odds={fmtOdds(ob?.moneyline)} selected={isLegAdded(legs,evName,"Total",ovSel)} disabled={!ob} onClick={()=>{if(ob)onAdd("Total",ovSel,ob.moneyline??-110);}}/>
+        <SelectorBtn label={unSel} odds={fmtOdds(ub?.moneyline)} selected={isLegAdded(legs,evName,"Total",unSel)} disabled={!ub} onClick={()=>{if(ub)onAdd("Total",unSel,ub.moneyline??-110);}}/>
       </div>
     );
   }
 
   // player_prop + other — render with optional filter
   const filtered = propFilter ? markets.filter(m=>m.player_name?.toLowerCase().includes(propFilter.toLowerCase())||m.market_name?.toLowerCase().includes(propFilter.toLowerCase())) : markets.slice(0,30);
+  const awName=event.away_team?.abbreviation||"Away";
+  const hmName=event.home_team?.abbreviation||"Home";
+  const evName=awName+" @ "+hmName;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
       {filtered.map((m,i)=>{
         const bk=getBook(m.books,bookmaker);
         if(!bk||!bk.available)return null;
-        const label=(m.player_name||"")+" "+(m.market_name||"")+" "+(bk.over_under??"");
+        const label=(m.player_name||"")+" "+(m.market_name||"").trim()+" "+(bk.over_under??"").toString().trim();
+        const sel=label.trim();
+        const added=isLegAdded(legs,evName,m.market_name||betType,sel);
         return (
-          <SelectorBtn key={i} label={label} odds={fmtOdds(bk.moneyline)} selected={false}
-            onClick={()=>onAdd(m.market_name||betType,label,bk.moneyline??-100)}/>
+          <SelectorBtn key={i} label={sel||"?"} odds={fmtOdds(bk.moneyline)} selected={added}
+            onClick={()=>onAdd(m.market_name||betType,sel,bk.moneyline??-100)}/>
         );
       })}
       {filtered.length===0&&<p style={{color:C.subtle,fontSize:11,textAlign:"center",padding:6}}>No matching props</p>}
@@ -144,6 +163,7 @@ export default function ParlayBuilderPage() {
   const [activeLeague,setActiveLeague]=useState<League>("MLB");
   const [legs,setLegs]=useState<Leg[]>([]);
   const [stake,setStake]=useState("10");
+  const [stakeFocused,setStakeFocused]=useState(false);
   const [selectedGameId,setSelectedGameId]=useState<string|null>(null);
   const [selectedBetType,setSelectedBetType]=useState<string>("moneyline");
   const [selectedBook,setSelectedBook]=useState<string>("");
@@ -155,15 +175,6 @@ export default function ParlayBuilderPage() {
     const seen=new Set<string>();
     return rawEvents.filter(e=>{if(seen.has(e.id))return false;seen.add(e.id);return true;});
   },[rawEvents]);
-
-  const dateGroups = useMemo(()=>{
-    const groups:Record<string,SBEvent[]>={};
-    for(const ev of events){const dk=eventDateKey(ev.start_time)||"0000";if(!groups[dk])groups[dk]=[];groups[dk].push(ev);}
-    return Object.entries(groups).sort(([a],[b])=>{
-      if(a==="9999")return 1;if(b==="9999")return -1;
-      return new Date(a).getTime()-new Date(b).getTime();
-    }).map(([dk,list])=>({date:dk,label:dateLabel(list[0].start_time),events:list.sort((a,b)=>new Date(a.start_time||0).getTime()-new Date(b.start_time||0).getTime())}));
-  },[events]);
 
   const availableBooks = useMemo(()=>buildBookmakerUniverse(events.map(e=>e.bookmakers)),[events]);
   useMemo(()=>{if(selectedBook&&!availableBooks.includes(selectedBook))setSelectedBook("");},[availableBooks,selectedBook]);
@@ -199,8 +210,14 @@ export default function ParlayBuilderPage() {
 
   const addLeg = useCallback((event:SBEvent,market:string,selection:string,odds:number)=>{
     const evName = event.away_team?.abbreviation+" @ "+event.home_team?.abbreviation;
+    // Prevent identical duplicate legs
+    const dup = legs.find(l=>l.eventName===evName&&l.market===market&&l.selection===selection);
+    if(dup)return;
+    // Prevent conflicting sides (both sides of same market in same game)
+    const conf = legs.find(l=>l.eventName===evName&&l.market===market&&l.selection!==selection);
+    if(conf && (market==="Moneyline"||market.includes("Spread")||market.includes("Total")))return;
     setLegs(prev=>[...prev,{id:Date.now()+"-"+Math.random().toString(36).slice(2,6),eventName:evName,market,selection,odds,bookmaker:selectedBook}]);
-  },[selectedBook]);
+  },[selectedBook,legs]);
 
   const removeLeg = useCallback((id:string)=>setLegs(prev=>prev.filter(l=>l.id!==id)),[]);
 
@@ -262,7 +279,9 @@ export default function ParlayBuilderPage() {
           </div>
           {legs.length>=2&&(<div style={{borderTop:"1px solid "+C.border,paddingTop:10,marginTop:6}}>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:4}}><span style={{color:C.subtle}}>Parlay Odds</span><span style={{fontWeight:800,color:C.gold}}>{fmtOdds(result.odds)}</span></div>
-            <input type="text" value={stake} onChange={e=>setStake(e.target.value)} placeholder="Stake" style={{width:"100%",padding:"6px 10px",borderRadius:8,background:"#1a1f33",border:"1px solid "+C.border,color:C.text,fontSize:12,fontWeight:600,outline:"none",boxSizing:"border-box"}}/>
+            <input type="text" value={stakeFocused?stake:stake||"10"} onFocus={()=>setStakeFocused(true)} onBlur={()=>setStakeFocused(false)}
+            onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d{0,2}$/.test(v))setStake(v);}}
+            placeholder="Stake" style={{width:"100%",padding:"6px 10px",borderRadius:8,background:"#1a1f33",border:"1px solid "+C.border,color:C.text,fontSize:12,fontWeight:600,outline:"none",boxSizing:"border-box"}}/>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginTop:6}}><span style={{color:C.subtle}}>Payout</span><span style={{fontWeight:800,color:C.gold}}>${result.payout.toFixed(2)}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:C.subtle}}>Profit</span><span style={{fontWeight:800,color:C.gold}}>${result.profit.toFixed(2)}</span></div>
           </div>)}
