@@ -144,12 +144,64 @@ async def upload_slate(
 
     await db.commit()
     await db.refresh(db_slate)
+
+    # ── Auto-reconcile: match DK players against SGO player pool ──
+    reconciliation = None
+    try:
+        sgo_players = await _fetch_sgo_players(slate_obj.sport)
+        matched, review, unmatched = 0, 0, 0
+        for p in players:
+            dp = DFSContestPlayer(
+                platform=platform, player_id=p.player_id,
+                player_name=p.player_name, team=p.team, opponent=p.opponent,
+                position=p.position, salary=p.salary, game_info=p.game_info,
+            )
+            sgo_id = reconcile_player(dp, sgo_players)
+            # Update the DB row
+            player_result = await db.execute(
+                select(PlayerDB).where(PlayerDB.slate_id == db_slate.id,
+                                       PlayerDB.provider_player_id == p.player_id)
+            )
+            dbp = player_result.scalars().first()
+            if dbp:
+                if sgo_id and dp.sbme_confidence >= 0.95:
+                    dbp.mapping_status = "MATCHED"
+                    dbp.sbme_player_id = sgo_id
+                    dbp.mapping_confidence = dp.sbme_confidence
+                    matched += 1
+                elif sgo_id and dp.sbme_confidence >= 0.85:
+                    dbp.mapping_status = "REVIEW_REQUIRED"
+                    dbp.sbme_player_id = sgo_id
+                    dbp.mapping_confidence = dp.sbme_confidence
+                    review += 1
+                else:
+                    dbp.mapping_status = "UNMATCHED"
+                    unmatched += 1
+
+        # Never downgrade PUBLISHED status during reconciliation
+        if db_slate.status != "PUBLISHED":
+            db_slate.status = "REVIEW" if review > 0 else "DRAFT"
+        db_slate.matched_count = matched
+        db_slate.review_count = review
+        db_slate.unmatched_count = unmatched
+        db_slate.reconciliation_report = {
+            "matched": matched, "review": review, "unmatched": unmatched,
+            "total": len(players), "sgo_pool_size": len(sgo_players),
+        }
+        await db.commit()
+        await db.refresh(db_slate)
+        reconciliation = dict(db_slate.reconciliation_report)
+    except Exception as e:
+        logger.warning("Auto-reconcile failed (non-fatal): %s", e)
+        reconciliation = {"status": "SKIPPED", "reason": str(e)}
+
     return wrap_data({
         "slate_id": db_slate.id, "platform": platform, "sport": slate_obj.sport,
         "slate_name": db_slate.slate_name, "player_count": len(players),
         "game_count": result.game_count, "slate_date": result.slate_date,
         "status": initial_status, "freshness": freshness,
         "warnings": result.validation.warnings,
+        "reconciliation": reconciliation,
     })
 
 
@@ -195,7 +247,9 @@ async def reconcile_slate(
     slate.matched_count = matched
     slate.review_count = review
     slate.unmatched_count = unmatched
-    slate.status = "REVIEW" if review > 0 else "DRAFT"
+    # Never downgrade PUBLISHED during reconciliation
+    if slate.status != "PUBLISHED":
+        slate.status = "REVIEW" if review > 0 else "DRAFT"
     slate.reconciliation_report = {
         "matched": matched, "review": review, "unmatched": unmatched,
         "total": len(db_players),

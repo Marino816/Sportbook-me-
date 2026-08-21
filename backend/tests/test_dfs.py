@@ -267,7 +267,10 @@ class TestOptimizerFreshnessGate:
 
     async def test_current_published_slate_accepted(self, opt_client):
         """A published slate whose start_time is today (ET) must not be
-        rejected by the freshness gate."""
+        rejected by the freshness gate.  Projection data is mocked to satisfy
+        the minimum-projected-players requirement (≥10 projected)."""
+        from unittest.mock import patch
+
         token = await _opt_login(opt_client, "current@test.com")
 
         today_et = datetime.now(ZoneInfo("America/New_York"))
@@ -282,14 +285,28 @@ class TestOptimizerFreshnessGate:
                 s.add(p)
             await s.commit()
 
-        resp = await opt_client.post(
-            "/api/optimize",
-            json={"slate_id": 102, "settings": {"platform": "draftkings", "strategy": "balanced", "num_lineups": 1}},
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        # Mock build_sgo_intelligence to return enough projected player data
+        # so the optimizer has ≥10 projected players to build a roster.
+        mock_sgo = {}
+        # _SLATE_POOL IDs are "1"–"16".  Give 14 players enough props
+        # to meet the MIN_PROJECTED=10 threshold.
+        for pid, name, team, sal, pos in _SLATE_POOL:
+            if pos != "P":
+                mock_sgo[pid] = {"props": {"hits": 1.0, "homeRuns": 0.1, "rbi": 0.5}}
+            else:
+                mock_sgo[pid] = {"props": {"pitchingStrikeouts": 5.0, "pitchingOuts": 18.0}}
+
+        with patch("projection.sgo_intelligence.build_sgo_intelligence", return_value=mock_sgo) as mock_sgo_fn:
+            # Make the mock awaitable
+            import asyncio
+            async def _mock(*a, **kw): return mock_sgo
+            mock_sgo_fn.side_effect = _mock
+            resp = await opt_client.post(
+                "/api/optimize",
+                json={"slate_id": 102, "settings": {"platform": "draftkings", "strategy": "balanced", "num_lineups": 1}},
+                headers={"Authorization": f"Bearer {token}"},
+            )
         # The freshness gate must not reject a current slate.
-        # With 0.01 fallback projections the optimizer should still produce
-        # at least one feasible roster from the 16-player pool.
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
         body = resp.json()
         assert body.get("data", {}).get("generated_lineups", -1) >= 1

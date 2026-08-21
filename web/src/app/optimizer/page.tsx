@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
 import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download } from "lucide-react";
@@ -660,11 +661,23 @@ export default function OptimizerPage() {
             {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>OPTIMIZE</>}
           </button>
           {!slatesLoading && resolvedSlateId == null && (
-            <Muted>
-              {hasStaleSlates
-                ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} contest slate is available.`
-                : `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} contest salary data is available.`}
-            </Muted>
+            <div style={{ marginTop: 12, padding: "16px 18px", borderRadius: 12, background: "rgba(201,168,76,0.04)", border: "1px solid rgba(201,168,76,0.12)", textAlign: "center" }}>
+              <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>⏳</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: "#c9a84c", marginBottom: 4 }}>
+                No Current {platform === "draftkings" ? "DraftKings" : "FanDuel"} Slate Available
+              </div>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2, lineHeight: 1.5 }}>
+                A current {platform === "draftkings" ? "DraftKings" : "FanDuel"} salary slate is required before optimization can run.
+              </div>
+              {hasStaleSlates && (
+                <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
+                  One or more {platform === "draftkings" ? "DraftKings" : "FanDuel"} slates exist but are for past dates and have been blocked by freshness protection.
+                </div>
+              )}
+              <Link href="/admin/dfs-import" style={{ display: "inline-block", marginTop: 10, padding: "6px 16px", borderRadius: 8, background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.25)", color: "#c9a84c", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                Upload Today's DKSalaries.csv
+              </Link>
+            </div>
           )}
           {(lockedPlayerIds.size > 0 || excludedPlayerIds.size > 0) && (
             <div style={{ fontSize: 10, color: "#64748b" }}>

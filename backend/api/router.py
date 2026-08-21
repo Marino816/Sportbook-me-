@@ -143,21 +143,37 @@ async def run_optimizer(
                     projections_list = projections_to_pool(projs)
                     logger.info(f"Native projections: {projected_count}/{len(projections_list)} projected")
 
-                    # Unprojected players get minimum positive so optimizer
-                    # can still fill roster slots; projected FP dominates CP-SAT.
-                    if projected_count == 0:
-                        for pl in projections_list:
-                            pl["projected_fp"] = 0.01
-                        logger.warning("Native DFS: 0 projections — using minimum placeholder for roster building")
-                    else:
-                        for pl in projections_list:
-                            if pl.get("projection_source") == "UNAVAILABLE":
-                                pl["projected_fp"] = 0.01
+                    # UNAVAILABLE players stay at 0.0 projected_fp — the
+                    # optimizer can still select them based on salary/value
+                    # but they do not contribute to total-fp selection bias.
+                    # They are not silently boosted with a fake 0.01 weight.
+
+                    # Require a minimum number of actually-projected players
+                    # to build a meaningful optimized lineup. Without enough
+                    # legitimate projections the result is random roster fill.
+                    MIN_PROJECTED = 10
+                    if projected_count < MIN_PROJECTED:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=(
+                                f"Only {projected_count}/{len(projections_list)} players "
+                                f"have projection data available for {native_slate.slate_name}. "
+                                f"At least {MIN_PROJECTED} projected players are required "
+                                f"to generate a meaningful optimized lineup."
+                            ),
+                        )
+                except HTTPException:
+                    raise
                 except Exception as e:
                     logger.warning(f"Native projection engine unavailable: {e}")
-                    # Same fallback
-                    for pl in projections_list:
-                        pl["projected_fp"] = 0.01
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Projection engine could not compute projections for "
+                            f"'{native_slate.slate_name}': {e}. "
+                            f"Ensure the SGO data cache is populated for {sport}."
+                        ),
+                    )
     except HTTPException:
         raise
     except Exception:
