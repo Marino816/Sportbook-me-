@@ -194,3 +194,7 @@ body {
 }
 
 .parlay-accent { border-left: 3px solid var(--primary); }
+
+/* Footer X link — gold on hover */
+.footer-x-link { transition: color 0.2s ease; }
+.footer-x-link:hover { color: var(--primary) !important; }
