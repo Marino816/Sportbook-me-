@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Layers, X, ChevronRight, SearchIcon } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
@@ -34,8 +34,19 @@ function dateLabel(iso:string|null):string {
   if(dk===tomorrowEDT())return"TOMORROW \u2014 "+new Date(ts).toLocaleDateString("en-US",{timeZone:EDT,weekday:"long",month:"long",day:"numeric"}).toUpperCase();
   return new Date(ts).toLocaleDateString("en-US",{timeZone:EDT,weekday:"long",month:"long",day:"numeric"}).toUpperCase();
 }
+function shortDate(iso:string|null):string {
+  if(!iso)return"?"; return new Date(iso||"").toLocaleDateString("en-US",{timeZone:EDT,weekday:"short",month:"short",day:"numeric"});
+}
 function timeEDT(iso:string|null):string {
   if(!iso)return"TBD"; return new Date(iso).toLocaleTimeString("en-US",{timeZone:EDT,hour:"numeric",minute:"2-digit"})+" EDT";
+}
+
+/** Build an array of {dateKey,label,short} for all distinct dates in the cache. */
+function buildDateList(events:SBEvent[]):{date:string,label:string,sh:string}[] {
+  const seen=new Set<string>(); const out:{date:string,label:string,sh:string}[]=[];
+  for(const ev of events){const dk=eventDateKey(ev.start_time);if(!dk||dk==="9999")continue;if(seen.has(dk))continue;seen.add(dk);
+    out.push({date:dk,label:dateLabel(ev.start_time),sh:shortDate(ev.start_time)});}
+  return out.sort((a,b)=>new Date(a.date).getTime()-new Date(b.date).getTime());
 }
 
 function getBook(books:SBBookLine[],bookmaker:string):SBBookLine|undefined {
@@ -137,6 +148,7 @@ export default function ParlayBuilderPage() {
   const [selectedBetType,setSelectedBetType]=useState<string>("moneyline");
   const [selectedBook,setSelectedBook]=useState<string>("");
   const [propFilter,setPropFilter]=useState("");
+  const [selectedDateIdx,setSelectedDateIdx]=useState(0);
 
   const { events:rawEvents, loading } = useEvents(activeLeague);
   const events = useMemo(()=>{
@@ -155,6 +167,27 @@ export default function ParlayBuilderPage() {
 
   const availableBooks = useMemo(()=>buildBookmakerUniverse(events.map(e=>e.bookmakers)),[events]);
   useMemo(()=>{if(selectedBook&&!availableBooks.includes(selectedBook))setSelectedBook("");},[availableBooks,selectedBook]);
+
+  // build list of available dates for navigation
+  const dateNav = useMemo(()=>buildDateList(events),[events]);
+  const selectedDate = useMemo(()=>dateNav[selectedDateIdx]||null,[dateNav,selectedDateIdx]);
+  const selectedDateGames = useMemo(()=>{
+    if(!selectedDate)return[];
+    return events.filter(e=>eventDateKey(e.start_time)===selectedDate.date).sort((a,b)=>new Date(a.start_time||0).getTime()-new Date(b.start_time||0).getTime());
+  },[events,selectedDate]);
+
+  // Reset date idx + selected game on league switch
+  const goLeague = useCallback((lg:League)=>{
+    setActiveLeague(lg);setSelectedGameId(null);setSelectedBook("");setLegs([]);
+    // date idx resets to 0; useEffect below snaps to today when events load
+  },[]);
+
+  // When events (re)load, snap to today if available, else first date
+  useEffect(()=>{
+    if(loading||dateNav.length===0)return;
+    const td=todayEDT(); const idx=dateNav.findIndex(d=>d.date===td);
+    setSelectedDateIdx(idx>=0?idx:0);
+  },[loading,dateNav]);
 
   const selectedGame = useMemo(()=>events.find(e=>e.id===selectedGameId)||null,[events,selectedGameId]);
   const expandedMarkets = useMemo(()=>{
@@ -183,7 +216,7 @@ export default function ParlayBuilderPage() {
 
 
   return (
-    <div style={{maxWidth:"100%",margin:"0 auto",padding:"10px 16px 40px",color:C.text,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+    <div style={{maxWidth:"100%",margin:"0 auto",padding:"8px 16px 12px",color:C.text,height:"calc(100vh - 72px)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {/* HEADER ROW */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -201,7 +234,7 @@ export default function ParlayBuilderPage() {
       {/* LEAGUE TABS */}
       <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>
         {LEAGUES.map(lg=>(
-          <button key={lg} onClick={()=>{setActiveLeague(lg);setSelectedGameId(null);setSelectedBook("");setLegs([]);}}
+          <button key={lg} onClick={()=>goLeague(lg)}
             style={{padding:"4px 12px",borderRadius:6,fontSize:11,fontWeight:700,
               background:activeLeague===lg?"rgba(201,168,76,0.1)":C.card,
               border:activeLeague===lg?"1px solid "+C.gold:"1px solid "+C.border,
@@ -235,26 +268,47 @@ export default function ParlayBuilderPage() {
           </div>)}
         </div>
 
-        {/* CENTER: Games list */}
-        <div style={{background:C.card,borderRadius:14,border:"1px solid "+C.border,padding:12,overflowY:"auto",display:"flex",flexDirection:"column"}}>
-          <div style={{fontSize:10,fontWeight:700,color:C.subtle,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>{activeLeague} Games</div>
-          {loading?<p style={{color:C.muted,fontSize:11,textAlign:"center",padding:20}}>Loading...</p>
-          :events.length===0?<p style={{color:C.subtle,fontSize:11,textAlign:"center",padding:20}}>No {activeLeague} games.</p>
-          :dateGroups.map((grp,gi)=>(
-            <div key={gi} style={{marginBottom:gi<dateGroups.length-1?10:0}}>
-              <div style={{fontSize:9,fontWeight:700,color:C.gold,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>{grp.label}</div>
-              {grp.events.map(ev=>{
-                const sel = selectedGameId===ev.id;
-                return (<button key={ev.id} onClick={()=>setSelectedGameId(ev.id)} style={{
-                  display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"7px 10px",borderRadius:8,marginBottom:2,fontSize:12,fontWeight:600,
-                  background:sel?"rgba(201,168,76,0.08)":"rgba(255,255,255,0.01)",border:sel?"1px solid rgba(201,168,76,0.3)":"1px solid transparent",color:sel?C.gold:C.text,cursor:"pointer",textAlign:"left"
-                }}>
-                  <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{ev.away_team?.abbreviation||"AWY"} @ {ev.home_team?.abbreviation||"HOM"}</span>
-                  <span style={{fontSize:9,color:C.subtle,flexShrink:0,marginLeft:4}}>{timeEDT(ev.start_time)}</span>
-                </button>);
-              })}
-            </div>))}
-        </div>
+        {/* CENTER: Games list — date-navigated, viewport-constrained */}
+                <div style={{background:C.card,borderRadius:14,border:"1px solid "+C.border,padding:12,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                    <span style={{fontSize:10,fontWeight:700,color:C.subtle,textTransform:"uppercase",letterSpacing:1}}>{activeLeague} Games</span>
+                  </div>
+                  {/* Date navigation bar */}
+                  {dateNav.length>0 && (
+                    <div style={{display:"flex",alignItems:"center",gap:2,marginBottom:8,overflowX:"auto"}}>
+                      <button onClick={()=>setSelectedDateIdx(i=>Math.max(0,i-1))} disabled={selectedDateIdx===0}
+                        style={{padding:"3px 6px",borderRadius:4,fontSize:10,fontWeight:700,background:"none",border:"1px solid "+C.border,color:selectedDateIdx===0?C.subtle:C.gold,cursor:selectedDateIdx===0?"default":"pointer"}}>‹</button>
+                      {dateNav.map((d,i)=>(
+                        <button key={d.date} onClick={()=>setSelectedDateIdx(i)} style={{
+                          padding:"3px 8px",borderRadius:4,fontSize:10,fontWeight:700,whiteSpace:"nowrap",
+                          background:i===selectedDateIdx?"rgba(201,168,76,0.1)":C.card,
+                          border:i===selectedDateIdx?"1px solid "+C.gold:"1px solid transparent",
+                          color:i===selectedDateIdx?C.gold:C.muted,cursor:"pointer",
+                          opacity:Math.abs(i-selectedDateIdx)>3?0.4:1,
+                        }}>{d.sh.toUpperCase()}</button>
+                      ))}
+                      <button onClick={()=>setSelectedDateIdx(i=>Math.min(dateNav.length-1,i+1))} disabled={selectedDateIdx>=dateNav.length-1}
+                        style={{padding:"3px 6px",borderRadius:4,fontSize:10,fontWeight:700,background:"none",border:"1px solid "+C.border,color:selectedDateIdx>=dateNav.length-1?C.subtle:C.gold,cursor:selectedDateIdx>=dateNav.length-1?"default":"pointer"}}>›</button>
+                    </div>
+                  )}
+                  {/* Selected date heading */}
+                  {selectedDate && <div style={{fontSize:9,fontWeight:700,color:C.gold,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{selectedDate.label}</div>}
+                  {/* Games for selected date */}
+                  <div style={{flex:1,overflowY:"auto",minHeight:0}}>
+                  {loading?<p style={{color:C.muted,fontSize:11,textAlign:"center",padding:20}}>Loading...</p>
+                  :selectedDateGames.length===0?<p style={{color:C.subtle,fontSize:11,textAlign:"center",padding:20}}>No {activeLeague} games on this date.</p>
+                  :selectedDateGames.map(ev=>{
+                    const sel = selectedGameId===ev.id;
+                    return (<button key={ev.id} onClick={()=>setSelectedGameId(ev.id)} style={{
+                      display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"7px 10px",borderRadius:8,marginBottom:2,fontSize:12,fontWeight:600,
+                      background:sel?"rgba(201,168,76,0.08)":"rgba(255,255,255,0.01)",border:sel?"1px solid rgba(201,168,76,0.3)":"1px solid transparent",color:sel?C.gold:C.text,cursor:"pointer",textAlign:"left"
+                    }}>
+                      <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{ev.away_team?.abbreviation||"AWY"} @ {ev.home_team?.abbreviation||"HOM"}</span>
+                      <span style={{fontSize:9,color:C.subtle,flexShrink:0,marginLeft:4}}>{timeEDT(ev.start_time)}</span>
+                    </button>);
+                  })}
+                  </div>
+                </div>
 
         {/* RIGHT: Markets */}
         <div style={{background:C.card,borderRadius:14,border:"1px solid "+C.border,padding:14,overflowY:"auto",display:"flex",flexDirection:"column"}}>
