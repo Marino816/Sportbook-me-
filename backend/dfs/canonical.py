@@ -114,11 +114,12 @@ async def build_canonical_pool(
             compute_projections(sport, projections_list, sgo_intelligence={})
         )
 
-    # 0.01 fallback for unprojected players so rosters still fill
-    for pl in pool:
-        if (pl.get("projected_fp") or 0) <= 0:
-            pl["projected_fp"] = 0.01
-            pl["projection_source"] = pl.get("projection_source") or "UNAVAILABLE"
+    # Unprojected players keep projected_fp = 0.0 — no fabricated 0.01 fallback.
+    # The router-level >=10-projected gate is the sole projection-sufficiency check.
+    # Players with projected_fp <= 0 are filtered out by CP-SAT _build_maps();
+    # this is correct: only legitimately projected players are optimizer-eligible.
+    # If the solver cannot construct valid rosters from the real-projection pool,
+    # it returns empty — an honest signal, not a fabricated-workaround signal.
 
     # Value = projection / (salary / 1000)
     for pl in pool:

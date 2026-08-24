@@ -50,6 +50,90 @@ PROP_KEY_MAP = {
 }
 
 
+def _safe_str(val: object) -> str:
+    """Convert anything to string safely, never raises."""
+    try:
+        return str(val)
+    except Exception:
+        return ""
+
+
+def _event_date_matches(start_time: object, event_date: Optional[str]) -> bool:
+    """Check if an event's start_time falls on *event_date* ('YYYY-MM-DD').
+
+    Handles every form start_time can take in the SGO pipeline:
+
+    * datetime (timezone-aware or naive) — from a live SDK fetch
+    * ISO-8601 string                — from a Redis-deserialised cache hit
+    * None / empty / malformed       — treated as no-match
+    * dict with 'points' / 'name'    — per-SGO-v2 nested status dicts
+
+    Always compares calendar dates in US Eastern time, matching the
+    convention in dfs/freshness.py.  A timezone-aware ``start_time``
+    is converted to ET; a naive one is assumed to already be ET
+    (SGO returns Eastern-zone timestamps).
+
+    Returns True when the event's calendar date equals *event_date*.
+    """
+    from zoneinfo import ZoneInfo
+    from datetime import date as dt_date, datetime as dt_datetime
+
+    if not event_date or not start_time:
+        return False
+
+    # ── dict (SGO v2 nested status dicts like {'points': 7, ...}) ──
+    if isinstance(start_time, dict):
+        # Not a time value — cannot match a date string.
+        return False
+
+    # ── datetime ──
+    if isinstance(start_time, dt_datetime):
+        try:
+            eastern = start_time.astimezone(ZoneInfo("America/New_York"))
+        except Exception:
+            # Naive datetime — assume Eastern (SGO default)
+            try:
+                eastern = start_time.replace(tzinfo=ZoneInfo("America/New_York"))
+            except Exception:
+                return False
+        try:
+            return eastern.date().isoformat() == event_date
+        except Exception:
+            return False
+
+    # ── string ──
+    raw = _safe_str(start_time)
+    if not raw:
+        return False
+
+    # Try parsing as datetime string first (ISO-8601, etc.)
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+    ):
+        try:
+            parsed = dt_datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+        try:
+            eastern = parsed.astimezone(ZoneInfo("America/New_York"))
+        except Exception:
+            try:
+                eastern = parsed.replace(tzinfo=ZoneInfo("America/New_York"))
+            except Exception:
+                return False
+        try:
+            return eastern.date().isoformat() == event_date
+        except Exception:
+            return False
+
+    # Last-ditch: simple prefix match on the raw string
+    return raw.startswith(event_date)
+
+
 def _norm_name(n: str) -> str:
     """Normalize a player name for case-insensitive matching."""
     return (n or "").strip().lower()
@@ -107,7 +191,7 @@ async def build_sgo_intelligence(sport: str, dfs_players: list[dict], event_date
         before = len(events)
         events = [
             e for e in events
-            if isinstance(e, dict) and (e.get("start_time") or "").startswith(event_date)
+            if isinstance(e, dict) and _event_date_matches(e.get("start_time"), event_date)
         ]
         logger.info(
             "SGO intelligence date filter %s: %d -> %d events",
