@@ -2,10 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import logging
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
-# from api import slates_router, projections_router, optimizer_router
+logger = logging.getLogger(__name__)
+
+BCDFS_TICK_INTERVAL = int(os.getenv("BCDFS_TICK_INTERVAL", "600"))  # seconds (default 10 min)
+_bcdfs_task: asyncio.Task | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,9 +35,58 @@ async def lifespan(app: FastAPI):
     except Exception:
         logging.exception("QA bootstrap failed (non-fatal)")
 
+    # ── BCDFS automated scheduler (activation via env var) ──
+    if os.getenv("BCDFS_SCHEDULER_ENABLED", "").lower() in ("true", "1", "yes"):
+        logging.info(
+            "BCDFS scheduler ENABLED — tick interval %ds", BCDFS_TICK_INTERVAL
+        )
+        global _bcdfs_task
+        _bcdfs_task = asyncio.create_task(_bcdfs_scheduler_loop())
+    else:
+        logging.info("BCDFS scheduler disabled (set BCDFS_SCHEDULER_ENABLED=true to activate)")
+
     yield
     # Shutdown
     logging.info("Shutting down Sportsbook ME DFS AI API...")
+    if _bcdfs_task is not None:
+        _bcdfs_task.cancel()
+        try:
+            await _bcdfs_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _bcdfs_scheduler_loop() -> None:
+    """Run scheduler_tick() every BCDFS_TICK_INTERVAL seconds.
+
+    Each tick checks which endpoints are actually due — a wake-up
+    does NOT equal a provider request.  All budget / priority /
+    backoff rules are enforced inside scheduler_tick().
+
+    Never crashes the FastAPI process — a single failing tick is
+    logged and the loop continues.
+    """
+    while True:
+        try:
+            from models.database import _SessionLocal
+            from dfs.bcdfs_scheduler import scheduler_tick
+
+            async with _SessionLocal() as db:
+                result = await scheduler_tick(db)
+
+            synced = result.get("synced", 0)
+            if synced > 0:
+                logger.info(
+                    "BCDFS tick: %d endpoints synced, auto budget %d/%d",
+                    synced,
+                    result.get("auto_budget_remaining", "?"),
+                    result.get("auto_budget_limit", "?"),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("BCDFS scheduler tick failed — continuing loop")
+        await asyncio.sleep(BCDFS_TICK_INTERVAL)
 
 app = FastAPI(
     title="Sportsbook Me DFS AI API",
