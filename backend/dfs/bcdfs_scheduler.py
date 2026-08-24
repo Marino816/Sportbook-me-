@@ -156,21 +156,27 @@ def _determine_state(parse_result, prev_state: EndpointState) -> EndpointState:
     if not parse_result.slates:
         return EndpointState.OFFSZN
 
-    now = datetime.now(timezone.utc)
+    now_utc = datetime.now(timezone.utc)
     earliest = None
     all_past = True
 
     for cs in parse_result.slates:
-        if cs.start_time:
-            if earliest is None or cs.start_time < earliest:
-                earliest = cs.start_time
-            if cs.start_time > now:
-                all_past = False
+        st = cs.start_time
+        if st is None:
+            continue
+        # Make aware if naive (DB returns naive datetimes)
+        if st.tzinfo is None:
+            st = st.replace(tzinfo=timezone.utc)
+
+        if earliest is None or st < earliest:
+            earliest = st
+        if st > now_utc:
+            all_past = False
 
     if earliest is None:
         return EndpointState.ACTIVE
 
-    seconds_to_first = (earliest - now).total_seconds()
+    seconds_to_first = (earliest - now_utc).total_seconds()
     if 0 < seconds_to_first < LOCK_WINDOW_SECONDS:
         return EndpointState.PRE_LOCK
     if all_past:
