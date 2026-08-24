@@ -1,19 +1,25 @@
 """
-Blue Collar DFS Automated Slate Scheduler — Phase 2.
+Blue Collar DFS Automated Slate Scheduler — Phase 2B hardened.
 
-Sport-aware, rate-budgeted polling that keeps current DFS slates available
-without admin intervention.  Built on top of the existing bcdfs_adapter.
+Redis-backed persistent rate accounting with separate automated (130/day)
+and manual (20/day) budgets against the 150/day SB ME ceiling.  Atomic
+INCR reservation prevents over-spend across concurrent workers.
+Per-endpoint SETNX locks prevent duplicate concurrent syncs.
+
+Scheduler host: Railway Cron (recommended) — wakes every 10 min.
+Tick frequency ≠ provider frequency: scheduler_tick() checks each
+endpoint's due time; a wake-up may result in 0–8 provider calls.
 
 DOES NOT:
   - Copy BC projections into projected_fp
   - Replace the manual CSV importer
   - Expose BCDFS_API_KEY or raw BC JSON
-  - Activate itself — the caller decides when to run ticks
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -25,7 +31,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dfs.bcdfs_adapter import (
     ENDPOINTS,
-    BcRateLimiter,
     fetch_bc_endpoint,
     parse_bc_response,
     sync_bc_to_db,
@@ -37,19 +42,37 @@ from dfs.bcdfs_adapter import (
 
 logger = logging.getLogger(__name__)
 
-# =====================================================================
-# Scheduler configuration
-# =====================================================================
+# ══════════════════════════════════════════════════════════════════════
+# Configuration — hard budget guarantees
+# ══════════════════════════════════════════════════════════════════════
 
-ACTIVE_INTERVAL     = 45 * 60       # 45 min — in-season sport
-PRE_LOCK_INTERVAL   = 20 * 60       # 20 min — approaching first lock
+PROVIDER_LIMIT      = 200   # Blue Collar documented limit
+SB_ME_CEILING       = 150   # SB ME internal ceiling
+MANUAL_RESERVE      = 20    # admin emergency reserve
+AUTO_BUDGET         = 130   # maximum automated requests/day
+
+# Polling intervals (seconds)
+ACTIVE_INTERVAL     = 45 * 60       # 45 min — in-season
+PRE_LOCK_INTERVAL   = 20 * 60       # 20 min — approaching lock
 OFFSEASON_INTERVAL  = 24 * 3600     # 24 hours — empty endpoints
-POST_LOCK_INTERVAL  = 6 * 3600      # 6 hours — after all slates locked
-LOCK_WINDOW_SECONDS = 2 * 3600      # 2 hours — pre-lock window
-BACKOFF_BASE        = 60            # 1 minute
-BACKOFF_MAX         = 3600          # 1 hour
-SAFE_DAILY_LIMIT    = 150           # soft cap
-HARD_DAILY_LIMIT    = 200           # documented cap
+POST_LOCK_INTERVAL  = 6 * 3600      # 6 hours — all locked
+LOCK_WINDOW_SECONDS = 2 * 3600      # 2 hours
+
+# Backoff (seconds)
+BACKOFF_BASE        = 60
+BACKOFF_MAX_SEC     = 3600
+AUTH_BACKOFF_SEC    = 6 * 3600      # 401/403 — 6 hours
+
+# Distributed lock TTL
+LOCK_TTL            = 120            # 2 min — max duration of one sync
+
+# Priority values for endpoint ordering
+PRIORITY_PRE_LOCK   = 0
+PRIORITY_ACTIVE     = 1
+PRIORITY_POST_LOCK  = 2
+PRIORITY_OFFSZN     = 3
+PRIORITY_ERROR      = 4
+PRIORITY_UNKNOWN    = 5
 
 
 class EndpointState(Enum):
@@ -58,8 +81,159 @@ class EndpointState(Enum):
     PRE_LOCK = "pre_lock"
     POST_LOCK = "post_lock"
     ERROR    = "error"
+    SUSPENDED = "suspended"   # 401/403 — requires admin intervention
     UNKNOWN  = "unknown"
 
+
+PRIORITY_MAP = {
+    EndpointState.PRE_LOCK:  PRIORITY_PRE_LOCK,
+    EndpointState.ACTIVE:    PRIORITY_ACTIVE,
+    EndpointState.POST_LOCK: PRIORITY_POST_LOCK,
+    EndpointState.OFFSZN:    PRIORITY_OFFSZN,
+    EndpointState.ERROR:     PRIORITY_ERROR,
+    EndpointState.UNKNOWN:   PRIORITY_UNKNOWN,
+    EndpointState.SUSPENDED: PRIORITY_ERROR,  # below everything except unknown
+}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Redis helpers — persistence, atomic ops, distributed locks
+# ══════════════════════════════════════════════════════════════════════
+
+def _redis():
+    """Lazy Redis client — never fails (returns None if unavailable)."""
+    from providers.redis_client import get_redis_client
+    return get_redis_client()
+
+
+def _today_key(suffix: str) -> str:
+    """Key with today's UTC date: bcdfs:{suffix}:2026-08-24"""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return f"bcdfs:{suffix}:{today}"
+
+
+def _get_counter(key: str) -> int:
+    """Read a Redis counter, returning 0 if missing."""
+    r = _redis()
+    if r is None:
+        return 0
+    try:
+        val = r.get(key)
+        return int(val) if val else 0
+    except Exception:
+        return 0
+
+
+def _try_reserve_budget(budget_type: str, limit: int) -> bool:
+    """Atomically reserve one request from a budget bucket.
+
+    Uses Redis INCR + check pattern.  If the incremented count
+    exceeds *limit*, DECR to roll back and return False.
+    Otherwise return True — the request is reserved.
+
+    budget_type: 'auto' or 'manual'
+    """
+    r = _redis()
+    if r is None:
+        return False  # no Redis = no reservation = no request
+    key = _today_key(f"budget:{budget_type}")
+    try:
+        count = r.incr(key)
+        if count > limit:
+            r.decr(key)
+            return False
+        # Set TTL so keys auto-expire after 48h (cleanup)
+        r.expire(key, 172800)
+        return True
+    except Exception:
+        return False
+
+
+def _release_budget(budget_type: str) -> None:
+    """Release a reserved request on error (best-effort rollback)."""
+    r = _redis()
+    if r is None:
+        return
+    key = _today_key(f"budget:{budget_type}")
+    try:
+        r.decr(key)
+    except Exception:
+        pass
+
+
+def _budget_remaining(budget_type: str, limit: int) -> int:
+    """How many requests remain in a budget bucket."""
+    return max(0, limit - _get_counter(_today_key(f"budget:{budget_type}")))
+
+
+def _acquire_sync_lock(sport: str, platform: str) -> bool:
+    """Try to acquire a per-endpoint distributed lock via SETNX.
+
+    Returns True if the lock was acquired, False if another worker
+    is already syncing this endpoint.
+    """
+    r = _redis()
+    if r is None:
+        return True  # no Redis = no concurrency control (single-worker safe)
+    key = f"bcdfs:lock:{sport.lower()}_{platform.lower()}"
+    try:
+        acquired = r.set(key, "1", nx=True, ex=LOCK_TTL)
+        return bool(acquired)
+    except Exception:
+        return True   # err on the side of allowing the sync
+
+
+def _release_sync_lock(sport: str, platform: str) -> None:
+    """Release a per-endpoint distributed lock."""
+    r = _redis()
+    if r is None:
+        return
+    key = f"bcdfs:lock:{sport.lower()}_{platform.lower()}"
+    try:
+        r.delete(key)
+    except Exception:
+        pass
+
+
+def _set_suspended(sport: str, platform: str) -> None:
+    """Flag an endpoint as suspended (401/403 — needs admin attention)."""
+    r = _redis()
+    if r is None:
+        return
+    key = f"bcdfs:suspend:{sport.lower()}_{platform.lower()}"
+    try:
+        r.setex(key, 86400, "1")  # 24h TTL
+    except Exception:
+        pass
+
+
+def _is_suspended(sport: str, platform: str) -> bool:
+    """Check if endpoint is flagged as suspended."""
+    r = _redis()
+    if r is None:
+        return False
+    key = f"bcdfs:suspend:{sport.lower()}_{platform.lower()}"
+    try:
+        return bool(r.get(key))
+    except Exception:
+        return False
+
+
+def _clear_suspension(sport: str, platform: str) -> None:
+    """Clear a suspension flag on successful auth."""
+    r = _redis()
+    if r is None:
+        return
+    key = f"bcdfs:suspend:{sport.lower()}_{platform.lower()}"
+    try:
+        r.delete(key)
+    except Exception:
+        pass
+
+
+# ══════════════════════════════════════════════════════════════════════
+# EndpointStatus
+# ══════════════════════════════════════════════════════════════════════
 
 @dataclass
 class EndpointStatus:
@@ -78,66 +252,75 @@ class EndpointStatus:
 
     def interval_seconds(self) -> int:
         if self.backoff_until and datetime.now(timezone.utc) < self.backoff_until:
-            return BACKOFF_BASE * (2 ** min(self.consecutive_errors, 5))
+            backoff = BACKOFF_BASE * (2 ** min(self.consecutive_errors, 5))
+            return min(backoff, BACKOFF_MAX_SEC)
         if self.state == EndpointState.PRE_LOCK:
             return PRE_LOCK_INTERVAL
         if self.state == EndpointState.ACTIVE:
             return ACTIVE_INTERVAL
         if self.state == EndpointState.POST_LOCK:
             return POST_LOCK_INTERVAL
-        if self.state == EndpointState.ERROR:
-            return BACKOFF_BASE * (2 ** min(self.consecutive_errors, 5))
+        if self.state in (EndpointState.ERROR, EndpointState.SUSPENDED):
+            backoff = BACKOFF_BASE * (2 ** min(self.consecutive_errors, 5))
+            return min(backoff, BACKOFF_MAX_SEC)
         return OFFSEASON_INTERVAL
 
+    def priority(self) -> int:
+        return PRIORITY_MAP.get(self.state, PRIORITY_UNKNOWN)
+
+    def to_dict(self) -> dict:
+        return {
+            "state": self.state.value,
+            "last_sync": self.last_sync.isoformat() if self.last_sync else None,
+            "last_success": self.last_success.isoformat() if self.last_success else None,
+            "last_error": self.last_error,
+            "last_error_time": self.last_error_time.isoformat() if self.last_error_time else None,
+            "slate_count": self.slate_count,
+            "player_count": self.player_count,
+            "backoff_until": self.backoff_until.isoformat() if self.backoff_until else None,
+            "consecutive_errors": self.consecutive_errors,
+            "next_poll": self.next_poll.isoformat() if self.next_poll else None,
+        }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Global state (per-process only — counters live in Redis)
+# ══════════════════════════════════════════════════════════════════════
 
 @dataclass
 class SchedulerState:
-    rate_limiter: BcRateLimiter = field(default_factory=BcRateLimiter)
     endpoints: dict = field(default_factory=dict)
     last_tick: Optional[datetime] = None
     tick_count: int = 0
-    active_sync_lock: bool = False
 
     def __post_init__(self):
         for (sport, platform) in ENDPOINTS:
-            self.endpoints[(sport, platform)] = EndpointStatus(
-                sport=sport, platform=platform,
-            )
-
-    def daily_requests_used(self) -> int:
-        return sum(self.rate_limiter._counts.values()) if self.rate_limiter._counts else 0
-
-    def daily_requests_remaining(self) -> int:
-        return self.rate_limiter.remaining()
+            status = EndpointStatus(sport=sport, platform=platform)
+            if _is_suspended(sport, platform):
+                status.state = EndpointState.SUSPENDED
+            self.endpoints[(sport, platform)] = status
 
     def to_dict(self) -> dict:
-        now = datetime.now(timezone.utc)
         eps = {}
         for key, status in self.endpoints.items():
-            eps[f"{key[0]}_{key[1]}"] = {
-                "state": status.state.value,
-                "last_sync": status.last_sync.isoformat() if status.last_sync else None,
-                "last_success": status.last_success.isoformat() if status.last_success else None,
-                "last_error": status.last_error,
-                "last_error_time": status.last_error_time.isoformat() if status.last_error_time else None,
-                "slate_count": status.slate_count,
-                "player_count": status.player_count,
-                "backoff_until": status.backoff_until.isoformat() if status.backoff_until else None,
-                "consecutive_errors": status.consecutive_errors,
-                "next_poll": status.next_poll.isoformat() if status.next_poll else None,
-            }
+            eps[f"{key[0]}_{key[1]}"] = status.to_dict()
         return {
-            "daily_requests_used": self.daily_requests_used(),
-            "daily_requests_remaining": self.daily_requests_remaining(),
-            "safe_daily_limit": SAFE_DAILY_LIMIT,
-            "hard_daily_limit": HARD_DAILY_LIMIT,
+            "daily_requests_used": _get_counter(_today_key("budget:auto")) + _get_counter(_today_key("budget:manual")),
+            "daily_requests_remaining": SB_ME_CEILING - (
+                _get_counter(_today_key("budget:auto")) + _get_counter(_today_key("budget:manual"))
+            ),
+            "auto_budget_remaining": _budget_remaining("auto", AUTO_BUDGET),
+            "manual_budget_remaining": _budget_remaining("manual", MANUAL_RESERVE),
+            "auto_budget_limit": AUTO_BUDGET,
+            "manual_budget_limit": MANUAL_RESERVE,
+            "sb_me_ceiling": SB_ME_CEILING,
+            "provider_limit": PROVIDER_LIMIT,
             "last_tick": self.last_tick.isoformat() if self.last_tick else None,
             "tick_count": self.tick_count,
             "endpoints": eps,
         }
 
 
-# Global singleton
 _scheduler_state: Optional[SchedulerState] = None
 
 
@@ -148,9 +331,9 @@ def get_scheduler_state() -> SchedulerState:
     return _scheduler_state
 
 
-# =====================================================================
+# ══════════════════════════════════════════════════════════════════════
 # Slate activity detection
-# =====================================================================
+# ══════════════════════════════════════════════════════════════════════
 
 def _determine_state(parse_result, prev_state: EndpointState) -> EndpointState:
     if not parse_result.slates:
@@ -164,10 +347,8 @@ def _determine_state(parse_result, prev_state: EndpointState) -> EndpointState:
         st = cs.start_time
         if st is None:
             continue
-        # Make aware if naive (DB returns naive datetimes)
         if st.tzinfo is None:
             st = st.replace(tzinfo=timezone.utc)
-
         if earliest is None or st < earliest:
             earliest = st
         if st > now_utc:
@@ -184,149 +365,221 @@ def _determine_state(parse_result, prev_state: EndpointState) -> EndpointState:
     return EndpointState.ACTIVE
 
 
-# =====================================================================
-# Per-endpoint sync
-# =====================================================================
+# ══════════════════════════════════════════════════════════════════════
+# Per-endpoint sync — with atomic budget reservation + distributed lock
+# ══════════════════════════════════════════════════════════════════════
 
 async def _sync_one_endpoint(
     db: AsyncSession,
     status: EndpointStatus,
+    budget_type: str = "auto",
 ) -> BcSyncReport:
-    state = get_scheduler_state()
+    """Sync one endpoint.  Atomic budget reservation guards spending.
+
+    budget_type: 'auto' (scheduler) or 'manual' (admin refresh).
+    Each has its own Redis counter and limit.
+
+    On 401/403: sets persistent suspension flag, stops automated retries.
+    On 429: respects provider backoff, does NOT re-fetch.
+    On 5xx/network: exponential backoff, preserves last-good data.
+    """
     now = datetime.now(timezone.utc)
     report = BcSyncReport(sport=status.sport, platform=status.platform)
+    budget_limit = AUTO_BUDGET if budget_type == "auto" else MANUAL_RESERVE
 
-    if status.backoff_until and now < status.backoff_until:
-        report.warnings.append(f"Backoff until {status.backoff_until.isoformat()}")
+    # ── Check suspension ──
+    if budget_type == "auto" and _is_suspended(status.sport, status.platform):
+        report.warnings.append("Endpoint suspended (auth failure) — requires admin")
+        return report
+    if status.state == EndpointState.SUSPENDED:
+        report.warnings.append("Endpoint suspended")
         return report
 
-    if not state.rate_limiter.can_request():
-        report.errors.append("Daily budget exhausted")
-        status.state = EndpointState.ERROR
-        status.last_error = "Daily budget exhausted"
-        status.last_error_time = now
+    # ── Backoff check ──
+    if status.backoff_until and now < status.backoff_until:
+        remaining = (status.backoff_until - now).total_seconds()
+        report.warnings.append(f"Backoff for {int(remaining)}s")
+        return report
+
+    # ── Distributed lock (prevent concurrent sync of same endpoint) ──
+    if not _acquire_sync_lock(status.sport, status.platform):
+        report.warnings.append("Sync already in progress for this endpoint")
         return report
 
     try:
-        data = fetch_bc_endpoint(
-            status.sport, status.platform, rate_limiter=state.rate_limiter,
-        )
-        parse_result = parse_bc_response(data, status.sport, status.platform)
-        report = await sync_bc_to_db(db, parse_result, auto_publish=True)
+        # ── Atomic budget reservation ──
+        if not _try_reserve_budget(budget_type, budget_limit):
+            status.last_error = f"DAILY_BUDGET_EXHAUSTED ({budget_type})"
+            status.last_error_time = now
+            report.errors.append(f"Daily {budget_type} budget exhausted ({budget_limit}/day)")
+            if budget_type == "auto":
+                pass  # don't flip to ERROR on budget exhaustion — retry tomorrow
+            return report
 
-        status.state = _determine_state(parse_result, status.state)
-        status.last_sync = now
-        status.last_success = now
-        status.consecutive_errors = 0
-        status.backoff_until = None
-        status.slate_count = report.total_slates
-        status.player_count = report.total_players
-        status.last_error = None
-        status.last_error_time = None
+        # ── Fetch + parse + sync ──
+        try:
+            data = fetch_bc_endpoint(status.sport, status.platform)
+            parse_result = parse_bc_response(data, status.sport, status.platform)
+            report = await sync_bc_to_db(db, parse_result, auto_publish=True)
 
-    except BcRateLimitError as e:
-        status.state = EndpointState.ERROR
-        status.last_error = f"429: {e.body[:120] if hasattr(e,'body') else str(e)}"
-        status.last_error_time = now
-        status.consecutive_errors += 1
-        status.backoff_until = now + timedelta(seconds=BACKOFF_BASE * (2 ** min(status.consecutive_errors, 5)))
-        report.errors.append(f"Rate limited: {e}")
+            # Success — reset everything
+            status.state = _determine_state(parse_result, status.state)
+            status.last_sync = now
+            status.last_success = now
+            status.consecutive_errors = 0
+            status.backoff_until = None
+            status.slate_count = report.total_slates
+            status.player_count = report.total_players
+            status.last_error = None
+            status.last_error_time = None
 
-    except BcAuthError as e:
-        status.state = EndpointState.ERROR
-        status.last_error = f"Auth error ({e.status})"
-        status.last_error_time = now
-        status.consecutive_errors += 1
-        status.backoff_until = now + timedelta(hours=6)
-        report.errors.append(f"Auth: {e}")
+            # Clear any prior suspension
+            _clear_suspension(status.sport, status.platform)
 
-    except BcApiError as e:
-        if status.state != EndpointState.OFFSZN:
+        except BcAuthError as e:
+            # 401/403 — suspend automated syncs permanently
+            status.state = EndpointState.SUSPENDED
+            status.last_error = f"Auth ({e.status})"
+            status.last_error_time = now
+            status.consecutive_errors += 1
+            status.backoff_until = now + timedelta(seconds=AUTH_BACKOFF_SEC)
+            report.errors.append(f"Auth failure: endpoint suspended")
+            if budget_type == "auto":
+                _set_suspended(status.sport, status.platform)  # persistent across restarts
+
+        except BcRateLimitError as e:
             status.state = EndpointState.ERROR
-        status.last_error = f"{e.status}: {e.body[:120] if hasattr(e,'body') else str(e)}"
-        status.last_error_time = now
-        status.consecutive_errors += 1
-        status.backoff_until = now + timedelta(seconds=BACKOFF_BASE * (2 ** min(status.consecutive_errors, 5)))
-        report.errors.append(str(e))
+            status.last_error = "429 provider rate limit"
+            status.last_error_time = now
+            status.consecutive_errors += 1
+            status.backoff_until = now + timedelta(seconds=BACKOFF_BASE * (2 ** min(status.consecutive_errors, 5)))
+            report.errors.append("Provider 429")
 
-    except Exception as e:
-        if status.state != EndpointState.OFFSZN:
-            status.state = EndpointState.ERROR
-        status.last_error = str(e)[:200]
-        status.last_error_time = now
-        status.consecutive_errors += 1
-        status.backoff_until = now + timedelta(seconds=BACKOFF_BASE * (2 ** min(status.consecutive_errors, 5)))
-        report.errors.append(str(e))
+        except BcApiError as e:
+            # 5xx / network — don't flip active endpoints to error
+            if status.state not in (EndpointState.OFFSZN, EndpointState.SUSPENDED, EndpointState.POST_LOCK):
+                status.state = EndpointState.ERROR
+            status.last_error = str(e)[:200]
+            status.last_error_time = now
+            status.consecutive_errors += 1
+            backoff = min(BACKOFF_BASE * (2 ** min(status.consecutive_errors, 5)), BACKOFF_MAX_SEC)
+            status.backoff_until = now + timedelta(seconds=backoff)
+            report.errors.append(str(e))
+
+        except Exception as e:
+            if status.state not in (EndpointState.OFFSZN, EndpointState.SUSPENDED, EndpointState.POST_LOCK):
+                status.state = EndpointState.ERROR
+            status.last_error = str(e)[:200]
+            status.last_error_time = now
+            status.consecutive_errors += 1
+            backoff = min(BACKOFF_BASE * (2 ** min(status.consecutive_errors, 5)), BACKOFF_MAX_SEC)
+            status.backoff_until = now + timedelta(seconds=backoff)
+            report.errors.append(str(e))
+
+    finally:
+        _release_sync_lock(status.sport, status.platform)
 
     status.next_poll = now + timedelta(seconds=status.interval_seconds())
     return report
 
 
-# =====================================================================
-# Scheduler tick
-# =====================================================================
+# ══════════════════════════════════════════════════════════════════════
+# Scheduler tick — prioritised, budget-aware
+# ══════════════════════════════════════════════════════════════════════
 
 async def scheduler_tick(
     db: AsyncSession,
     force_sports: Optional[list] = None,
 ) -> dict:
+    """Run one scheduler cycle.
+
+    Automated tick (force_sports=None):
+      - Collects endpoints whose next_poll is due
+      - Sorts by priority (PRE_LOCK > ACTIVE > POST_LOCK > OFFSZN)
+      - Syncs each in order, stopping when auto budget is exhausted
+      - A tick wake-up may sync 0 endpoints (none due)
+
+    Manual refresh (force_sports provided):
+      - Uses manual budget (MANUAL_RESERVE = 20/day)
+      - Bypasses priority/due-time checks
+    """
     state = get_scheduler_state()
     now = datetime.now(timezone.utc)
-
-    if state.active_sync_lock and force_sports is None:
-        return {"status": "skipped", "reason": "sync already in progress"}
-
-    state.active_sync_lock = True
     state.last_tick = now
     state.tick_count += 1
 
-    try:
-        if force_sports is not None:
-            targets = [(s.upper(), p.lower()) for s, p in force_sports]
-        else:
-            targets = [
-                (sport, platform)
-                for (sport, platform), status in state.endpoints.items()
-                if status.next_poll is None or now >= status.next_poll
-            ]
+    budget_type = "auto" if force_sports is None else "manual"
 
-        reports: dict = {}
-        for sport, platform in targets:
-            key = f"{sport}_{platform}"
-            status = state.endpoints.get((sport, platform))
-            if status is None:
-                reports[key] = {"error": "Unknown endpoint"}
-                continue
-            report = await _sync_one_endpoint(db, status)
-            reports[key] = {
-                "slates_created": report.slates_created,
-                "slates_updated": report.slates_updated,
-                "players_added": report.players_added,
-                "players_updated": report.players_updated,
-                "players_removed": report.players_removed,
-                "state": status.state.value,
-                "next_poll": status.next_poll.isoformat() if status.next_poll else None,
-                "errors": report.errors,
-                "warnings": report.warnings,
-            }
-            if len(targets) > 1:
-                await asyncio.sleep(1)
+    if force_sports is not None:
+        targets = [(s.upper(), p.lower()) for s, p in force_sports]
+    else:
+        # Collect due endpoints, sorted by priority (lowest = most urgent)
+        due = [
+            (status.priority(), sport, platform)
+            for (sport, platform), status in state.endpoints.items()
+            if (status.next_poll is None or now >= status.next_poll)
+            and not _is_suspended(sport, platform)
+        ]
+        due.sort(key=lambda x: x[0])  # sort by priority
+        targets = [(s, p) for _, s, p in due]
 
-        return {
-            "status": "ok",
-            "tick": state.tick_count,
-            "synced": len(reports),
-            "daily_requests_used": state.daily_requests_used(),
-            "daily_requests_remaining": state.daily_requests_remaining(),
-            "endpoints": reports,
+    reports: dict = {}
+    for sport, platform in targets:
+        key = f"{sport}_{platform}"
+        status = state.endpoints.get((sport, platform))
+        if status is None:
+            reports[key] = {"error": "Unknown endpoint"}
+            continue
+
+        report = await _sync_one_endpoint(db, status, budget_type=budget_type)
+        reports[key] = {
+            "slates_created": report.slates_created,
+            "slates_updated": report.slates_updated,
+            "players_added": report.players_added,
+            "players_updated": report.players_updated,
+            "players_removed": report.players_removed,
+            "state": status.state.value,
+            "next_poll": status.next_poll.isoformat() if status.next_poll else None,
+            "errors": report.errors,
+            "warnings": report.warnings,
         }
-    finally:
-        state.active_sync_lock = False
 
+        # Budget check after each sync — stop if automated budget exhausted
+        if budget_type == "auto" and _budget_remaining("auto", AUTO_BUDGET) <= 0:
+            logger.warning("BCDFS auto budget exhausted — stopping tick after %d syncs", len(reports))
+            break
+
+        # Stagger writes
+        if len(targets) > 1:
+            await asyncio.sleep(1)
+
+    return {
+        "status": "ok",
+        "budget_type": budget_type,
+        "tick": state.tick_count,
+        "synced": len(reports),
+        "auto_budget_remaining": _budget_remaining("auto", AUTO_BUDGET),
+        "manual_budget_remaining": _budget_remaining("manual", MANUAL_RESERVE),
+        "daily_requests_used": _get_counter(_today_key("budget:auto")) + _get_counter(_today_key("budget:manual")),
+        "endpoints": reports,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Admin + observability
+# ══════════════════════════════════════════════════════════════════════
 
 async def admin_refresh(db: AsyncSession, sport: str, platform: str) -> dict:
+    """Admin-only manual refresh — uses manual budget (20/day)."""
     return await scheduler_tick(db, force_sports=[(sport, platform)])
 
 
 def get_operational_status() -> dict:
-    return get_scheduler_state().to_dict()
+    """Full operational status — no secrets, no raw BC data."""
+    state = get_scheduler_state()
+    result = state.to_dict()
+    # Add per-endpoint suspension status
+    for key, ep in result.get("endpoints", {}).items():
+        sport, platform = key.split("_", 1)
+        ep["suspended"] = _is_suspended(sport, platform)
+    return result
