@@ -171,6 +171,7 @@ export default function ParlayBuilderPage() {
   const [propFilter,setPropFilter]=useState("");
   const [selectedDateIdx,setSelectedDateIdx]=useState(0);
   const [showAllBooks,setShowAllBooks]=useState(false);
+  const [pendingBook,setPendingBook]=useState<string|null>(null);  // target book when confirmation dialog is open
 
   const { events:rawEvents, loading } = useEvents(activeLeague);
   const events = useMemo(()=>{
@@ -245,9 +246,42 @@ export default function ParlayBuilderPage() {
   const visibleBooks = showAllBooks ? sortedBooks : sortedBooks.slice(0,INITIAL_VISIBLE_BOOKS);
   const hiddenCount = sortedBooks.length - INITIAL_VISIBLE_BOOKS;
 
+  // Sportsbook switch — confirm if legs exist, otherwise switch immediately
+  const requestBookChange = useCallback((book: string) => {
+    if (legs.length === 0) {
+      setSelectedBook(book); setLegs([]);
+    } else {
+      setPendingBook(book);
+    }
+  }, [legs]);
+  const confirmBookChange = useCallback(() => {
+    if (pendingBook != null) {
+      setSelectedBook(pendingBook); setLegs([]); setPendingBook(null);
+    }
+  }, [pendingBook]);
+  const cancelBookChange = useCallback(() => setPendingBook(null), []);
+
 
   return (
     <div style={{maxWidth:"100%",margin:"0 auto",padding:"8px 16px 12px",color:C.text,height:"calc(100vh - 72px)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+      {/* CONFIRMATION MODAL — sportsbook switch with existing legs */}
+      {pendingBook !== null && (
+        <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div onClick={cancelBookChange} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)"}} />
+          <div style={{position:"relative",background:"#0f172a",border:"1px solid #1e293b",borderRadius:14,padding:24,maxWidth:400,width:"90%",textAlign:"center",zIndex:1}}>
+            <h3 style={{fontSize:15,fontWeight:800,color:C.gold,margin:"0 0 8px"}}>Change Sportsbook?</h3>
+            <p style={{fontSize:12,color:C.muted,lineHeight:1.6,margin:"0 0 20px"}}>
+              Changing sportsbooks will clear your current parlay because odds and market availability may differ between sportsbooks.
+            </p>
+            <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+              <button onClick={cancelBookChange} style={{padding:"8px 20px",borderRadius:8,fontSize:12,fontWeight:700,background:C.card,border:"1px solid "+C.border,color:C.muted,cursor:"pointer"}}>Cancel</button>
+              <button onClick={confirmBookChange} style={{padding:"8px 20px",borderRadius:8,fontSize:12,fontWeight:700,background:"rgba(201,168,76,0.15)",border:"1px solid "+C.gold,color:C.gold,cursor:"pointer"}}>Change Sportsbook</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER ROW */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -268,7 +302,7 @@ export default function ParlayBuilderPage() {
               const name = formatBookmakerName(b);
               const sel = selectedBook===b;
               return (
-                <button key={b} onClick={()=>{setSelectedBook(b);setLegs([]);}}
+                <button key={b} onClick={()=>requestBookChange(b)}
                   style={{
                     padding:"8px 10px",borderRadius:8,fontSize:11,fontWeight:700,
                     background:sel?"rgba(201,168,76,0.12)":"rgba(255,255,255,0.03)",
@@ -299,7 +333,7 @@ export default function ParlayBuilderPage() {
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,padding:"6px 10px",borderRadius:8,background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.2)"}}>
           <span style={{fontSize:10,fontWeight:700,color:C.subtle,textTransform:"uppercase"}}>Sportsbook</span>
           <span style={{fontSize:12,fontWeight:800,color:C.gold}}>{formatBookmakerName(selectedBook)}</span>
-          <button onClick={()=>{setSelectedBook("");setLegs([]);}} style={{marginLeft:"auto",background:"none",border:"none",color:C.subtle,cursor:"pointer",fontSize:10}}>Change</button>
+          <button onClick={()=>requestBookChange("")} style={{marginLeft:"auto",background:"none",border:"none",color:C.subtle,cursor:"pointer",fontSize:10}}>Change</button>
         </div>
       )}
 
