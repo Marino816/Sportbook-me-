@@ -192,3 +192,88 @@ class Test001Gone:
                 if s.startswith(chr(34)*3) or s.startswith(chr(39)*3): continue
                 if "0.01" in s and "projected_fp" in s.lower():
                     assert False, f"0.01 still present: {s}"
+
+class TestDetermineState:
+    """State-detection unit tests (recovered from deleted scheduler tests)."""
+    def test_offseason_no_slates(self):
+        from dfs.bcdfs_adapter import BcParseResult
+        from dfs.bcdfs_scheduler import _determine_state
+        r = BcParseResult(sport="NFL", platform="draftkings")
+        assert _determine_state(r, EndpointState.ACTIVE) == EndpointState.OFFSZN
+
+    def test_active_future_slate(self):
+        from dfs.bcdfs_adapter import BcParseResult
+        from dfs.bcdfs_scheduler import _determine_state
+        r = BcParseResult(sport="MLB", platform="draftkings")
+        r.slates = [_make_slate("Main", 180)]
+        assert _determine_state(r, EndpointState.UNKNOWN) == EndpointState.ACTIVE
+
+    def test_pre_lock(self):
+        from dfs.bcdfs_adapter import BcParseResult
+        from dfs.bcdfs_scheduler import _determine_state
+        r = BcParseResult(sport="MLB", platform="draftkings")
+        r.slates = [_make_slate("Main", 90)]
+        assert _determine_state(r, EndpointState.UNKNOWN) == EndpointState.PRE_LOCK
+
+    def test_no_start_time_defaults_active(self):
+        from dfs.bcdfs_adapter import BcParseResult
+        from dfs.bcdfs_scheduler import _determine_state
+        r = BcParseResult(sport="MLB", platform="draftkings")
+        cs = _make_slate("Main", 180); cs.start_time = None
+        r.slates = [cs]
+        assert _determine_state(r, EndpointState.UNKNOWN) == EndpointState.ACTIVE
+
+    def test_post_lock_all_past(self):
+        from dfs.bcdfs_adapter import BcParseResult
+        from dfs.bcdfs_scheduler import _determine_state
+        r = BcParseResult(sport="MLB", platform="draftkings")
+        r.slates = [_make_slate("Main", -120)]
+        assert _determine_state(r, EndpointState.UNKNOWN) == EndpointState.POST_LOCK
+
+class TestErrorRecovery:
+    @pytest.mark.asyncio
+    async def test_5xx_backoff_grows(self, mock_redis, monkeypatch):
+        from dfs.bcdfs_scheduler import _sync_one_endpoint, BcApiError
+        status = EndpointStatus(sport="MLB", platform="draftkings")
+        def fake_fetch(*a, **kw): raise BcApiError(500, "err")
+        monkeypatch.setattr("dfs.bcdfs_scheduler.fetch_bc_endpoint", fake_fetch)
+        await _sync_one_endpoint(MagicMock(), status, budget_type="auto")
+        assert status.consecutive_errors == 1
+        b1 = status.backoff_until
+        # advance past backoff for second error
+        status.backoff_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+        await _sync_one_endpoint(MagicMock(), status, budget_type="auto")
+        assert status.consecutive_errors == 2
+        assert status.backoff_until > b1
+
+    @pytest.mark.asyncio
+    async def test_success_resets_errors(self, mock_redis, monkeypatch):
+        from dfs.bcdfs_scheduler import _sync_one_endpoint
+        status = EndpointStatus(sport="MLB", platform="draftkings", state=EndpointState.ERROR)
+        status.consecutive_errors = 5
+        status.backoff_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+        def fake_fetch(*a, **kw): return {}
+        monkeypatch.setattr("dfs.bcdfs_scheduler.fetch_bc_endpoint", fake_fetch)
+        def fake_parse(*a, **kw):
+            from dfs.bcdfs_adapter import BcParseResult
+            r = BcParseResult(sport="MLB", platform="draftkings")
+            r.slates = [_make_slate("M", 180)]
+            r.players_by_slate = {r.slates[0].slate_id: []}
+            return r
+        monkeypatch.setattr("dfs.bcdfs_scheduler.parse_bc_response", fake_parse)
+        async def fake_sync(*a, **kw):
+            from dfs.bcdfs_adapter import BcSyncReport
+            return BcSyncReport(sport="MLB", platform="draftkings")
+        monkeypatch.setattr("dfs.bcdfs_scheduler.sync_bc_to_db", fake_sync)
+        await _sync_one_endpoint(MagicMock(), status, budget_type="auto")
+        assert status.consecutive_errors == 0
+        assert status.state == EndpointState.ACTIVE
+
+    @pytest.mark.asyncio
+    async def test_offseason_stays_offseason_on_error(self, mock_redis, monkeypatch):
+        from dfs.bcdfs_scheduler import _sync_one_endpoint, BcApiError
+        status = EndpointStatus(sport="NFL", platform="draftkings", state=EndpointState.OFFSZN)
+        def fake_fetch(*a, **kw): raise BcApiError(500, "err")
+        monkeypatch.setattr("dfs.bcdfs_scheduler.fetch_bc_endpoint", fake_fetch)
+        await _sync_one_endpoint(MagicMock(), status, budget_type="auto")
+        assert status.state == EndpointState.OFFSZN
