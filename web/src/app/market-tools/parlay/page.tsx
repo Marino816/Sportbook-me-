@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Layers, X, ChevronRight, SearchIcon } from "lucide-react";
+import { Layers, X, ChevronRight, SearchIcon, ChevronDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { formatBookmakerName, buildBookmakerUniverse } from "@/lib/bookmakers";
@@ -9,6 +9,7 @@ import { formatBookmakerName, buildBookmakerUniverse } from "@/lib/bookmakers";
 const LEAGUES = ["MLB","NFL","NBA","NHL","NCAAF","NCAAB"] as const;
 type League = typeof LEAGUES[number];
 const BET_TYPES = ["moneyline","spread","total","player_prop","other"] as const;
+const INITIAL_VISIBLE_BOOKS = 12;  // number of sportsbook tiles shown before "Show More"
 
 interface Leg {
   id: string; eventName: string; market: string; selection: string;
@@ -169,6 +170,7 @@ export default function ParlayBuilderPage() {
   const [selectedBook,setSelectedBook]=useState<string>("");
   const [propFilter,setPropFilter]=useState("");
   const [selectedDateIdx,setSelectedDateIdx]=useState(0);
+  const [showAllBooks,setShowAllBooks]=useState(false);
 
   const { events:rawEvents, loading } = useEvents(activeLeague);
   const events = useMemo(()=>{
@@ -231,6 +233,18 @@ export default function ParlayBuilderPage() {
 
   const allSameEvent = legs.length>=2&&legs.every(l=>l.eventName===legs[0]?.eventName);
 
+  // Sorted sportsbooks: popular/available first, then alphabetical
+  const sortedBooks = useMemo(()=>{
+    const popular = ["draftkings","fanduel","betmgm","caesars","espnbet","bovada","pinnacle","bet365","pointsbet","barstool"];
+    const seen = new Set<string>(); const out: string[]=[];
+    for(const b of popular){if(availableBooks.includes(b)&&!seen.has(b)){out.push(b);seen.add(b);}}
+    for(const b of availableBooks.sort()){if(!seen.has(b))out.push(b);}
+    return out;
+  },[availableBooks]);
+
+  const visibleBooks = showAllBooks ? sortedBooks : sortedBooks.slice(0,INITIAL_VISIBLE_BOOKS);
+  const hiddenCount = sortedBooks.length - INITIAL_VISIBLE_BOOKS;
+
 
   return (
     <div style={{maxWidth:"100%",margin:"0 auto",padding:"8px 16px 12px",color:C.text,height:"calc(100vh - 72px)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -240,13 +254,54 @@ export default function ParlayBuilderPage() {
           <Layers size={22} color={C.gold}/>
           <h1 style={{fontSize:18,fontWeight:800,margin:0}}>Parlay Builder</h1>
         </div>
-        <select value={selectedBook} onChange={e=>{setSelectedBook(e.target.value);setLegs([]);}} style={{
-          padding:"6px 12px",borderRadius:8,fontSize:12,fontWeight:700,background:C.card,border:"1px solid "+C.border,color:C.gold,cursor:"pointer",minWidth:200,
-        }}>
-          <option value="" disabled>{loading?"Loading books…":"Select sportsbook ("+availableBooks.length+" available)"}</option>
-          {availableBooks.map(b=><option key={b} value={b}>{formatBookmakerName(b)}</option>)}
-        </select>
+        <span style={{fontSize:11,color:C.subtle}}>{availableBooks.length} sportsbooks available</span>
       </div>
+
+      {/* SPORTSBOOK TILE GRID */}
+      {!selectedBook && (
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.subtle,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>
+            {loading?"Loading sportsbooks…":"Choose a sportsbook"}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(140px, 1fr))",gap:6}}>
+            {visibleBooks.map(b=>{
+              const name = formatBookmakerName(b);
+              const sel = selectedBook===b;
+              return (
+                <button key={b} onClick={()=>{setSelectedBook(b);setLegs([]);}}
+                  style={{
+                    padding:"8px 10px",borderRadius:8,fontSize:11,fontWeight:700,
+                    background:sel?"rgba(201,168,76,0.12)":"rgba(255,255,255,0.03)",
+                    border:sel?"1px solid rgba(201,168,76,0.4)":"1px solid "+C.border,
+                    color:sel?C.gold:C.muted,cursor:"pointer",
+                    textAlign:"center",transition:"all 0.1s",
+                    whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                  }}>{name}</button>
+              );
+            })}
+          </div>
+          {hiddenCount>0 && (
+            <button onClick={()=>setShowAllBooks(!showAllBooks)}
+              style={{
+                marginTop:6,padding:"5px 14px",borderRadius:6,fontSize:10,fontWeight:700,
+                background:"rgba(255,255,255,0.02)",border:"1px solid "+C.border,
+                color:C.gold,cursor:"pointer",display:"flex",alignItems:"center",gap:4,
+              }}>
+              {showAllBooks?"Show Less":"Show More ("+hiddenCount+" more)"}
+              <ChevronDown size={12} style={{transform:showAllBooks?"rotate(180deg)":"none",transition:"transform 0.15s"}}/>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Active sportsbook indicator — compact bar when selected */}
+      {selectedBook && (
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,padding:"6px 10px",borderRadius:8,background:"rgba(201,168,76,0.08)",border:"1px solid rgba(201,168,76,0.2)"}}>
+          <span style={{fontSize:10,fontWeight:700,color:C.subtle,textTransform:"uppercase"}}>Sportsbook</span>
+          <span style={{fontSize:12,fontWeight:800,color:C.gold}}>{formatBookmakerName(selectedBook)}</span>
+          <button onClick={()=>{setSelectedBook("");setLegs([]);}} style={{marginLeft:"auto",background:"none",border:"none",color:C.subtle,cursor:"pointer",fontSize:10}}>Change</button>
+        </div>
+      )}
 
       {/* LEAGUE TABS */}
       <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>

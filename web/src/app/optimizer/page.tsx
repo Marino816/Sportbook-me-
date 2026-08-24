@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
-import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download } from "lucide-react";
+import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download, ArrowUpDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -21,6 +21,8 @@ const MLB_POSITIONS = ["ALL", "P", "C", "1B", "2B", "3B", "SS", "OF"] as const;
 
 type MainTab = "pool" | "saved" | "built";
 type SubTab = "all" | "excluded" | "liked";
+type SortField = "salary" | "fppg";
+type SortDir = "desc" | "asc";
 
 function liveClass(status: string): boolean {
   const s = (status || "").toUpperCase();
@@ -136,6 +138,8 @@ export default function OptimizerPage() {
 
   const [playerSearch, setPlayerSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
+  const [sortField, setSortField] = useState<SortField>("salary");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [mainTab, setMainTab] = useState<MainTab>("pool");
   const [subTab, setSubTab] = useState<SubTab>("all");
 
@@ -261,9 +265,8 @@ export default function OptimizerPage() {
     if (subTab === "excluded") pool = players.filter((p) => excludedPlayerIds.has(p.player_id));
     else if (subTab === "liked") pool = players.filter((p) => likedIds.has(p.player_id));
     else pool = players.filter((p) => !excludedPlayerIds.has(p.player_id));
-    return pool.filter((p) => {
+    pool = pool.filter((p) => {
       if (posFilter !== "ALL") {
-        // Match SGO position first, then DFS contest eligible_positions
         let eligible = normalizePosForFilter(p.position);
         const dfs = matchDFS({ name: p.name, team_id: p.team_id, position: p.position }, dfsPlayers);
         if (dfs) {
@@ -278,7 +281,27 @@ export default function OptimizerPage() {
       const evt = filteredEvents.find((e) => (e.players ?? []).some((ep) => ep.player_id === p.player_id));
       return evt ? resolveTeamName(p.team_id, evt).toLowerCase().includes(q) : false;
     });
-  }, [players, subTab, excludedPlayerIds, likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers]);
+    // ── Sorting ──
+    const sorted = [...pool].sort((a, b) => {
+      const dfsA = matchDFS({ name: a.name, team_id: a.team_id, position: a.position }, dfsPlayers);
+      const dfsB = matchDFS({ name: b.name, team_id: b.team_id, position: b.position }, dfsPlayers);
+      const poolA = projPool[a.name.toLowerCase()];
+      const poolB = projPool[b.name.toLowerCase()];
+      const fpA = poolA?.projected_fp != null && poolA?.projection_source !== "UNAVAILABLE" ? poolA.projected_fp : null;
+      const fpB = poolB?.projected_fp != null && poolB?.projection_source !== "UNAVAILABLE" ? poolB.projected_fp : null;
+      if (sortField === "salary") {
+        const salA = dfsA?.salary ?? 0;
+        const salB = dfsB?.salary ?? 0;
+        return sortDir === "desc" ? salB - salA : salA - salB;
+      }
+      // FPPG: unavailable projections sort to bottom
+      if (fpA == null && fpB == null) return 0;
+      if (fpA == null) return 1;
+      if (fpB == null) return -1;
+      return sortDir === "desc" ? fpB - fpA : fpA - fpB;
+    });
+    return sorted;
+  }, [players, subTab, excludedPlayerIds, likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers, projPool, sortField, sortDir]);
 
   const upcomingEvents = events.filter((e) => !liveClass(e.status));
   const canGenerate = !slatesLoading && resolvedSlateId != null && filteredEvents.length > 0;
@@ -507,7 +530,25 @@ export default function OptimizerPage() {
                 {MLB_POSITIONS.map((pos) => (
                   <button key={pos} onClick={() => setPosFilter(pos)} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: posFilter === pos ? "rgba(201,168,76,0.15)" : "#1a1f33", border: posFilter === pos ? "1px solid #c9a84c" : "1px solid #1e293b", color: posFilter === pos ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>{pos}</button>
                 ))}
-                <div style={{ position: "relative", flex: 1, maxWidth: 280, marginLeft: "auto" }}>
+                <div style={{ width: 1, height: 20, background: "#1e293b", margin: "0 4px" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <ArrowUpDown size={12} style={{ color: "#64748b" }} />
+                  <select
+                    value={sortField + "|" + sortDir}
+                    onChange={(e) => {
+                      const [f, d] = e.target.value.split("|") as [SortField, SortDir];
+                      setSortField(f); setSortDir(d);
+                    }}
+                    style={{ padding: "4px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#c9a84c", cursor: "pointer", outline: "none" }}
+                  >
+                    <option value="salary|desc">Salary — High to Low</option>
+                    <option value="salary|asc">Salary — Low to High</option>
+                    <option value="fppg|desc">FPPG — High to Low</option>
+                    <option value="fppg|asc">FPPG — Low to High</option>
+                  </select>
+                </div>
+                <div style={{ width: 1, height: 20, background: "#1e293b", margin: "0 4px" }} />
+                <div style={{ position: "relative", flex: 1, maxWidth: 260 }}>
                   <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
                   <input type="text" placeholder="Search players..." value={playerSearch} onChange={(e) => setPlayerSearch(e.target.value)} style={{ width: "100%", padding: "6px 10px 6px 30px", borderRadius: 8, fontSize: 12, background: "#0a0f24", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
                 </div>
