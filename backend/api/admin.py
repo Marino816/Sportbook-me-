@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from datetime import datetime, timedelta, timezone
@@ -6,6 +6,7 @@ from models.database import get_db
 from models.domain import User, Subscription, SystemStatus
 from api.utils import wrap_data
 from api.auth import get_current_user, require_admin
+from typing import Optional
 
 router = APIRouter()
 
@@ -134,21 +135,49 @@ async def trigger_manual_sync(
     return wrap_data({"task_id": str(task_result.id), "status": "success"})
 
 
-@router.post("/beta/toggle/{user_id}")
-async def toggle_beta_access(
-    user_id: int,
+@router.post("/bcdfs/sync")
+async def bcdfs_admin_refresh(
+    sport: str = Query(..., description="Sport: MLB, NFL, NBA, GOLF"),
+    platform: str = Query(..., description="Platform: draftkings or fanduel"),
     db: AsyncSession = Depends(get_db),
     _: User = _admin,
 ):
-    """Admin: toggle beta access for a user. Invite-only closed beta control."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    target_user = result.scalars().first()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    target_user.is_beta = not target_user.is_beta
-    await db.commit()
-    return wrap_data({
-        "user_id": target_user.id,
-        "email": target_user.email,
-        "is_beta": target_user.is_beta,
-    })
+    """Admin-only: manually refresh one BCDFS endpoint.
+
+    Uses the same adapter + rate limiter as the automated scheduler.
+    Returns canonical sync statistics — NEVER raw BC JSON."""
+    try:
+        from dfs.bcdfs_scheduler import admin_refresh
+        result = await admin_refresh(db, sport, platform)
+        return wrap_data(result, source="blue_collar_sync")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BCDFS sync failed: {e}")
+
+
+@router.get("/bcdfs/status")
+async def bcdfs_operational_status(
+    _: User = _admin,
+):
+    """Admin-only: operational status of the BCDFS scheduler.
+
+    Includes per-endpoint state, daily request budget, last sync times,
+    and error info. Never exposes BCDFS_API_KEY or raw BC data."""
+    from dfs.bcdfs_scheduler import get_operational_status
+    return wrap_data(get_operational_status(), source="bcdfs_scheduler")
+
+
+@router.post("/bcdfs/sync-all")
+async def bcdfs_sync_all_due(
+    db: AsyncSession = Depends(get_db),
+    _: User = _admin,
+):
+    """Admin-only: sync all BCDFS endpoints that are due for refresh.
+
+    Same logic as the automated scheduler tick, triggered manually.
+    Skips endpoints in backoff or not yet due."""
+    try:
+        from dfs.bcdfs_scheduler import scheduler_tick
+        result = await scheduler_tick(db)
+        return wrap_data(result, source="bcdfs_sync_all")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"BCDFS sync-all failed: {e}")
