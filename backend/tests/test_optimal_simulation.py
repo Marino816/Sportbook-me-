@@ -174,6 +174,17 @@ class TestFailureClassification:
         assert hasattr(result, "failures_unexpected")
         assert hasattr(result, "p50_solve_seconds")
         assert hasattr(result, "p95_solve_seconds")
+        assert hasattr(result, "completions_optimal")
+        assert hasattr(result, "completions_feasible")
+        assert hasattr(result, "optimality_rate")
+
+    def test_optimality_denominator(self):
+        pool = make_pool(30)
+        result = simulate_true_optimal(pool, sport="MLB", n_sims=10, seed=42, sim_timeout=2.0)
+        # optimal + feasible = completed
+        assert result.completions_optimal + result.completions_feasible == result.n_completed
+        # optimality_rate = optimal / requested
+        assert result.optimality_rate == round(result.completions_optimal / result.n_requested * 100.0, 1)
 
     def test_requested_preserved(self):
         pool = make_pool(30)

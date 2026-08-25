@@ -85,6 +85,12 @@ class SimBatchResult:
         d = max(self.n_requested, 1)
         return round(self.n_completed / d * 100.0, 1)
 
+    @property
+    def optimality_rate(self) -> float:
+        """% of requested sims where CP-SAT returned proven-OPTIMAL."""
+        d = max(self.n_requested, 1)
+        return round(self.completions_optimal / d * 100.0, 1)
+
     def top_n(self, n: int = 20) -> list[SimPlayerResult]:
         return sorted(self.players, key=lambda p: p.optimal_pct, reverse=True)[:n]
 
@@ -216,11 +222,16 @@ def simulate_true_optimal(
     failure_msg = ""
 
     # ── Main simulation loop ──
-    # min_salary=0: the $42K floor is a production soft guideline, not a
-    # mathematical requirement for Optimal% computation. Cap + roster slots
-    # are sufficient constraints. Dropping it reduces CP-SAT complexity.
-    # num_workers=4: single-worker caused 17-19% timeout rate on this slate
-    # because the search tree is too broad for one thread within 3-5s.
+    # Constraint policy for baseline Optimal%:
+    #  - min_salary=0: the $42K floor is an SB ME soft guideline, not a DK
+    #    legality rule.  DK only requires salary <= $50,000 (the cap).
+    #  - pitcher_conflict=False: "avoid pitcher vs his own opposing hitters"
+    #    is an SB ME strategy preference (STRATEGY_CONFIG, gpp sets it False),
+    #    NOT a DK legality rule.  Enabling it adds ~202 binary constraint
+    #    pairs that made CP-SAT unable to PROVE optimality even at 30s.
+    #    Baseline Optimal% must represent the true best legal lineup, so
+    #    only platform legality rules (cap + roster slots + uniqueness) are
+    #    enforced.  num_workers=4 matches the production default.
     for sim_idx in range(n_sims):
         sliced = _pool_slice(pool, outcome_matrix, sim_idx)
 
@@ -231,6 +242,7 @@ def simulate_true_optimal(
             locks=[],
             excludes=[],
             min_salary=0,
+            pitcher_conflict=False,  # SB ME strategy pref, not DK legality — see below
         )
 
         t_solve = time.time()
