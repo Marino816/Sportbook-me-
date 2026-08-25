@@ -169,17 +169,17 @@ export default function OptimizerPage() {
       try {
         const res = await fetchDFSSlates(platform, sport);
         const pub = (res?.data ?? []).filter((s: any) => s.status === "PUBLISHED");
-        // Prefer CURRENT slates; if none exist (e.g. BC hasn't published today's
-        // data yet), fall back to all PUBLISHED slates so the dropdown is never blank.
+        // Only CURRENT slates are eligible for optimization.
+        // Stale (prior-date) slates are blocked by freshness protection
+        // so today's SGO games are never enriched onto an old slate.
         const current = pub.filter((s: any) => s.is_current !== false);
-        const eligible = current.length > 0 ? current : pub;
         if (!cancelled) {
-          setSlates(eligible);
+          setSlates(current);
           // Auto-select: prefer Main slate, then first available
-          const main = eligible.find((s: any) => s.slate_name.toLowerCase().includes("main"));
-          const defaultId = main?.id ?? (eligible.length > 0 ? eligible[0].id : null);
+          const main = current.find((s: any) => s.slate_name.toLowerCase().includes("main"));
+          const defaultId = main?.id ?? (current.length > 0 ? current[0].id : null);
           setResolvedSlateId(defaultId);
-          setHasStaleSlates(pub.length > current.length || current.length === 0);
+          setHasStaleSlates(pub.length > current.length);
         }
       } catch { if (!cancelled) { setSlates([]); setResolvedSlateId(null); setHasStaleSlates(false); } }
       finally { if (!cancelled) setSlatesLoading(false); }
@@ -477,12 +477,7 @@ export default function OptimizerPage() {
           <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${filteredEvents.length} Games · ${players.length} Players` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slates available` : "No slate selected"}
-            {hasStaleSlates && resolvedSlateId && (
-              <span style={{ color: "#f97316", marginLeft: 6, fontSize: 10, fontWeight: 700 }}>
-                ⚠ PRIOR DATE — new slate not yet available
-              </span>
-            )}
+            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${filteredEvents.length} Games · ${players.length} Players` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate is available yet` : "Select a slate"}
           </span>
         </div>
         <button onClick={() => setShowStackingRules(!showStackingRules)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: showStackingRules ? "rgba(201,168,76,0.15)" : "#0a0f24", border: showStackingRules ? "1px solid #c9a84c" : "1px solid #1e293b", color: showStackingRules ? "#c9a84c" : "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
