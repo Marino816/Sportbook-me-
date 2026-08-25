@@ -206,6 +206,8 @@ def simulate_true_optimal(
             forbidden_ids=set(),
             random_seed=None,  # deterministic from sim seed
             prior_ids=[],
+            timeout_seconds=sim_timeout,
+            num_workers=1,  # single worker per sim — sims run sequentially
         )
         solve_s = time.time() - t_solve
         total_solve_time += solve_s

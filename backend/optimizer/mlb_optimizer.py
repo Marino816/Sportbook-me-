@@ -192,7 +192,7 @@ class MLBOptimizer:
             return set()
         return {i for i in self.hitters if self.players[i].get("team") == opp}
 
-    def build_lineup(self, forbidden_ids: set[int] = None, random_seed: int = None, prior_ids: list[set[int]] = None) -> dict | None:
+    def build_lineup(self, forbidden_ids: set[int] = None, random_seed: int = None, prior_ids: list[set[int]] = None, timeout_seconds: float = 15.0, num_workers: int = 4) -> dict | None:
         """
         Build one optimal MLB lineup via CP-SAT.
         prior_ids: list of player-id sets from previous lineups to avoid.
@@ -285,8 +285,8 @@ class MLBOptimizer:
 
         # Solve
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = 15
-        solver.parameters.num_search_workers = 4
+        solver.parameters.max_time_in_seconds = timeout_seconds
+        solver.parameters.num_search_workers = num_workers
         if random_seed is not None:
             solver.parameters.random_seed = random_seed
 
