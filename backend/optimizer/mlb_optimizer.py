@@ -212,9 +212,12 @@ class MLBOptimizer:
         # Decision variables: x[i] = 1 if player i selected
         x = [model.NewBoolVar(f"x_{i}") for i in range(n)]
 
-        # Objective: maximize total projected_fp
+        # Objective: maximize total projected_fp (or simulated_fp when present, e.g. sim engine).
+        def _obj_val(p: dict) -> float:
+            sim = p.get("simulated_fp")
+            return float(sim) if sim is not None else float(p.get("projected_fp", 0))
         model.Maximize(
-            sum(int(self.players[i].get("projected_fp", 0) * 10) * x[i] for i in range(n))
+            sum(int(_obj_val(self.players[i]) * 10) * x[i] for i in range(n))
         )
 
         # Exactly total_slots players

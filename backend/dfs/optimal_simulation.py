@@ -52,18 +52,34 @@ class SimPlayerResult:
 @dataclass
 class SimBatchResult:
     """Result of a complete simulation batch."""
+
     sport: str
     platform: str
     slate_id: int
-    n_completed: int
-    n_infeasible: int
-    n_total: int
+    n_requested: int        # number of sims requested
+    n_completed: int        # successfully built a legal lineup
+    n_total: int            # total sims attempted (= n_requested)
     runtime_seconds: float
     avg_solve_seconds: float
+    p50_solve_seconds: float = 0.0
+    p95_solve_seconds: float = 0.0
+
+    # ── Failure categories ──
+    failures_infeasible: int = 0        # solver returned INFEASIBLE
+    failures_timeout: int = 0           # solver timed out with no solution
+    failures_invalid_lineup: int = 0    # solver returned a lineup that failed validation
+    failures_unexpected: int = 0        # unexpected exception during this sim
+    failure_message: str = ""           # detail for last failure type seen
+
     players: list[SimPlayerResult] = field(default_factory=list)
     model_version: str = SIM_ENGINE_VERSION
     generated_at: str = ""
     inputs_hash: str = ""
+
+    @property
+    def completion_rate(self) -> float:
+        d = max(self.n_requested, 1)
+        return round(self.n_completed / d * 100.0, 1)
 
     def top_n(self, n: int = 20) -> list[SimPlayerResult]:
         return sorted(self.players, key=lambda p: p.optimal_pct, reverse=True)[:n]
@@ -124,11 +140,18 @@ def _generate_outcomes(
 
 
 def _pool_slice(pool: list[dict], sim_outcomes: np.ndarray, sim_idx: int) -> list[dict]:
-    """Return a copy of the pool with projected_fp replaced by simulated outcomes for one sim."""
+    """Return a copy of the pool with simulated outcome in 'simulated_fp'.
+
+    Keeps original 'projected_fp' intact so CP-SAT's eligibility check
+    (_build_maps) still sees the real SB projection and does not drop a
+    valid slate player who simulated negative.  The objective function
+    uses 'simulated_fp' when present; negative values are legitimate
+    (pitchers can have a bad simulated outcome).
+    """
     sliced = []
     for j, p in enumerate(pool):
         p_copy = dict(p)
-        p_copy["projected_fp"] = max(0.0, float(sim_outcomes[sim_idx, j]))
+        p_copy["simulated_fp"] = float(sim_outcomes[sim_idx, j])
         sliced.append(p_copy)
     return sliced
 
@@ -182,15 +205,16 @@ def simulate_true_optimal(
 
     appearances = {pid: 0 for pid in player_ids}
     completed = 0
-    infeasible = 0
-    total_solve_time = 0.0
+    failures = {"infeasible": 0, "timeout": 0, "invalid_lineup": 0, "unexpected": 0}
+    solve_times = []
+    failure_msg = ""
 
     # ── Main simulation loop ──
     for sim_idx in range(n_sims):
-        # Slice pool with simulated outcomes for this run
         sliced = _pool_slice(pool, outcome_matrix, sim_idx)
 
-        # Build optimizer — only use legitimately projected players
+        # Build optimizer — only use legitimately projected players (eligibility
+        # based on original projected_fp, not simulated_fp — see _pool_slice).
         opt = MLBOptimizer(
             pool=sliced,
             platform=platform,
@@ -199,32 +223,51 @@ def simulate_true_optimal(
             excludes=[],
         )
 
-        # We only need ONE optimal lineup per sim (no uniqueness constraints,
-        # no prior lineups, no exposure caps — just the raw optimal solve).
         t_solve = time.time()
-        lineup = opt.build_lineup(
-            forbidden_ids=set(),
-            random_seed=None,  # deterministic from sim seed
-            prior_ids=[],
-            timeout_seconds=sim_timeout,
-            num_workers=1,  # single worker per sim — sims run sequentially
-        )
+        lineup = None
+        try:
+            lineup = opt.build_lineup(
+                forbidden_ids=set(),
+                random_seed=None,
+                prior_ids=[],
+                timeout_seconds=sim_timeout,
+                num_workers=1,
+            )
+        except Exception:
+            failures["unexpected"] += 1
+            failure_msg = f"sim {sim_idx}: unexpected exception"
+            continue
+
         solve_s = time.time() - t_solve
-        total_solve_time += solve_s
+        solve_times.append(solve_s)
 
         if lineup is None:
-            infeasible += 1
+            # Try to distinguish timeout from infeasible.
+            # After a timeout CP-SAT sometimes returns FEASIBLE if it found
+            # *something* suboptimal; a None here means NO solution at all.
+            # If the solve time was close to sim_timeout, classify as timeout.
+            if solve_s >= sim_timeout * 0.9:
+                failures["timeout"] += 1
+                continue
+            failures["infeasible"] += 1
+            continue
+
+        # Validate the returned lineup
+        v = validate_lineup(lineup, platform, sport_upper)
+        if v:
+            failures["invalid_lineup"] += 1
+            failure_msg = f"sim {sim_idx}: " + "; ".join(v[:3])
             continue
 
         completed += 1
 
         # Record appearances
-        seen_in_this_lineup = set()
+        seen = set()
         for pl in lineup.get("players", []):
             pid = str(pl.get("id") or "")
-            if pid and pid not in seen_in_this_lineup:
+            if pid and pid not in seen:
                 appearances[pid] = appearances.get(pid, 0) + 1
-                seen_in_this_lineup.add(pid)
+                seen.add(pid)
 
         if progress_callback and (sim_idx + 1) % 10 == 0:
             progress_callback(completed, sim_idx + 1)
@@ -247,27 +290,36 @@ def simulate_true_optimal(
             optimal_pct=round(appearances.get(pid, 0) / denom * 100.0, 2),
         ))
 
-    # Compute input hash for cache versioning
-    inputs_hash = _compute_inputs_hash(pool, sport, platform, seed, n_sims, strategy)
+    # Sort solve times for percentiles
+    solve_times.sort()
+    n_st = len(solve_times)
 
     result = SimBatchResult(
         sport=sport_upper,
         platform=platform,
         slate_id=int(pool[0].get("slate_id", 0)) if pool else 0,
+        n_requested=n_sims,
         n_completed=completed,
-        n_infeasible=infeasible,
         n_total=n_sims,
         runtime_seconds=round(elapsed, 2),
-        avg_solve_seconds=round(total_solve_time / max(completed, 1), 3) if completed else 0.0,
+        avg_solve_seconds=round(sum(solve_times) / max(n_st, 1), 3) if n_st else 0.0,
+        p50_solve_seconds=round(solve_times[int(n_st * 0.5)], 3) if n_st > 0 else 0.0,
+        p95_solve_seconds=round(solve_times[min(int(n_st * 0.95), n_st - 1)], 3) if n_st > 0 else 0.0,
+        failures_infeasible=failures["infeasible"],
+        failures_timeout=failures["timeout"],
+        failures_invalid_lineup=failures["invalid_lineup"],
+        failures_unexpected=failures["unexpected"],
+        failure_message=failure_msg,
         players=players_out,
         generated_at=datetime.now(timezone.utc).isoformat(),
-        inputs_hash=inputs_hash,
     )
 
+    # Compute input hash for cache versioning
+    result.inputs_hash = _compute_inputs_hash(pool, sport, platform, seed, n_sims, strategy)
+
     logger.info(
-        "Optimal pct sim done: %d/%d solves, %.1fs total, %.2fs avg/solve",
-        completed, n_sims, elapsed,
-        total_solve_time / max(completed, 1),
+        "Optimal pct sim done: %d/%d solves (%.1f%%), %.1fs total",
+        completed, n_sims, result.completion_rate, elapsed,
     )
 
     return result

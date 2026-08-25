@@ -71,8 +71,33 @@ class TestOutcomeMatrix:
         out = _generate_outcomes(pool, 5, "MLB", seed=42)
         sliced = _pool_slice(pool, out, 0)
         assert len(sliced) == len(pool)
-        # projected_fp replaced by simulated outcome for that sim
-        assert sliced[0]["projected_fp"] == max(0.0, float(out[0, 0]))
+        # projected_fp is preserved (eligibility), simulated_fp carries the outcome
+        assert sliced[0]["projected_fp"] == pool[0]["projected_fp"]
+        assert "simulated_fp" in sliced[0]
+        assert isinstance(sliced[0]["simulated_fp"], float)
+
+    def test_slice_keeps_eligibility_with_negative_pitcher(self):
+        """Pitcher who sims negative still keeps original projected_fp > 0 → eligible."""
+        pool = make_pool(20)
+        # Force a pitcher to have negative outcome
+        import numpy as np
+        out = np.ones((3, len(pool))) * -5.0  # all sim to -5
+        sliced = _pool_slice(pool, out, 0)
+        for j, p in enumerate(pool):
+            # projected_fp should be original (positive for projected players)
+            assert sliced[j]["projected_fp"] == p["projected_fp"]
+            # simulated_fp should be the negative value
+            assert sliced[j]["simulated_fp"] == -5.0
+
+    def test_slice_zero_outcome_keeps_eligibility(self):
+        """Player who sims to 0 still has original projected_fp."""
+        pool = make_pool(20)
+        import numpy as np
+        out = np.zeros((3, len(pool)))
+        sliced = _pool_slice(pool, out, 0)
+        for j, p in enumerate(pool):
+            assert sliced[j]["projected_fp"] == p["projected_fp"]
+            assert sliced[j]["simulated_fp"] == 0.0
 
 
 class TestSimulationEngine:
@@ -133,6 +158,67 @@ class TestLineupValidation:
             lu2["players"] = lu["players"][:1] * 10
             violations = validate_lineup(lu2, "draftkings", "MLB")
             assert any("Duplicate" in v or "Expected" in v for v in violations)
+
+
+class TestFailureClassification:
+    """Phase 2A.1 — completeness + failure categorisation."""
+
+    def test_result_fields_present(self):
+        pool = make_pool(30)
+        result = simulate_true_optimal(pool, sport="MLB", n_sims=5, seed=42, sim_timeout=2.0)
+        assert hasattr(result, "n_requested")
+        assert hasattr(result, "completion_rate")
+        assert hasattr(result, "failures_infeasible")
+        assert hasattr(result, "failures_timeout")
+        assert hasattr(result, "failures_invalid_lineup")
+        assert hasattr(result, "failures_unexpected")
+        assert hasattr(result, "p50_solve_seconds")
+        assert hasattr(result, "p95_solve_seconds")
+
+    def test_requested_preserved(self):
+        pool = make_pool(30)
+        for n in [5, 10, 20]:
+            result = simulate_true_optimal(pool, sport="MLB", n_sims=n, seed=42, sim_timeout=2.0)
+            assert result.n_requested == n
+
+    def test_completed_denominator(self):
+        pool = make_pool(30)
+        result = simulate_true_optimal(pool, sport="MLB", n_sims=10, seed=42, sim_timeout=2.0)
+        # Every appearance sum = completed * 10 (DK roster)
+        total = sum(p.appearances for p in result.players)
+        assert total == result.n_completed * 10
+
+    def test_failure_counts_sum(self):
+        pool = make_pool(30)
+        result = simulate_true_optimal(pool, sport="MLB", n_sims=20, seed=42, sim_timeout=2.0)
+        accounted = (result.n_completed + result.failures_infeasible +
+                     result.failures_timeout + result.failures_invalid_lineup +
+                     result.failures_unexpected)
+        assert accounted == result.n_requested
+
+    def test_no_001_in_result(self):
+        pool = make_pool(30)
+        result = simulate_true_optimal(pool, sport="MLB", n_sims=5, seed=42, sim_timeout=2.0)
+        for p in result.players:
+            assert p.projected_fp != 0.01
+
+    def test_no_bc_projection_in_result(self):
+        pool = make_pool(30)
+        result = simulate_true_optimal(pool, sport="MLB", n_sims=5, seed=42, sim_timeout=2.0)
+        for p in result.players:
+            assert "blue" not in str(p.player_id).lower()
+            assert "collar" not in str(p.player_id).lower()
+
+
+class TestDeterministicReproducibility:
+    def test_seeded_run_reproducible(self):
+        pool = make_pool(30)
+        a = simulate_true_optimal(pool, sport="MLB", n_sims=5, seed=42, sim_timeout=2.0)
+        b = simulate_true_optimal(pool, sport="MLB", n_sims=5, seed=42, sim_timeout=2.0)
+        assert a.n_completed == b.n_completed
+        assert a.inputs_hash == b.inputs_hash
+        for pa, pb in zip(a.players, b.players):
+            assert pa.optimal_pct == pb.optimal_pct
 
 
 class TestCacheLayer:
