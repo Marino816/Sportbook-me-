@@ -29,10 +29,7 @@ from integrations.odds import OddsAPI
 from models.database import SessionLocal
 from models.domain import SystemStatus
 
-from celery import Celery
-
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-celery_app = Celery("worker", broker=REDIS_URL, backend=REDIS_URL)
+from worker.celery import celery_app
 
 
 @celery_app.task
@@ -81,3 +78,6 @@ def setup_periodic_tasks(sender, **kwargs):
     sender.add_periodic_task(
         3600.0, sync_daily_slate.s(), name="sync_slate_every_hour"
     )
+
+# Import optimal-sim tasks so they register under the shared celery_app
+import worker.optimal_sim_tasks  # noqa: F401, E402 — registers run_optimal_sim
