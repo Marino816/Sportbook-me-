@@ -199,19 +199,38 @@ export default function OptimizerPage() {
     return () => { cancelled = true; };
   }, [resolvedSlateId]);
 
-  // Canonical pool (Own% / Leverage / Ceiling / Floor)
+  // Canonical pool (Own% / Leverage / Ceiling / Floor / SB Projections / VALUE)
   useEffect(() => {
-    if (!resolvedSlateId) { setCanonicalPool({}); return; }
+    if (!resolvedSlateId) { setCanonicalPool({}); setProjPool(prev => Object.keys(prev).length > 0 ? prev : {}); return; }
     let cancelled = false;
     (async () => {
       try {
         const res = await fetchDataHubSlate(resolvedSlateId, platform);
         if (!cancelled) {
           const map: Record<string, CanonicalPlayer> = {};
-          for (const p of res?.data?.players ?? []) map[(p.name || "").toLowerCase()] = p;
+          const projMap: Record<string, any> = {};
+          for (const p of res?.data?.players ?? []) {
+            const nm = (p.name || "").toLowerCase().trim();
+            if (nm) {
+              map[nm] = p;
+              // Seed projPool from canonical pool so SB PROJ & VALUE display before OPTIMIZE
+              projMap[nm] = {
+                projected_fp: p.projected_fp,
+                projection_source: p.projection_source,
+                salary: p.salary,
+                position: p.roster_position || p.position,
+                team: p.team,
+                opponent: p.opponent,
+              };
+            }
+          }
           setCanonicalPool(map);
+          setProjPool(prev => {
+            // Merge canonical projections with any existing (from prior OPTIMIZE click)
+            return { ...projMap, ...prev };
+          });
         }
-      } catch { if (!cancelled) setCanonicalPool({}); }
+      } catch { if (!cancelled) { setCanonicalPool({}); } }
     })();
     return () => { cancelled = true; };
   }, [resolvedSlateId, platform]);
@@ -555,8 +574,8 @@ export default function OptimizerPage() {
                   >
                     <option value="salary|desc">Salary — High to Low</option>
                     <option value="salary|asc">Salary — Low to High</option>
-                    <option value="fppg|desc">FPPG — High to Low</option>
-                    <option value="fppg|asc">FPPG — Low to High</option>
+                    <option value="fppg|desc">SB Projection — High to Low</option>
+                    <option value="fppg|asc">SB Projection — Low to High</option>
                   </select>
                 </div>
                 <div style={{ width: 1, height: 20, background: "#1e293b", margin: "0 4px" }} />
@@ -572,7 +591,14 @@ export default function OptimizerPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: "#060b1a", position: "sticky", top: 0, zIndex: 1 }}>
-                        <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th><Th>Own%</Th><Th>Leverage</Th><Th>Optimal%</Th><Th>Ceiling</Th><Th>Floor</Th><Th>Props</Th><Th>Action</Th>
+                        <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th>
+                        <Th><TTip help="SB ME projected field ownership estimate. Not actual contest ownership.">SB OWN%</TTip></Th>
+                        <Th><TTip help="Positive values indicate players projected to provide stronger value relative to modeled ownership.">LEV</TTip></Th>
+                        <Th>OPT%</Th>
+                        <Th><TTip help="Modeled estimate: SB Projection × 1.35">CEIL</TTip></Th>
+                        <Th><TTip help="Modeled estimate: SB Projection × 0.65">FLOOR</TTip></Th>
+                        <Th><TTip help="Number of available player prop markets from SGO.">PROPS</TTip></Th>
+                        <Th>Action</Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -824,6 +850,16 @@ function Center({ children }: { children: React.ReactNode }) {
 
 function Muted({ children }: { children: React.ReactNode }) {
   return <p style={{ color: "#64748b", fontSize: 12 }}>{children}</p>;
+}
+
+/** Tooltip wrapper for column headers. Renders a small '?' icon with hover text. */
+function TTip({ children, help }: { children: React.ReactNode; help: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 2, cursor: "help" }}>
+      {children}
+      <span title={help} style={{ fontSize: 9, color: "#64748b", lineHeight: 1 }}>ⓘ</span>
+    </span>
+  );
 }
 
 function MiniBtn({ icon, label, onClick, disabled }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
