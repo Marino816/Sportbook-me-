@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
-import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
+import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, fetchOptimalPct, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
 import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download, ArrowUpDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
@@ -21,7 +21,7 @@ const MLB_POSITIONS = ["ALL", "P", "C", "1B", "2B", "3B", "SS", "OF"] as const;
 
 type MainTab = "pool" | "saved" | "built";
 type SubTab = "all" | "excluded" | "liked";
-type SortField = "salary" | "fppg";
+type SortField = "salary" | "fppg" | "optimal";
 type SortDir = "desc" | "asc";
 
 function liveClass(status: string): boolean {
@@ -130,6 +130,8 @@ export default function OptimizerPage() {
   const { events, loading: sgoLoading } = useEvents(sport);
 
   const [canonicalPool, setCanonicalPool] = useState<Record<string, CanonicalPlayer>>({});
+  const [optPctStatus, setOptPctStatus] = useState<string>("NOT_RUN");
+  const [optPctMap, setOptPctMap] = useState<Record<string, number>>({});
 
   const [excludedGameIds, setExcludedGameIds] = useState<Set<string>>(new Set());
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
@@ -235,6 +237,33 @@ export default function OptimizerPage() {
     return () => { cancelled = true; };
   }, [resolvedSlateId, platform]);
 
+  // Optimal% — poll cached background simulation result
+  useEffect(() => {
+    if (!resolvedSlateId) { setOptPctStatus("NOT_RUN"); setOptPctMap({}); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchOptimalPct(resolvedSlateId, platform);
+        if (cancelled) return;
+        const status = res?.data?.status ?? "NOT_RUN";
+        setOptPctStatus(status);
+        if (status === "COMPLETE" && res?.data?.result?.players) {
+          const m: Record<string, number> = {};
+          for (const p of res.data.result.players) {
+            const nm = (p.name || "").toLowerCase().trim();
+            if (nm) m[nm] = p.optimal_pct;
+          }
+          setOptPctMap(m);
+        } else {
+          setOptPctMap({});
+        }
+      } catch {
+        if (!cancelled) { setOptPctStatus("NOT_RUN"); setOptPctMap({}); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [resolvedSlateId, platform]);
+
   useEffect(() => { setPlayerSearch(""); setPosFilter("ALL"); setLineups([]); setLastGenMeta(null); }, [sport, platform]);
 
   // ── Derived ──
@@ -325,6 +354,14 @@ export default function OptimizerPage() {
         const salB = dfsB?.salary ?? 0;
         return sortDir === "desc" ? salB - salA : salA - salB;
       }
+      if (sortField === "optimal") {
+        const optA = optPctMap[a.name.toLowerCase()] ?? null;
+        const optB = optPctMap[b.name.toLowerCase()] ?? null;
+        if (optA == null && optB == null) return 0;
+        if (optA == null) return 1;
+        if (optB == null) return -1;
+        return sortDir === "desc" ? optB - optA : optA - optB;
+      }
       // FPPG: unavailable projections sort to bottom
       if (fpA == null && fpB == null) return 0;
       if (fpA == null) return 1;
@@ -332,7 +369,7 @@ export default function OptimizerPage() {
       return sortDir === "desc" ? fpB - fpA : fpA - fpB;
     });
     return sorted;
-  }, [players, subTab, excludedPlayerIds, likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers, projPool, sortField, sortDir]);
+  }, [players, subTab, excludedPlayerIds, likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers, projPool, optPctMap, sortField, sortDir]);
 
   const upcomingEvents = events.filter((e) => !liveClass(e.status));
   const canGenerate = !slatesLoading && resolvedSlateId != null && filteredEvents.length > 0;
@@ -576,6 +613,8 @@ export default function OptimizerPage() {
                     <option value="salary|asc">Salary — Low to High</option>
                     <option value="fppg|desc">SB Projection — High to Low</option>
                     <option value="fppg|asc">SB Projection — Low to High</option>
+                    <option value="optimal|desc">Optimal% — High to Low</option>
+                    <option value="optimal|asc">Optimal% — Low to High</option>
                   </select>
                 </div>
                 <div style={{ width: 1, height: 20, background: "#1e293b", margin: "0 4px" }} />
@@ -594,7 +633,7 @@ export default function OptimizerPage() {
                         <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th>
                         <Th><TTip help="SB ME projected field ownership estimate. Not actual contest ownership.">SB OWN%</TTip></Th>
                         <Th><TTip help="Positive values indicate players projected to provide stronger value relative to modeled ownership.">LEV</TTip></Th>
-                        <Th>OPT%</Th>
+                        <Th><TTip help="Percentage of SB ME simulations in which this player appeared in the highest-scoring legal lineup for the simulated slate outcome.">OPT%</TTip></Th>
                         <Th><TTip help="Modeled estimate: SB Projection × 1.35">CEIL</TTip></Th>
                         <Th><TTip help="Modeled estimate: SB Projection × 0.65">FLOOR</TTip></Th>
                         <Th><TTip help="Number of available player prop markets from SGO.">PROPS</TTip></Th>
@@ -622,6 +661,7 @@ export default function OptimizerPage() {
                         const leverage = canon?.leverage ?? null;
                         const ceiling = canon?.ceiling ?? null;
                         const floor = canon?.floor ?? null;
+                        const optPct = optPctMap[p.name.toLowerCase()] ?? null;
                         return (
                           <tr key={p.player_id} style={{ borderBottom: "1px solid #1e293b20", opacity: isExcluded ? 0.35 : 1, background: isLocked ? "rgba(201,168,76,0.08)" : isLiked ? "rgba(201,168,76,0.03)" : "transparent" }}>
                             <Td>{teamName}</Td>
@@ -642,7 +682,7 @@ export default function OptimizerPage() {
                             <Td style={{ color: value !== "—" ? "#c9a84c" : "#64748b", fontWeight: value !== "—" ? 700 : 400 }}>{value}</Td>
                             <Td style={{ color: ownPct != null ? "#94a3b8" : "#64748b" }}>{ownPct != null ? `${ownPct.toFixed(1)}%` : "N/A"}</Td>
                             <Td style={{ color: leverage != null ? (leverage > 0 ? "#4ade80" : "#f87171") : "#64748b" }}>{leverage != null ? leverage.toFixed(1) : "N/A"}</Td>
-                            <Td style={{ color: "#64748b" }}>N/A</Td>
+                            <Td style={{ color: optPct != null ? "#c9a84c" : "#64748b", fontWeight: optPct != null ? 700 : 400 }}>{optPct != null ? `${optPct.toFixed(1)}%` : optPctStatus === "COMPLETE" ? "—" : optPctStatus === "RUNNING" || optPctStatus === "QUEUED" ? "Calculating…" : "—"}</Td>
                             <Td style={{ color: ceiling != null ? "#94a3b8" : "#64748b" }}>{ceiling != null ? ceiling.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: floor != null ? "#94a3b8" : "#64748b" }}>{floor != null ? floor.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: mCount ? "#c9a84c" : "#64748b" }}>{mCount || "—"}</Td>

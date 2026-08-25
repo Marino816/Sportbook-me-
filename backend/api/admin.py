@@ -181,3 +181,41 @@ async def bcdfs_sync_all_due(
         return wrap_data(result, source="bcdfs_sync_all")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"BCDFS sync-all failed: {e}")
+
+
+@router.get("/optimal-sim/status")
+async def optimal_sim_status(
+    sport: str = Query("MLB"),
+    platform: str = Query("draftkings"),
+    slate_id: int = Query(...),
+    _: User = _admin,
+):
+    """Admin: view optimal% simulation status for a slate."""
+    import dfs.optimal_cache as oc
+    status = oc.get_status(platform, sport, slate_id)
+    result = None
+    if status == oc.STATUS_COMPLETE:
+        result = oc.get_result(platform, sport, slate_id)
+    return wrap_data({
+        "slate_id": slate_id, "platform": platform, "sport": sport,
+        "status": status, "result": result,
+    }, source="admin")
+
+
+@router.post("/optimal-sim/queue")
+async def optimal_sim_queue(
+    sport: str = Query("MLB"),
+    platform: str = Query("draftkings"),
+    slate_id: int = Query(...),
+    n_sims: int = Query(500),
+    _: User = _admin,
+):
+    """Admin: queue an Optimal% simulation via Celery."""
+    from worker.optimal_sim_tasks import run_optimal_sim
+    try:
+        task = run_optimal_sim.delay(platform=platform, sport=sport, slate_id=slate_id,
+                                      n_sims=n_sims, seed=42, timeout=1.0)
+        return wrap_data({"queued": True, "task_id": task.id, "slate_id": slate_id}, source="admin")
+    except Exception as e:
+        # Celery worker may not be running — fall back to status message
+        return wrap_data({"queued": False, "error": str(e), "note": "Celery worker may be offline"}, source="admin")

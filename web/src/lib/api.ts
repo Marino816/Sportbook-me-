@@ -367,6 +367,24 @@ export async function fetchDataHubSlate(slateId: number, platform: string): Prom
   return apiFetch<any>(`/data-hub/slate?slate_id=${slateId}&platform=${platform}`);
 }
 
+export interface OptimalPctResponse {
+  slate_id: number;
+  platform: string;
+  sport: string;
+  status: string;
+  result: {
+    n_requested: number;
+    n_completed: number;
+    inputs_hash: string;
+    generated_at: string;
+    players: { player_id: string; name: string; optimal_pct: number; appearances: number }[];
+  } | null;
+}
+
+export async function fetchOptimalPct(slateId: number, platform: string): Promise<ApiResponse<OptimalPctResponse>> {
+  return apiFetch<any>(`/data-hub/optimal-pct?slate_id=${slateId}&platform=${platform}&sport=MLB`);
+}
+
 export interface SimPlayer {
   id: string;
   name: string;
