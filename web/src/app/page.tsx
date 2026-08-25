@@ -236,94 +236,89 @@ export default function LandingPage() {
               </svg>
             </div>
 
-            {/* ── Live Projections card ── */}
-            <div className="rounded-3xl border overflow-hidden shadow-2xl relative z-10 mb-4" style={{ background: cardElevated, borderColor: border }}>
+            {/* ── SB ME INTELLIGENCE™ PRODUCT SHOWCASE ── */}
+            <div className="rounded-3xl border overflow-hidden shadow-2xl relative z-10" style={{ background: cardElevated, borderColor: border }}>
+              {/* Header */}
               <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: border }}>
                 <div className="flex items-center gap-2.5">
                   <div className="live-dot" />
-                  <span className="text-xs font-bold tracking-widest" style={{ color: gold }}>LIVE PROJECTIONS</span>
+                  <span className="text-xs font-bold tracking-widest" style={{ color: gold }}>SB ME INTELLIGENCE&trade;</span>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${gold}18`, color: gold }}>SB ME INTELLIGENCE</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${gold}15`, color: gold }}>INTERFACE DEMO</span>
               </div>
 
-              <div className="flex gap-1.5 px-4 py-3 border-b" style={{ borderColor: border }}>
-                {["MLB", "NFL", "NBA", "NHL"].map((s) => (
-                  <span key={s} className="text-[10px] font-bold px-2.5 py-1 rounded-md"
-                    style={{ color: s === "MLB" ? gold : textSecondary, background: s === "MLB" ? `${gold}15` : "transparent", border: s === "MLB" ? `1px solid ${gold}30` : "1px solid transparent" }}>
+              {/* Sports tabs */}
+              <div className="flex gap-1 px-4 py-2.5 border-b overflow-x-auto" style={{ borderColor: border }}>
+                {["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB", "GOLF"].map((s, i) => (
+                  <span key={s} className="text-[10px] font-bold px-2 py-1 rounded-md shrink-0"
+                    style={{ color: i === 0 ? gold : textSecondary, background: i === 0 ? `${gold}12` : "transparent", border: i === 0 ? `1px solid ${gold}25` : "1px solid transparent" }}>
                     {s}
                   </span>
                 ))}
               </div>
 
-              <div className="px-5 py-3 space-y-3">
-                {[
-                  { name: "Chris Sale", pos: "P", proj: 36.5, sal: "$9,600", trend: [28,30,33,35,36.5] },
-                  { name: "Y. Yamamoto", pos: "P", proj: 37.5, sal: "$10,200", trend: [30,32,35,37,37.5] },
-                  { name: "Freddie Freeman", pos: "1B", proj: 16.8, sal: "$5,400", trend: [12,14,15,16,16.8] },
-                  { name: "Yainer Diaz", pos: "C", proj: 13.1, sal: "$3,700", trend: [9,10,12,13,13.1] },
-                ].map((row, i) => (
-                  <div key={i} className="flex items-center gap-3 text-sm" style={{ color: textSecondary }}>
-                    <span className="w-6 text-[10px] font-bold uppercase" style={{ color: gold }}>{row.pos}</span>
-                    <span className="flex-1 font-semibold" style={{ color: textPrimary }}>{row.name}</span>
-                    <span className="text-[11px]" style={{ color: textMuted }}>{row.sal}</span>
-                    <span className="font-bold" style={{ color: gold }}>{row.proj}</span>
-                    <Sparkline data={row.trend} stroke={gold} />
-                  </div>
-                ))}
+              {/* Headline + copy inside the card */}
+              <div className="px-5 pt-4 pb-2">
+                <p className="text-xs font-extrabold leading-snug mb-1" style={{ color: textPrimary }}>
+                  One Platform. Your Data.<br /><span style={{ color: gold }}>Smarter Lineups &amp; Sports Analysis.</span>
+                </p>
+                <p className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                  Real-time DFS data, SB ME projections, lineup optimization, simulations, stacks, player research, and sportsbook market analysis — built into one intelligence platform.
+                </p>
               </div>
-            </div>
 
-            {/* ── Market Movement + Odds Comparison card ── */}
-            <div className="rounded-2xl border p-3.5 relative z-10 mb-3 flex items-center gap-4"
-              style={{ background: cardElevated, borderColor: border }}>
-              <div className="flex items-center gap-2">
-                <TrendingUp size={16} style={{ color: gold }} />
-                <div>
-                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>LINE MOVEMENT</div>
-                  <div className="text-sm font-extrabold" style={{ color: textPrimary }}>MIL +12.5¢</div>
+              {/* Optimizer-style preview table */}
+              <div className="px-5 py-2.5">
+                <div className="text-[9px] font-bold tracking-wider uppercase mb-1.5" style={{ color: textMuted }}>DFS Optimizer Preview</div>
+                <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${border}80` }}>
+                  <table className="w-full text-[10px]" style={{ borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: `${navy}80` }}>
+                        {["PLAYER", "SALARY", "SB PROJ.", "FPPG", "CEILING", "OWN%", "LEV."].map((h) => (
+                          <th key={h} className="py-1.5 px-1.5 text-left font-bold" style={{ color: textMuted }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { n: "C. Sale", p: "P", sal: "$9,600", proj: 36.5, fppg: 38.0, ceil: 52.0, own: "18.4%", lev: 2.1 },
+                        { n: "L. Gilbert", p: "P", sal: "$9,800", proj: 34.5, fppg: 35.2, ceil: 48.0, own: "14.2%", lev: 1.6 },
+                        { n: "F. Freeman", p: "1B", sal: "$5,400", proj: 16.8, fppg: 31.1, ceil: 28.0, own: "22.7%", lev: -0.8 },
+                        { n: "T. Stephenson", p: "C", sal: "$3,600", proj: 13.7, fppg: 38.1, ceil: 24.0, own: "8.1%", lev: 3.4 },
+                        { n: "C. Seager", p: "SS", sal: "$4,600", proj: 11.8, fppg: 25.7, ceil: 20.0, own: "12.3%", lev: 1.1 },
+                      ].map((r, i) => (
+                        <tr key={i} style={{ borderBottom: i < 4 ? `1px solid ${border}30` : "none" }}>
+                          <td className="py-1.5 px-1.5">
+                            <span className="text-[9px] font-bold mr-1" style={{ color: gold }}>{r.p}</span>
+                            <span className="font-semibold" style={{ color: textPrimary }}>{r.n}</span>
+                          </td>
+                          <td className="py-1.5 px-1.5 font-semibold" style={{ color: gold }}>{r.sal}</td>
+                          <td className="py-1.5 px-1.5 font-bold" style={{ color: gold }}>{r.proj}</td>
+                          <td className="py-1.5 px-1.5 font-semibold" style={{ color: textPrimary }}>{r.fppg}</td>
+                          <td className="py-1.5 px-1.5" style={{ color: "#4ade80" }}>{r.ceil}</td>
+                          <td className="py-1.5 px-1.5" style={{ color: textSecondary }}>{r.own}</td>
+                          <td className="py-1.5 px-1.5 font-semibold" style={{ color: r.lev >= 0 ? "#4ade80" : "#f87171" }}>{r.lev > 0 ? "+" : ""}{r.lev}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
+                <p className="text-[9px] mt-1.5 text-center" style={{ color: textMuted }}>
+                  &uarr; Interface demonstration. Values shown are illustrative, not live data.
+                </p>
               </div>
-              <div className="w-px h-8" style={{ background: border }} />
-              <div className="flex items-center gap-2">
-                <Zap size={16} style={{ color: gold }} />
-                <div>
-                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>MARKET MOVEMENT</div>
-                  <div className="text-sm font-extrabold" style={{ color: gold }}>+2.4%</div>
-                </div>
-              </div>
-            </div>
 
-            {/* ── Market Intelligence card ── */}
-            <div className="rounded-2xl border p-3.5 relative z-10 flex items-center gap-4"
-              style={{ background: cardElevated, borderColor: border }}>
-              <div className="flex items-center gap-2">
-                <Brain size={16} style={{ color: gold }} />
-                <div>
-                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>MARKET INTELLIGENCE</div>
-                  <div className="text-sm font-extrabold" style={{ color: textPrimary }}>64% consensus</div>
-                </div>
+              {/* Actions */}
+              <div className="flex gap-2.5 px-5 pb-4 pt-2">
+                <Link href="/optimizer" className="flex-1 text-center py-2.5 rounded-xl text-xs font-bold transition-all duration-200 hover:brightness-110"
+                  style={{ background: gold, color: navy }}>
+                  BUILD A LINEUP
+                </Link>
+                <Link href="/market-tools" className="flex-1 text-center py-2.5 rounded-xl text-xs font-bold border transition-all duration-200 hover:border-[#c9a84c] hover:text-[#c9a84c]"
+                  style={{ borderColor: border, color: textSecondary }}>
+                  EXPLORE MARKET TOOLS
+                </Link>
               </div>
-              <div className="w-px h-8" style={{ background: border }} />
-              <div className="flex items-center gap-2">
-                <BarChart3 size={16} style={{ color: gold }} />
-                <div>
-                  <div className="text-[10px] font-bold tracking-wider" style={{ color: textMuted }}>ODDS COMPARISON</div>
-                  <div className="text-sm font-extrabold" style={{ color: textSecondary }}>12.4K markets</div>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Coverage indicator ── */}
-            <div className="mt-3 relative z-10 flex items-center justify-center gap-4 py-2 rounded-xl"
-              style={{ background: `${gold}06`, border: `1px solid ${gold}15` }}>
-              {["MLB", "NFL", "NBA", "NHL"].map((s, i) => (
-                <div key={s} className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full" style={{ background: gold }} />
-                  <span className="text-[10px] font-bold tracking-wider" style={{ color: textSecondary }}>{s}</span>
-                  {i < 3 && <div className="w-px h-3" style={{ background: border }} />}
-                </div>
-              ))}
-              <div className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${gold}15`, color: gold }}>ALL SPORTS</div>
             </div>
           </div>
         </div>
