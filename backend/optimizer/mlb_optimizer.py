@@ -344,6 +344,7 @@ class MLBOptimizer:
             "projected_score": round(proj_score, 1),
             "player_count": len(selected),
             "stack_summary": f"{stack_team} {max_stack}-man" if stack_team else "none",
+            "solver_status": "OPTIMAL" if status == cp_model.OPTIMAL else "FEASIBLE",
         }
 
     def generate(self, count: int = 1) -> list[dict]:

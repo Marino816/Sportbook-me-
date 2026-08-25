@@ -71,6 +71,10 @@ class SimBatchResult:
     failures_unexpected: int = 0        # unexpected exception during this sim
     failure_message: str = ""           # detail for last failure type seen
 
+    # ── Solution-quality categories ──
+    completions_optimal: int = 0        # CP-SAT returned OPTIMAL
+    completions_feasible: int = 0       # CP-SAT returned FEASIBLE (not proven optimal)
+
     players: list[SimPlayerResult] = field(default_factory=list)
     model_version: str = SIM_ENGINE_VERSION
     generated_at: str = ""
@@ -205,6 +209,8 @@ def simulate_true_optimal(
 
     appearances = {pid: 0 for pid in player_ids}
     completed = 0
+    completed_optimal = 0
+    completed_feasible = 0
     failures = {"infeasible": 0, "timeout": 0, "invalid_lineup": 0, "unexpected": 0}
     solve_times = []
     failure_msg = ""
@@ -265,6 +271,12 @@ def simulate_true_optimal(
 
         completed += 1
 
+        # Classify solution quality (OPTIMAL vs merely FEASIBLE)
+        if lineup.get("solver_status") == "OPTIMAL":
+            completed_optimal += 1
+        else:
+            completed_feasible += 1
+
         # Record appearances
         seen = set()
         for pl in lineup.get("players", []):
@@ -314,6 +326,8 @@ def simulate_true_optimal(
         failures_invalid_lineup=failures["invalid_lineup"],
         failures_unexpected=failures["unexpected"],
         failure_message=failure_msg,
+        completions_optimal=completed_optimal,
+        completions_feasible=completed_feasible,
         players=players_out,
         generated_at=datetime.now(timezone.utc).isoformat(),
     )
