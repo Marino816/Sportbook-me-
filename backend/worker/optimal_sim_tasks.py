@@ -64,6 +64,13 @@ def _release_lock(platform, sport, slate_id):
 
 async def _run_sim_async(platform, sport, slate_id, n_sims, seed, timeout):
     """Load canonical pool, run simulation, cache result."""
+    # Re-assert backend root on sys.path. Celery's prefork child may not
+    # inherit the parent's sys.path modifications, and the lazy
+    # `from api.sgo_data import ...` inside build_sgo_intelligence needs
+    # /app (the parent of the `api` namespace package) importable.
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
     # Cache-hit check before expensive sim
     try:
         async with SessionLocal() as db:
