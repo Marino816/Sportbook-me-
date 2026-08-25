@@ -210,17 +210,21 @@ def simulate_true_optimal(
     failure_msg = ""
 
     # ── Main simulation loop ──
+    # min_salary=0: the $42K floor is a production soft guideline, not a
+    # mathematical requirement for Optimal% computation. Cap + roster slots
+    # are sufficient constraints. Dropping it reduces CP-SAT complexity.
+    # num_workers=4: single-worker caused 17-19% timeout rate on this slate
+    # because the search tree is too broad for one thread within 3-5s.
     for sim_idx in range(n_sims):
         sliced = _pool_slice(pool, outcome_matrix, sim_idx)
 
-        # Build optimizer — only use legitimately projected players (eligibility
-        # based on original projected_fp, not simulated_fp — see _pool_slice).
         opt = MLBOptimizer(
             pool=sliced,
             platform=platform,
             strategy=strategy,
             locks=[],
             excludes=[],
+            min_salary=0,
         )
 
         t_solve = time.time()
@@ -231,7 +235,7 @@ def simulate_true_optimal(
                 random_seed=None,
                 prior_ids=[],
                 timeout_seconds=sim_timeout,
-                num_workers=1,
+                num_workers=4,
             )
         except Exception:
             failures["unexpected"] += 1
