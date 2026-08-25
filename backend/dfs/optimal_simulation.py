@@ -161,7 +161,7 @@ def simulate_true_optimal(
 
     t0 = time.time()
     logger.info(
-        "Optimal% sim start: %s/%s slate, %d sims",
+        "Optimal pct sim start: %s/%s slate, %d sims",
         sport_upper, platform, n_sims,
     )
 
@@ -265,7 +265,7 @@ def simulate_true_optimal(
     )
 
     logger.info(
-        "Optimal% sim done: %d/%d solves, %.1fs total, %.2fs avg/solve",
+        "Optimal pct sim done: %d/%d solves, %.1fs total, %.2fs avg/solve",
         completed, n_sims, elapsed,
         total_solve_time / max(completed, 1),
     )

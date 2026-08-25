@@ -88,6 +88,35 @@ async def run_sims(
     }, source="native")
 
 
+@router.get("/optimal-pct")
+async def optimal_pct(
+    slate_id: int,
+    platform: str = "draftkings",
+    sport: str = "MLB",
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Customer: Optimal% simulation status + cached result (background-computed).
+
+    Returns status (NOT_RUN/QUEUED/RUNNING/COMPLETE/FAILED) and, when COMPLETE,
+    the per-player optimal_pct. Never runs the simulation synchronously.
+    """
+    import dfs.optimal_cache as ocache
+
+    status = ocache.get_status(platform, sport, slate_id)
+    result = None
+    if status == ocache.STATUS_COMPLETE:
+        result = ocache.get_result(platform, sport, slate_id)
+
+    return wrap_data({
+        "slate_id": slate_id,
+        "platform": platform,
+        "sport": sport,
+        "status": status,
+        "result": result,
+    }, source="native")
+
+
 @router.get("/top-stacks")
 async def top_stacks(
     slate_id: int,
