@@ -140,6 +140,7 @@ def simulate_true_optimal(
     n_sims: int = 100,
     seed: Optional[int] = 42,
     strategy: str = "balanced",
+    sim_timeout: float = 5.0,  # per-sim solver timeout (shorter than production 15s)
     progress_callback=None,
 ) -> SimBatchResult:
     """Run true Optimal% simulation: CP-SAT optimal lineup per sim.
