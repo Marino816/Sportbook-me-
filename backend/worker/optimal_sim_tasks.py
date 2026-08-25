@@ -34,14 +34,23 @@ def _lock_key(platform, sport, slate_id):
 
 
 def _try_acquire_lock(platform, sport, slate_id):
+    """Acquire Redis distributed lock. Returns True if lock was acquired.
+
+    FAIL-CLOSED: if Redis is unavailable or an error occurs, returns False
+    (does NOT start the expensive simulation without lock protection).
+    """
     try:
         r = cache._redis()
         if r is None:
-            return True
-        return bool(r.set(_lock_key(platform, sport, slate_id), "1", nx=True, ex=LOCK_TTL))
+            logger.warning(f"Lock failed: Redis unavailable for {sport}/{platform} slate {slate_id}")
+            return False  # fail closed — no Redis, no lock, no sim
+        acquired = r.set(_lock_key(platform, sport, slate_id), "1", nx=True, ex=LOCK_TTL)
+        if not acquired:
+            logger.info(f"Lock held by another worker: {sport}/{platform} slate {slate_id}")
+        return bool(acquired)
     except Exception as e:
-        logger.warning(f"Lock acquire error: {e}")
-        return True  # fail open on Redis error
+        logger.warning(f"Lock acquire error for {sport}/{platform} slate {slate_id}: {e}")
+        return False  # fail closed — can't verify lock state, don't run sim
 
 
 def _release_lock(platform, sport, slate_id):
