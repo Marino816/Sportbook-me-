@@ -401,8 +401,9 @@ async def run_optimizer(
                             "salary": p.get("salary", 0),
                             "projected_fp": p.get("projected_fp", 0.0),
                             "projection_source": p.get("projection_source", "UNAVAILABLE"),
+                            "sgo_team": p.get("sgo_team", ""),
                         }
-                        for p in projections_list
+                        for p in opt.players  # solver-eligible only (post-filter/quarantine)
                     ],
                 }, source="builder_engine")
 
