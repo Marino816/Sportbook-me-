@@ -18,21 +18,24 @@ logger = logging.getLogger(__name__)
 #  MLB Projection Model
 # ══════════════════════════════════════════════════════════════
 
-# Hitter: standard DFS scoring weights
+# Hitter: DraftKings standard MLB scoring
 # DK: Single=3, Double=5, Triple=8, HR=10, RBI=2, R=2, BB=2, SB=5, HBP=2
-# Approximate from props: hits includes all types, we estimate distribution
-MLB_HITTER_WEIGHTS = {
-    "hits": 3.0,          # average hit value (singles 3, doubles 5, triples 8)
-    "homeRuns": 10.0,     # DK: HR = 10 pts
-    "rbi": 2.0,           # DK: RBI = 2 pts
-    "totalBases": 1.2,    # DK: TB = 1 pt per base, approximate factor
-    "stolenBases": 5.0,   # DK: SB = 5 pts
-    "walks": 2.0,         # DK: BB = 2 pts
-    "battingStrikeouts": -0.5,  # DK: K = -0.5
-}
+# DK does NOT penalise hitter strikeouts in standard contests.
+#
+# PROP_BASED hitter projections have been RETIRED (commit 67e681d+).
+# SGO props are betting-market O/U thresholds (e.g. 0.5 HR line),
+# NOT expected-value predictions.  Multiplying a threshold by a DK
+# weight produces a mathematically invalid fantasy-point estimate.
+#
+# Valid hitter projection sources:
+#   1. SGO_FANTASY_MARKET → direct fantasyScore market line
+#   2. BC_PROJ_FALLBACK   → Blue Collar DFS projection (validated independent)
+#   3. UNAVAILABLE        → no valid source — excluded from optimisation
 
 # Pitcher: DK scoring
 # IP=2.25, K=2, ER=-2, H=-0.6, BB=-0.6, W=4, QS=1.5
+# Pitcher props (IP, K, ER) from SGO are legitimate expected values
+# and PROP_BASED remains valid for pitchers without a fantasyScore market.
 MLB_PITCHER_WEIGHTS = {
     "pitchingStrikeouts": 2.0,       # DK: K = 2 pts
     "pitchingOuts": 0.75,            # DK: IP = 2.25, 1 out = 0.75
@@ -42,20 +45,12 @@ MLB_PITCHER_WEIGHTS = {
 }
 
 
-def _compute_mlb_hitter_projection(props: dict[str, float]) -> float:
-    """Compute hitter fantasy projection from available props."""
-    proj = 0.0
-    count = 0
-    for mk, weight in MLB_HITTER_WEIGHTS.items():
-        val = props.get(mk)
-        if val is not None:
-            proj += val * weight
-            count += 1
-    return round(proj, 1) if count >= 2 else 0.0
-
-
 def _compute_mlb_pitcher_projection(props: dict[str, float]) -> float:
-    """Compute pitcher fantasy projection from available props."""
+    """Compute pitcher fantasy projection from available props.
+    
+    Pitcher props (IP, K, ER) are legitimate expected-value signals —
+    unlike hitter props which are O/U betting thresholds.
+    """
     proj = 0.0
     count = 0
     for mk, weight in MLB_PITCHER_WEIGHTS.items():
@@ -101,8 +96,15 @@ def compute_projections(
 
     Priority:
       1. SGO fantasyScore market → direct projection
-      2. Prop-based model → weighted computation
+      2. Pitcher prop-based model → weighted computation (pitchers only)
       3. UNAVAILABLE → player not projectable
+
+    Hitter PROP_BASED is RETIRED.  SGO hitter props are O/U betting
+    thresholds (e.g. 0.5 HR), not expected-value predictions, and
+    cannot be multiplied by DK weights to produce valid fantasy points.
+    Hitters without an SGO fantasyScore market receive UNAVAILABLE
+    status here; the optimizer may later apply a BC_PROJ_FALLBACK if
+    Blue Collar has a valid independent projection.
     """
     results = []
     sgo_data = sgo_intelligence or {}
@@ -125,30 +127,28 @@ def compute_projections(
         sgo = sgo_data.get(pid, {})
         fantasy_market = sgo.get("fantasyMarketLine") or sgo.get("fantasyScore")
         props = sgo.get("props") or p.get("props") or {}
+        is_pitcher = "P" in pos or "SP" in pos or "RP" in pos
 
         if fantasy_market is not None and float(fantasy_market) > 0:
-            # Method 1: Direct fantasyScore market
+            # Method 1: Direct fantasyScore market (hitters & pitchers)
             proj.base_projection = round(float(fantasy_market), 1)
             proj.projection_source = "SGO_FANTASY_MARKET"
             proj.projection_confidence = 0.8
             proj.fantasy_market_line = float(fantasy_market)
             proj.props_used = ["fantasyScore"]
 
-        elif props and sport == "MLB":
-            # Method 2: Prop-based model
-            if "P" in pos or "SP" in pos or "RP" in pos:
-                fp = _compute_mlb_pitcher_projection(props)
-            else:
-                fp = _compute_mlb_hitter_projection(props)
-
+        elif props and is_pitcher:
+            # Method 2: Prop-based model — pitchers only.
+            # Pitcher props (IP, K, ER) are legitimate expected values.
+            fp = _compute_mlb_pitcher_projection(props)
             if fp > 0:
                 proj.base_projection = fp
                 proj.projection_source = "PROP_BASED"
                 proj.projection_confidence = 0.5
                 proj.props_used = [k for k, v in props.items() if v is not None]
 
-        # Unprojectable players get explicit UNAVAILABLE status
-        # (not 1.0 placeholder)
+        # Hitters without fantasyScore: UNAVAILABLE (was PROP_BASED).
+        # The optimizer may later apply BC_PROJ_FALLBACK.
 
         proj.projection_updated_at = datetime.now(timezone.utc)
         results.append(proj)

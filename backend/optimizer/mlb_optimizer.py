@@ -191,23 +191,23 @@ class MLBOptimizer:
                 continue
             pos = _normalize_mlb_pos(p.get("roster_position") or p.get("position") or "", self.platform)
             fp = p.get("projected_fp", 0) or 0
+            fppg = p.get("fppg")
 
-            if pos == "P":
-                # Pitcher eligibility: SGO-projected OR BC-projection fallback
-                src = p.get("projection_source", "")
-                fppg = p.get("fppg")
-                if fp <= 0 and (fppg is None or fppg <= 0):
-                    continue  # reliever / inactive — no signal
-                # If unprojected but has BC projection, use it as a fallback and label it
-                if fp <= 0 and fppg is not None and fppg > 0:
-                    p = dict(p)  # shallow copy so we don't mutate the shared pool
+            # ── Projection fallback policy ──
+            # Valid sources: SGO_FANTASY_MARKET, PROP_BASED (pitchers only),
+            # BC_PROJ_FALLBACK, or a My-Proj customer override.
+            #
+            # If SB ME has no valid projection (fp=0) and Blue Collar has a
+            # projection, use BC_PROJ_FALLBACK with the source clearly labelled.
+            # If neither source has a projection, exclude the player.
+            if fp <= 0:
+                if fppg is not None and fppg > 0:
+                    p = dict(p)
                     p["projected_fp"] = round(float(fppg), 1)
                     p["projection_source"] = "BC_PROJ_FALLBACK"
                     p["fppg_was_fallback"] = True
-            else:
-                # Hitters: must have a projection source
-                if fp <= 0:
-                    continue
+                else:
+                    continue  # no valid signal from either provider
 
             idx = len(self.players)
             self.players.append(p)
@@ -223,6 +223,8 @@ class MLBOptimizer:
                     self.bc_proj_fallback[idx] = fp
             else:
                 self.hitters.add(idx)
+                if p.get("fppg_was_fallback"):
+                    self.bc_proj_fallback[idx] = fp
 
         # Resolve locked players to indices (by id OR name)
         self.lock_indices = set()
