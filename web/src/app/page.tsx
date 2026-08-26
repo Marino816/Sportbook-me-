@@ -138,7 +138,7 @@ function ParlayDemoCard() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${gold}12`, color: gold }}>4-LEG</span>
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: "#4ade8012", color: "#4ade80" }}>DEMO</span>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: "#4ade8012", color: "#4ade80" }}>EXAMPLE — NOT LIVE DATA</span>
         </div>
       </div>
 
@@ -487,7 +487,7 @@ export default function LandingPage() {
               The <span style={{ color: gold }}>Parlay Builder</span>
             </h2>
             <p className="text-base max-w-2xl mx-auto" style={{ color: textSecondary }}>
-              Stack moneyline, spreads, totals, and player props across 55+ sportsbooks — with real-time odds
+              Stack moneyline, spreads, totals, and player props across 55+ supported sportsbooks — with live odds
               comparison, smart leg validation, and SB ME Intelligence&trade; powering every selection.
             </p>
           </div>
@@ -506,7 +506,7 @@ export default function LandingPage() {
                   <Swords size={16} /> BUILD MY PARLAY <ChevronRight size={16} />
                 </Link>
                 <p className="mt-2 text-[11px]" style={{ color: textMuted }}>
-                  Powered by real-time odds across 55+ platforms. No account required — try it now.
+                  Powered by live odds across 55+ supported platforms. Sign up free to build your first parlay.
                 </p>
               </div>
             </div>
@@ -517,14 +517,14 @@ export default function LandingPage() {
               <ParlayCapability
                 icon={<Building2 size={22} style={{ color: gold }} />}
                 title="55+ Sportsbooks & Platforms"
-                description="Compare odds across DraftKings, FanDuel, BetMGM, Caesars, ESPN BET, Bovada, Bet365, PointsBet, BetRivers, Pinnacle, Unibet, William Hill, Barstool, Betway, Betfred, Circa, Hard Rock Bet, BetOnline, Polymarket, Bally Bet, and 35+ more. Find the best line for every leg of your parlay."
+                description="Compare odds across DraftKings, FanDuel, BetMGM, Caesars, ESPN BET, Bovada, Bet365, PointsBet, BetRivers, Pinnacle, Unibet, William Hill, Barstool, Betway, Betfred, Circa, Hard Rock Bet, BetOnline, Polymarket, Bally Bet, and 35+ more (availability varies by sport and event). Find the best line for every leg of your parlay."
               />
 
               {/* Capability 2: 6 sports */}
               <ParlayCapability
                 icon={<Trophy size={22} style={{ color: gold }} />}
                 title="6-Sport Coverage"
-                description="Build parlays across MLB, NFL, NBA, NHL, NCAAF, and NCAAB. Every major DFS sport is live with real-time odds, player props, team totals, game totals, spreads, and moneylines."
+                description="Build parlays across MLB, NFL, NBA, NHL, NCAAF, and NCAAB. Live odds, player props, team totals, game totals, spreads, and moneylines are available for in-season sports and active events."
               />
 
               {/* Capability 3: Bet types */}
@@ -547,10 +547,10 @@ export default function LandingPage() {
           <div className="mt-16 pt-10 border-t" style={{ borderColor: border }}>
             <div className="text-center mb-6">
               <h3 className="text-sm font-bold tracking-widest uppercase" style={{ color: textMuted }}>
-                55+ Integrated Sportsbooks & Platforms
+                55+ Supported Sportsbooks & Platforms
               </h3>
               <p className="mt-1 text-xs" style={{ color: textMuted }}>
-                Real-time odds comparison across every major operator.
+                Live odds comparison across every major operator. Availability varies by sport and event.
               </p>
             </div>
             {/* Scrollable book pill strip */}
@@ -569,7 +569,7 @@ export default function LandingPage() {
           <div className="mt-12 pt-10 border-t" style={{ borderColor: border }}>
             <div className="text-center mb-6">
               <h3 className="text-sm font-bold tracking-widest uppercase" style={{ color: textMuted }}>
-                Live Coverage Across 6 Sports
+                Supported Sports & Leagues
               </h3>
             </div>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-3 max-w-3xl mx-auto">
