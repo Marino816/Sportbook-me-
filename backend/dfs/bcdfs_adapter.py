@@ -398,9 +398,9 @@ def parse_bc_response(
                 position=primary_position,
                 eligible_positions=eligible_positions,
                 salary=salary_int,
+                fppg=round(bc_projection, 1) if bc_projection > 0 else None,
                 data_source="blue_collar",
                 ingested_at=datetime.now(timezone.utc),
-                # game_info derived for backward compat
                 game_info=f"{team}@{opponent} {date_str}" if team and opponent else date_str,
             )
             players.append(player)
@@ -546,6 +546,9 @@ async def sync_bc_to_db(
                 if existing.salary != cp.salary:
                     existing.salary = cp.salary
                     changed = True
+                if (existing.fppg or 0) != (cp.fppg or 0):
+                    existing.fppg = cp.fppg
+                    changed = True
                 if existing.game_info != cp.game_info:
                     existing.game_info = cp.game_info
                     changed = True
@@ -564,6 +567,7 @@ async def sync_bc_to_db(
                     position=cp.position,
                     eligible_positions=cp.eligible_positions,
                     salary=cp.salary,
+                    fppg=cp.fppg,
                     game_info=cp.game_info,
                     mapping_status="UNMATCHED",
                 )

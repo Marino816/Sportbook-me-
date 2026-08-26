@@ -82,6 +82,7 @@ class NativeProjection:
     salary: int
     team: str = ""
     opponent: Optional[str] = None
+    fppg: Optional[float] = None  # DK FPPG from Blue Collar DFS
     base_projection: float = 0.0
     projection_source: str = "UNAVAILABLE"  # SGO_FANTASY_MARKET | PROP_BASED | HYBRID | UNAVAILABLE
     projection_confidence: float = 0.0
@@ -117,6 +118,7 @@ def compute_projections(
             position=pos, salary=int(salary),
             team=p.get("team") or "",
             opponent=p.get("opponent"),
+            fppg=p.get("fppg"),
         )
 
         # Check SGO intelligence enrichment
@@ -167,6 +169,7 @@ def projections_to_pool(projections: list[NativeProjection]) -> list[dict]:
         "position": p.position,
         "roster_position": p.position,
         "salary": p.salary,
+        "fppg": p.fppg,
         "team": p.team,
         "opponent": p.opponent,
         "projected_fp": p.base_projection,

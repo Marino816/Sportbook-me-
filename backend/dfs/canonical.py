@@ -89,6 +89,7 @@ async def build_canonical_pool(
             "team": np.team,
             "position": np.position,
             "salary": np.salary,
+            "fppg": np.fppg,
             "eligible_positions": np.eligible_positions or [np.position],
             "projected_fp": 0.0,
             "opponent": np.opponent or "",

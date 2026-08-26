@@ -21,6 +21,7 @@ class DFSPlayer(Base):
     position = Column(String)
     eligible_positions = Column(JSON, default=list)
     salary = Column(Integer, default=0)
+    fppg = Column(Float, nullable=True)             # DK FPPG from Blue Collar DFS
     game_info = Column(String, nullable=True)
 
     # SB ME reconciliation

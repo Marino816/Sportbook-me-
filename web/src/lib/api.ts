@@ -259,6 +259,7 @@ export interface DFSSlatePlayer {
   position: string;
   eligible_positions: string[];
   salary: number;
+  fppg: number | null;
   game_info: string | null;
   mapping_status: string;
 }
@@ -349,6 +350,7 @@ export interface CanonicalPlayer {
   position: string;
   roster_position: string;
   salary: number;
+  fppg: number | null;
   team: string;
   opponent: string | null;
   eligible_positions: string[];

@@ -30,6 +30,7 @@ class DFSContestPlayer:
 
     # DFS
     salary: int = 0
+    fppg: Optional[float] = None                # DK FPPG from Blue Collar DFS
     game_info: str = ""                          # "TEAM @ TEAM MM/DD HH:MM ET"
 
     # SB ME internal

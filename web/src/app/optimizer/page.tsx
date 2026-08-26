@@ -533,7 +533,7 @@ export default function OptimizerPage() {
           <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${filteredEvents.length} Games · ${players.length} Players` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate is available yet` : "Select a slate"}
+            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate is available yet` : "Select a slate"}
           </span>
         </div>
         <button onClick={() => setShowStackingRules(!showStackingRules)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: showStackingRules ? "rgba(201,168,76,0.15)" : "#0a0f24", border: showStackingRules ? "1px solid #c9a84c" : "1px solid #1e293b", color: showStackingRules ? "#c9a84c" : "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
@@ -630,7 +630,7 @@ export default function OptimizerPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: "#060b1a", position: "sticky", top: 0, zIndex: 1 }}>
-                        <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th>
+                        <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th><TTip help="DraftKings FPPG score from Blue Collar DFS. Independent external metric, not an SB ME projection.">DK FPPG</TTip></Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th>
                         <Th><TTip help="SB ME projected field ownership estimate. Not actual contest ownership.">SB OWN%</TTip></Th>
                         <Th><TTip help="Positive values indicate players projected to provide stronger value relative to modeled ownership.">LEV</TTip></Th>
                         <Th><TTip help={optPctStatus === "LOCKED" ? "Optimal% is not available for locked/in-progress slates." : "Percentage of SB ME simulations in which this player appeared in the highest-scoring legal lineup for the simulated slate outcome."}>OPT%</TTip></Th>
@@ -675,6 +675,7 @@ export default function OptimizerPage() {
                             </Td>
                             <Td style={{ color: "#f0f6fc", fontWeight: 600 }}>{p.name}</Td>
                             <Td style={{ color: dfs ? "#c9a84c" : "#64748b", fontWeight: dfs ? 700 : 400 }}>{dfs ? `$${dfs.salary.toLocaleString()}` : "—"}</Td>
+                            <Td style={{ color: dfs?.fppg != null ? "#94a3b8" : "#64748b", fontWeight: dfs?.fppg != null ? 600 : 400 }}>{dfs?.fppg != null ? dfs.fppg.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: sbProj != null ? "#c9a84c" : "#64748b", fontWeight: sbProj != null ? 700 : 400 }}>{sbProj != null ? sbProj.toFixed(1) : "N/A"}</Td>
                             <Td>
                               <input type="number" step="0.1" value={myProj[p.player_id] ?? sbProj ?? ""} placeholder={sbProj != null ? "" : "—"} onChange={(e) => setMyProj((prev) => ({ ...prev, [p.player_id]: Number(e.target.value) }))} style={{ width: 56, padding: "4px 6px", borderRadius: 6, fontSize: 11, background: "#1a1f33", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
