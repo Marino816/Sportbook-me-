@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Send, Loader2 } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api-base-url";
 
@@ -10,62 +10,22 @@ const API_BASE = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  tools?: string[];
 }
 
-function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("sbme_dfs_token");
-}
-
-const DEFAULT_MSG =
-  "Welcome to SB ME AI. I have access to DFS slates, player projections, SportsGameOdds market intelligence, lineup optimization, and the Market Tools suite. How can I help?";
+const WELCOME =
+  "Welcome to SB ME AI. I can explain SB ME features and metrics, guide you around the product, and pull current slate data (salaries, SB Projection, Value, SB OWN%, Leverage, Optimal%) from live SB ME data. How can I help?";
 
 export default function AIPage() {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "Loading SportsGameOdds context..." },
+    { role: "assistant", content: WELCOME },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const chatEnd = useRef<HTMLDivElement>(null);
 
-  // On load, fetch MLB events and inject into initial message
-  useEffect(() => {
-    let cancelled = false;
-    async function loadContext() {
-      try {
-        const token = getToken();
-        const res = await fetch(`${API_BASE}/sgo/events?league=MLB`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) throw new Error("unavailable");
-        const json = await res.json();
-        const events = Array.isArray(json?.data) ? json.data : [];
-        if (events.length > 0) {
-          const matchups = events
-            .slice(0, 8)
-            .map((e: any) => {
-              const a = e.away_team?.abbreviation || e.away_team?.name || "AWY";
-              const h = e.home_team?.abbreviation || e.home_team?.name || "HOM";
-              const status = e.status?.toUpperCase?.();
-              const liveTag = status === "LIVE" || status === "IN_PLAY" ? " (LIVE)" : "";
-              return `${a} @ ${h}${liveTag}`;
-            })
-            .join(", ");
-          const msg = `Today's MLB games: ${matchups}. I can answer questions about odds, props, and DFS lineups.`;
-          if (!cancelled) setMessages([{ role: "assistant", content: msg }]);
-        } else {
-          if (!cancelled) setMessages([{ role: "assistant", content: DEFAULT_MSG }]);
-        }
-      } catch {
-        if (!cancelled) setMessages([{ role: "assistant", content: DEFAULT_MSG }]);
-      }
-    }
-    loadContext();
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  const scrollToEnd = () => chatEnd.current?.scrollIntoView({ behavior: "smooth" });
 
   const send = async () => {
     const text = input.trim();
@@ -78,18 +38,31 @@ export default function AIPage() {
       const res = await fetch(`${API_BASE}/ai/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, page: "ai" }),
       });
       if (res.ok) {
         const data = await res.json();
-        setMessages((prev) => [...prev, { role: "assistant", content: data.response || data.data?.response || "I processed your request." }]);
+        const content = data.content || data.response || data.data?.response || "I processed your request.";
+        const tools = data.tools_used || [];
+        setMessages((prev) => [...prev, { role: "assistant", content, tools }]);
       } else {
-        setMessages((prev) => [...prev, { role: "assistant", content: "SB ME AI is available for market intelligence, player analysis, lineup optimization, and odds comparison. Ask me about any published DFS slate or player prop market." }]);
+        let detail = "I'm having trouble answering right now. Please try again.";
+        try {
+          const err = await res.json();
+          if (err?.detail) detail = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail);
+        } catch {
+          /* ignore */
+        }
+        setMessages((prev) => [...prev, { role: "assistant", content: detail }]);
       }
     } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "I'm connected to the SB ME Intelligence engine. Ask me about DFS slates, player projections, SportsGameOdds markets, or your saved lineups." }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "I can't reach the AI service right now. Please try again shortly." },
+      ]);
     }
     setSending(false);
+    requestAnimationFrame(scrollToEnd);
   };
 
   if (!user) {
@@ -108,15 +81,13 @@ export default function AIPage() {
       <div style={{ padding: "20px 24px", borderBottom: "1px solid #1e293b" }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: "#c9a84c", fontStyle: "italic", margin: 0 }}>SB ME AI</h1>
         <p style={{ color: "#64748b", fontSize: 13, margin: "4px 0 0" }}>
-          Connected: SportsGameOdds · Native DFS · Market Tools · Lineup Engine
+          Sports intelligence & product assistant for Sportbook Me DFS AI
         </p>
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: "16px 24px" }}>
         {messages.map((m, i) => (
-          <div key={i} style={{
-            marginBottom: 12, display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-          }}>
+          <div key={i} style={{ marginBottom: 12, display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
             <div style={{
               maxWidth: "75%", padding: "12px 16px", borderRadius: 14,
               background: m.role === "user" ? "#c9a84c" : "#0a0f24",
@@ -125,6 +96,11 @@ export default function AIPage() {
               fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap",
             }}>
               {m.content}
+              {m.tools && m.tools.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "#64748b" }}>
+                  Used live data: {m.tools.join(", ")}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -135,7 +111,7 @@ export default function AIPage() {
         <div style={{ display: "flex", gap: 8 }}>
           <input value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="Ask about DFS slates, player props, lineups..."
+            placeholder="Ask about Optimal%, SB OWN%, slates, Parlay Builder..."
             style={{
               flex: 1, padding: "12px 16px", borderRadius: 12, border: "1px solid #1e293b",
               background: "#0a0f24", color: "#f0f6fc", fontSize: 14, outline: "none",

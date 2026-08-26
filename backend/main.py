@@ -97,6 +97,7 @@ app = FastAPI(
 
 from api import router as api_router
 from api import admin, stats, sports, billing, auth, ai_routes, scout_routes, analyst_routes, builder_routes, coach_routes, mc_routes, assistant_routes, admin_health, operations, intelligence_routes, dfs_admin, dfs_customer, market_tools, sgo_data, data_hub, player_stats
+from assistant import chat_router
 from services.logging import RequestLogMiddleware, configure_structured_logging
 
 # Allow CORS for Next.js / Expo frontend
@@ -145,6 +146,7 @@ app.include_router(market_tools.router, prefix="/api", tags=["SB-Me Market Tools
 app.include_router(sgo_data.router, prefix="/api", tags=["SGO Data"])
 app.include_router(data_hub.router, prefix="/api", tags=["SB-Me Data Hub"])
 app.include_router(player_stats.router, prefix="/api", tags=["Player Stats"])
+app.include_router(chat_router.router)  # canonical POST /api/ai/chat
 
 if __name__ == "__main__":
     import os

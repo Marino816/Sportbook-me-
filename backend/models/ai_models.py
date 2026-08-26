@@ -110,3 +110,28 @@ class AIAuditLog(Base):
     success = Column(Boolean, default=True)
     error = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AIChatLog(Base):
+    """Per-message usage/audit log for the customer SB ME AI chat.
+
+    Records model, token usage, estimated cost, tools invoked, latency and
+    outcome. NEVER stores API keys, provider credentials, or the system
+    prompt.  Message text is intentionally NOT persisted here (only a
+    usage record); conversation content belongs to assistant_messages.
+    """
+    __tablename__ = "ai_chat_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    conversation_id = Column(String, nullable=True, index=True)
+    model = Column(String, nullable=True)
+    provider = Column(String, nullable=True)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    cost_estimate = Column(Float, default=0.0)
+    tools_invoked = Column(JSON, default=list)
+    latency_ms = Column(Float, default=0.0)
+    success = Column(Boolean, default=True)
+    error = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

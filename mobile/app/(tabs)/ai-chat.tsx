@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
-import { sendAIChat, setStrategyMode, buildAILineup, analyzeLineup, comparePlayers, getSlateSummary, AIMessage } from "../../lib/ai-api";
+import { sendAIChat, setStrategyMode, AIMessage } from "../../lib/ai-api";
 
 const QUICK_ACTIONS = [
   { label: "🏗️ Build GPP lineup", prompt: "Build my best GPP lineup tonight for DraftKings NBA." },
