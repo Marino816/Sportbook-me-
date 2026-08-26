@@ -131,14 +131,14 @@ class MLBOptimizer:
     def _build_maps(self):
         """Build position eligibility and index lookups.
 
-        PITCHER ELIGIBILITY POLICY (no authoritative starter-status field exists):
-        - Pitchers with SGO_FANTASY_MARKET source are included (SGO only prices
-          fantasyScore markets for expected starters — this IS the starter signal).
-        - Pitchers WITHOUT an SGO projection but WITH a BC projection (fppg field) > 0 are
-          included and receive their BC projection as a fallback objective coefficient
-          (labeled 'BC_PROJ_FALLBACK'). These are expected starters SGO does not price.
-        - Pitchers with neither projection nor BC projection (relievers, inactive arms)
-          are EXCLUDED — they have no fantasy-relevance signal.
+        PITCHER ELIGIBILITY POLICY:
+        - BC projection>0 is the starter signal. BC projects exactly 1 pitcher
+          per team per game. Pitchers without BC projection are NOT starters and
+          are excluded regardless of SGO fantasyScore status.
+        - SGO fantasyScore is a universal betting market (18+ pitchers per game
+          get it), NOT a starter signal. It is NOT used for eligibility gates.
+        - If a pitcher has BC projection but no SGO projection → BC_PROJ_FALLBACK.
+        - If a pitcher has neither BC projection nor SGO projection → excluded.
 
         TEAM-IDENTITY QUARANTINE: a player whose DFS team differs from the team
         assigned by SGO for the same name is excluded and reported.
@@ -194,20 +194,27 @@ class MLBOptimizer:
             fppg = p.get("fppg")
 
             # ── Projection fallback policy ──
-            # Valid sources: SGO_FANTASY_MARKET, PROP_BASED (pitchers only),
-            # BC_PROJ_FALLBACK, or a My-Proj customer override.
-            #
-            # If SB ME has no valid projection (fp=0) and Blue Collar has a
-            # projection, use BC_PROJ_FALLBACK with the source clearly labelled.
-            # If neither source has a projection, exclude the player.
-            if fp <= 0:
-                if fppg is not None and fppg > 0:
+            if pos == "P":
+                # PITCHER STARTER GATE: BC projection>0 required.
+                # BC projects exactly 1 pitcher per team per game.
+                # SGO fantasyScore is a universal betting market, not a starter signal.
+                if fppg is None or fppg <= 0:
+                    continue  # no BC projection → not a starter
+                if fp <= 0:
                     p = dict(p)
                     p["projected_fp"] = round(float(fppg), 1)
                     p["projection_source"] = "BC_PROJ_FALLBACK"
                     p["fppg_was_fallback"] = True
-                else:
-                    continue  # no valid signal from either provider
+            else:
+                # Hitters: SGO_FANTASY_MARKET or BC_PROJ_FALLBACK
+                if fp <= 0:
+                    if fppg is not None and fppg > 0:
+                        p = dict(p)
+                        p["projected_fp"] = round(float(fppg), 1)
+                        p["projection_source"] = "BC_PROJ_FALLBACK"
+                        p["fppg_was_fallback"] = True
+                    else:
+                        continue
 
             idx = len(self.players)
             self.players.append(p)
