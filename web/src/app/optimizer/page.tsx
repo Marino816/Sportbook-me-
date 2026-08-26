@@ -388,11 +388,13 @@ export default function OptimizerPage() {
     // Get unique team abbreviations from the slate DFS pool
     const slateTeamAbbrs = new Set(dfsPlayers.map((dp) => (dp.team || "").toUpperCase()).filter(Boolean));
 
-    // Find SGO events whose home/away teams are in this slate
+    // Find SGO events where BOTH home AND away teams are in this slate.
+    // Using OR would pull in cross-over events (e.g. SF@ATL when SF is
+    // in the slate but ATL is not), contaminating the SGO player pool.
     const slateEvents = events.filter((e) => {
       const ha = (e.home_team?.abbreviation || "").toUpperCase();
       const aa = (e.away_team?.abbreviation || "").toUpperCase();
-      return slateTeamAbbrs.has(ha) || slateTeamAbbrs.has(aa);
+      return slateTeamAbbrs.has(ha) && slateTeamAbbrs.has(aa);
     });
 
     // Build team_id → abbreviation map from these events

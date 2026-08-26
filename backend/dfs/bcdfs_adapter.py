@@ -154,16 +154,20 @@ def parse_slate_time(slate_name: str, slate_date: Optional[date]) -> Optional[da
     """Derive approximate start_time from slate name + date.
 
     BC slate names contain time hints like '7:40PM ET', '6:40PM ET'.
-    Returns a timezone-naive datetime (Eastern time implied by BC).
-    The freshness gate (dfs/freshness.py) converts to ET internally."""
+    ET times are converted to UTC for storage in the timezone-aware
+    DB column.  Without this conversion '3:40PM ET' was stored as
+    '15:40 UTC' (= 11:40 AM ET), locking the slate 4 hours early."""
     if slate_date is None:
         return None
     import re
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
     m = re.search(r'(\d{1,2}):(\d{2})\s*(AM|PM)', slate_name, re.IGNORECASE)
     if not m:
         # No time in name — use noon ET as a safe default on that date
-        logger.debug("BC slate %r has no parseable time; defaulting to noon", slate_name)
-        return datetime(slate_date.year, slate_date.month, slate_date.day, 12, 0)
+        logger.debug("BC slate %r has no parseable time; defaulting to noon ET", slate_name)
+        dt_et = datetime(slate_date.year, slate_date.month, slate_date.day, 12, 0, tzinfo=ET)
+        return dt_et.astimezone(timezone.utc)
     hour = int(m.group(1))
     minute = int(m.group(2))
     ampm = m.group(3).upper()
@@ -171,7 +175,8 @@ def parse_slate_time(slate_name: str, slate_date: Optional[date]) -> Optional[da
         hour += 12
     elif ampm == "AM" and hour == 12:
         hour = 0
-    return datetime(slate_date.year, slate_date.month, slate_date.day, hour, minute)
+    dt_et = datetime(slate_date.year, slate_date.month, slate_date.day, hour, minute, tzinfo=ET)
+    return dt_et.astimezone(timezone.utc)
 
 
 def bc_slate_key(sport: str, platform: str, date_str: str, slate_name: str) -> str:
