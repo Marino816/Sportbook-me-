@@ -32,7 +32,7 @@ from assistant.knowledge import (
     retrieve_knowledge, render_knowledge,
 )
 from assistant.tools import TOOLS, execute_tool, ALLOWED_TOOLS
-from assistant.limits import RateLimiter
+from assistant.limits import RateLimiter, resolve_tier
 
 router = APIRouter(prefix="/api/ai", tags=["SB ME AI"])
 logger = logging.getLogger(__name__)
@@ -164,9 +164,20 @@ async def ai_chat(
     if _is_injection_attempt(body.message):
         raise HTTPException(400, "Invalid input.")
 
-    # 2. Rate limit
+    # 2. Rate limit — resolve tier via an explicit query (never lazy-load
+    #    the subscription relationship, which would raise MissingGreenlet).
+    plan_name: Optional[str] = None
+    if getattr(user, "is_pro", False) and getattr(user, "active_subscription_id", None):
+        from models.domain import Subscription
+        from sqlalchemy import select as sa_select
+        r = await db.execute(
+            sa_select(Subscription.plan_name).where(Subscription.id == user.active_subscription_id)
+        )
+        plan_name = r.scalar()
+    tier = resolve_tier(getattr(user, "is_pro", False), plan_name)
+
     limiter = RateLimiter()
-    usage = limiter.check(user)
+    usage = limiter.check(user.id, tier)
 
     # 3. LLM client
     llm = get_llm()
@@ -275,7 +286,7 @@ async def ai_chat(
 
     # 6. Token accounting
     if total_tokens > 0:
-        limiter.record_tokens(user, total_tokens)
+        limiter.record_tokens(user.id, total_tokens)
 
     # 7. Audit logging
     conv_id = body.conversation_id or f"conv:{hashlib.sha256(str(user.id).encode()).hexdigest()[:12]}"

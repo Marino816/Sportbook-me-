@@ -10,12 +10,19 @@ safety ceiling applies regardless of tier.
 
 FAIL-CLOSED: if Redis is unreachable we cannot enforce limits safely, so
 the request is rejected with 503 rather than running an unlimited LLM call.
+
+IMPORTANT: methods here take a resolved ``tier`` string and ``user_id`` int
+— they never touch a SQLAlchemy ``User`` object directly, so they never
+trigger lazy-loading of the ``subscription`` relationship inside the async
+request context (which would raise MissingGreenlet).
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import HTTPException
 
@@ -24,27 +31,31 @@ logger = logging.getLogger(__name__)
 
 def _int_env(name: str, default: int) -> int:
     try:
-        return int(__import__("os").getenv(name, str(default)))
+        return int(os.getenv(name, str(default)))
     except (TypeError, ValueError):
         return default
 
 
 # ── Configurable limits ────────────────────────────────────────
-AI_BURST_LIMIT = _int_env("AI_BURST_LIMIT", 10)            # requests / 60s per user
+AI_BURST_LIMIT = _int_env("AI_BURST_LIMIT", 10)             # requests / 60s per user
 FREE_AI_DAILY_LIMIT = _int_env("FREE_AI_DAILY_LIMIT", 20)
 PRO_AI_DAILY_LIMIT = _int_env("PRO_AI_DAILY_LIMIT", 200)
 ELITE_AI_DAILY_LIMIT = _int_env("ELITE_AI_DAILY_LIMIT", 2000)
-AI_HARD_DAILY_LIMIT = _int_env("AI_HARD_DAILY_LIMIT", 2000)      # hard ceiling (all tiers)
+AI_HARD_DAILY_LIMIT = _int_env("AI_HARD_DAILY_LIMIT", 2000)  # hard ceiling (all tiers)
 AI_DAILY_TOKEN_BUDGET = _int_env("AI_DAILY_TOKEN_BUDGET", 200_000)  # tokens/user/day
 
 
-def _tier(user) -> str:
-    if getattr(user, "is_pro", False):
-        sub = getattr(user, "subscription", None)
-        if sub is not None and getattr(sub, "plan_name", "") == "Elite Stack":
-            return "elite_stack"
-        return "pro_arena"
-    return "free"
+def resolve_tier(is_pro: bool, plan_name: Optional[str]) -> str:
+    """Map a user's pro flag + subscription plan name to a tier key.
+
+    Uses only already-loaded scalars (no relationship access). Caller is
+    responsible for fetching ``plan_name`` via an explicit awaited query.
+    """
+    if not is_pro:
+        return "free"
+    if plan_name == "Elite Stack":
+        return "elite_stack"
+    return "pro_arena"
 
 
 def _daily_limit_for(tier: str) -> int:
@@ -73,19 +84,17 @@ class RateLimiter:
     def __init__(self):
         self._redis = _redis()
 
-    # ── Burst ──────────────────────────────────────────────────
+    # ── Keys ───────────────────────────────────────────────────
     def _burst_key(self, user_id: int) -> str:
         return f"ai:rl:burst:{user_id}"
 
-    # ── Daily message ──────────────────────────────────────────
     def _daily_key(self, user_id: int) -> str:
         return f"ai:rl:daily:{user_id}:{_today()}"
 
-    # ── Token budget ───────────────────────────────────────────
     def _token_key(self, user_id: int) -> str:
         return f"ai:rl:tokens:{user_id}:{_today()}"
 
-    def check(self, user) -> dict:
+    def check(self, user_id: int, tier: str) -> dict:
         """Enforce burst + daily + hard ceiling + token budget.
 
         Returns a dict of current usage/limits on success.
@@ -93,8 +102,6 @@ class RateLimiter:
         Raises HTTPException(503) when Redis is unavailable.
         """
         r = self._redis
-        user_id = user.id
-        tier = _tier(user)
 
         # Token budget (hard cost ceiling) — checked first.
         tokens = self._get_int(r, self._token_key(user_id))
@@ -129,10 +136,10 @@ class RateLimiter:
             "token_budget": AI_DAILY_TOKEN_BUDGET,
         }
 
-    def record_tokens(self, user, total_tokens: int) -> None:
+    def record_tokens(self, user_id: int, total_tokens: int) -> None:
         """Add completed request tokens to the daily budget counter (best-effort)."""
         try:
-            self._redis.incrby(self._token_key(user.id), int(total_tokens or 0))
+            self._redis.incrby(self._token_key(user_id), int(total_tokens or 0))
         except Exception as e:  # non-fatal; logging only
             logger.warning(f"Token accounting failed: {e}")
 

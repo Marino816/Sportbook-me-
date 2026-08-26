@@ -382,24 +382,12 @@ class TestTools:
 
 class TestRateLimiter:
     def test_tier_detection(self):
-        """_tier logic matches existing assistant/ai_routes conventions."""
-        # Free user
-        class FakeUser:
-            id = 1; is_pro = False
-        from assistant.limits import _tier
-        assert _tier(FakeUser()) == "free"
-
-        # Pro user
-        class FakePro:
-            id = 2; is_pro = True; subscription = None
-        assert _tier(FakePro()) == "pro_arena"
-
-        # Elite
-        class FakeSub:
-            plan_name = "Elite Stack"
-        class FakeElite:
-            id = 3; is_pro = True; subscription = FakeSub()
-        assert _tier(FakeElite()) == "elite_stack"
+        """resolve_tier maps pro flag + plan name to tier."""
+        from assistant.limits import resolve_tier
+        assert resolve_tier(False, None) == "free"
+        assert resolve_tier(True, None) == "pro_arena"
+        assert resolve_tier(True, "Pro Arena") == "pro_arena"
+        assert resolve_tier(True, "Elite Stack") == "elite_stack"
 
     def test_burst_limit(self, monkeypatch):
         fake = FakeRedis()
@@ -408,18 +396,15 @@ class TestRateLimiter:
         # Reset the fake redis reference
         limiter._redis = fake
 
-        class U:
-            id = 99; is_pro = False
-
-        # First 10 should pass
+        # First 10 should pass (burst limit = 10)
         for i in range(10):
-            info = limiter.check(U())
+            info = limiter.check(99, "free")
             assert info["burst_used"] <= 10
 
         # 11th should raise
         from fastapi import HTTPException
         with pytest.raises(HTTPException, match="429"):
-            limiter.check(U())
+            limiter.check(99, "free")
 
 
 # ═══════════════════════════════════════════════════════════════
