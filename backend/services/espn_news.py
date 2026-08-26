@@ -1,8 +1,18 @@
 """
 ESPN RSS Sports News — fetch, normalize, deduplicate, persist.
 
-No external dependencies (stdlib xml.etree only).
-Read-only query layer for AI and frontend.
+Runs as a background task via the scheduler (BCDFS ticker pattern).
+Read-only — never writes to optimizer/projection/DFS state.
+
+Supported feeds:
+  MLB       - https://www.espn.com/espn/rss/mlb/news
+  NFL       - https://www.espn.com/espn/rss/nfl/news
+  NBA       - https://www.espn.com/espn/rss/nba/news
+  NHL       - https://www.espn.com/espn/rss/nhl/news
+  NCAAF     - https://www.espn.com/espn/rss/ncf/news
+  NCAAB     - https://www.espn.com/espn/rss/ncb/news
+  Soccer    - https://www.espn.com/espn/rss/soccer/news
+  General   - https://www.espn.com/espn/rss/news
 """
 
 from __future__ import annotations
@@ -10,14 +20,15 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from sqlalchemy import select
+import feedparser
+from sqlalchemy import select, Column, Integer, String, Float, DateTime, Boolean
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from models.database import Base
 from models.domain import ESPNNewsItem
 
 logger = logging.getLogger(__name__)
@@ -37,7 +48,7 @@ MAX_ITEMS_PER_FEED = 15
 RETENTION_HOURS = 24
 
 
-# ── Fetch (stdlib only) ────────────────────────────────────
+# ── Fetch ──────────────────────────────────────────────────
 
 def _clean_html(html: str) -> str:
     text = re.sub(r'<[^>]+>', ' ', html or '')
@@ -45,44 +56,11 @@ def _clean_html(html: str) -> str:
     return text[:500]
 
 
-def _parse_rss_date(date_str: str) -> Optional[datetime]:
-    """Parse RFC-2822 date string (e.g. 'Wed, 26 Aug 2026 10:13:14 EST')."""
-    if not date_str:
-        return None
-    from email.utils import parsedate_to_datetime
-    try:
-        return parsedate_to_datetime(date_str)
-    except Exception:
-        return None
-
-
-async def _fetch_rss(url: str) -> list[dict]:
-    """Fetch and parse RSS feed via stdlib."""
-    import urllib.request
-    entries = []
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "SB-ME-AI/1.0"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            tree = ET.parse(resp)
-        root = tree.getroot()
-        for item in root.findall(".//item")[:MAX_ITEMS_PER_FEED]:
-            guid = item.findtext("guid") or item.findtext("link") or ""
-            title = (item.findtext("title") or "").strip()
-            link = item.findtext("link") or ""
-            desc = _clean_html(item.findtext("description") or "")
-            pub = _parse_rss_date(item.findtext("pubDate") or "")
-            if not guid:
-                guid = hashlib.sha256((title + link).encode()).hexdigest()[:32]
-            entries.append({
-                'guid': guid,
-                'article_url': link,
-                'headline': title,
-                'summary': desc[:500],
-                'published_at': pub,
-            })
-    except Exception as e:
-        logger.warning(f"RSS fetch failed for {url}: {e}")
-    return entries
+def _parse_published(entry) -> Optional[datetime]:
+    if hasattr(entry, 'published_parsed') and entry.published_parsed:
+        from time import mktime
+        return datetime.fromtimestamp(mktime(entry.published_parsed), tz=timezone.utc)
+    return None
 
 
 async def fetch_espn_news(sport: Optional[str] = None) -> list[dict]:
@@ -90,13 +68,26 @@ async def fetch_espn_news(sport: Optional[str] = None) -> list[dict]:
     results = []
     seen = set()
     for sp, url in feeds_to_fetch.items():
-        for entry in await _fetch_rss(url):
-            if entry['guid'] in seen:
-                continue
-            seen.add(entry['guid'])
-            entry['sport'] = sp
-            entry['source'] = 'ESPN'
-            results.append(entry)
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:MAX_ITEMS_PER_FEED]:
+                guid = entry.get('id') or entry.get('link') or hashlib.sha256(
+                    (entry.get('title','') + entry.get('link','')).encode()
+                ).hexdigest()[:32]
+                if guid in seen:
+                    continue
+                seen.add(guid)
+                results.append({
+                    'guid': guid,
+                    'article_url': entry.get('link', ''),
+                    'headline': (entry.get('title') or '').strip(),
+                    'summary': _clean_html(entry.get('summary', '')),
+                    'published_at': _parse_published(entry),
+                    'sport': sp,
+                    'source': 'ESPN',
+                })
+        except Exception as e:
+            logger.warning(f"ESPN feed fetch failed for {sp}: {e}")
     return results
 
 
@@ -122,12 +113,17 @@ async def sync_espn_news(db: AsyncSession) -> int:
                 ingested_at=now,
             ).on_conflict_do_update(
                 constraint='espn_news_items_guid_key',
-                set_={'headline': entry['headline'], 'summary': entry['summary'][:500] if entry['summary'] else None, 'ingested_at': now}
+                set_={
+                    'headline': entry['headline'],
+                    'summary': entry['summary'][:500] if entry['summary'] else None,
+                    'ingested_at': now,
+                }
             )
             await db.execute(stmt)
             new_count += 1
         except Exception as e:
             logger.warning(f"Upsert failed for {entry['guid']}: {e}")
+    # Mark stale
     stale_r = await db.execute(select(ESPNNewsItem).where(ESPNNewsItem.ingested_at < cutoff))
     for item in stale_r.scalars().all():
         item.stale = True
@@ -141,7 +137,13 @@ async def sync_espn_news(db: AsyncSession) -> int:
 
 # ── Query ──────────────────────────────────────────────────
 
-async def get_news(db: AsyncSession, *, sport=None, limit=20, freshness_hours=None, query=None) -> list[dict]:
+async def get_news(
+    db: AsyncSession, *,
+    sport: Optional[str] = None,
+    limit: int = 20,
+    freshness_hours: Optional[int] = None,
+    query: Optional[str] = None,
+) -> list[dict]:
     q = select(ESPNNewsItem).where(ESPNNewsItem.stale == False)
     if sport:
         q = q.where(ESPNNewsItem.sport == sport.upper() if sport.upper() in FEEDS else sport.title())
@@ -155,12 +157,18 @@ async def get_news(db: AsyncSession, *, sport=None, limit=20, freshness_hours=No
     for item in items:
         if query:
             ql = query.lower()
-            if ql not in (item.headline or '').lower() and ql not in (item.summary or '').lower():
+            hl = (item.headline or '').lower()
+            sm = (item.summary or '').lower()
+            if ql not in hl and ql not in sm:
                 continue
         results.append({
-            'guid': item.guid, 'headline': item.headline, 'summary': item.summary,
+            'guid': item.guid,
+            'headline': item.headline,
+            'summary': item.summary,
             'published_at': item.published_at.isoformat() if item.published_at else None,
-            'sport': item.sport, 'source': item.source, 'article_url': item.article_url,
+            'sport': item.sport,
+            'source': item.source,
+            'article_url': item.article_url,
             'freshness': _freshness_label(item.published_at),
         })
     return results
@@ -169,7 +177,8 @@ async def get_news(db: AsyncSession, *, sport=None, limit=20, freshness_hours=No
 def _freshness_label(published_at: Optional[datetime]) -> str:
     if not published_at:
         return "Unknown"
-    delta = datetime.now(timezone.utc) - published_at
+    now = datetime.now(timezone.utc)
+    delta = now - published_at
     if delta < timedelta(minutes=15):
         return "Just now"
     if delta < timedelta(hours=1):
