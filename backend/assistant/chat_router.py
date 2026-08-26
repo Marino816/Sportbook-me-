@@ -34,6 +34,7 @@ from assistant.knowledge import (
 )
 from assistant.tools import TOOLS, execute_tool, ALLOWED_TOOLS
 from assistant.limits import RateLimiter, resolve_tier
+from main import _maybe_sync_espn
 
 router = APIRouter(prefix="/api/ai", tags=["SB ME AI"])
 logger = logging.getLogger(__name__)
@@ -342,7 +343,6 @@ async def get_espn_news_endpoint(
 ) -> dict:
     """Return cached ESPN sports news."""
     from services.espn_news import get_news
-    from main import _maybe_sync_espn
     await _maybe_sync_espn(db)
     items = await get_news(db, sport=sport, query=query, limit=min(limit, 30),
                            freshness_hours=freshness_hours)
