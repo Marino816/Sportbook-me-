@@ -210,12 +210,72 @@ async def optimal_sim_queue(
     n_sims: int = Query(500),
     _: User = _admin,
 ):
-    """Admin: queue an Optimal% simulation via Celery."""
+    """Admin: queue an Optimal% simulation via Celery.
+
+    Phase 2D: freezes a deterministic input snapshot at queue time,
+    stores it in Redis, and passes the inputs_hash to the worker.
+    The worker loads the snapshot rather than re-fetching live SGO,
+    eliminating input drift between queue and execution.
+    """
     from worker.optimal_sim_tasks import run_optimal_sim
+    from dfs.optimal_simulation import _compute_inputs_hash
+    from dfs.optimal_lock import is_slate_locked, slate_lock_status
+    from dfs.optimal_snapshot import capture_snapshot, store_snapshot
+    from dfs.canonical import build_canonical_pool
+    from models.database import SessionLocal
+
+    # ── 1. Lock-time eligibility check ──
+    async with SessionLocal() as db:
+        from models.domain import DFSSlate
+        from sqlalchemy import select
+        stmt = select(DFSSlate).where(DFSSlate.id == slate_id)
+        result = await db.execute(stmt)
+        slate = result.scalar_one_or_none()
+
+    if slate is None:
+        return wrap_data({"queued": False, "error": "slate not found"}, source="admin")
+
+    lock_status = slate_lock_status(slate.start_time)
+    if is_slate_locked(slate.start_time):
+        return wrap_data({
+            "queued": False,
+            "error": f"slate is locked ({lock_status.value})",
+            "lock_status": lock_status.value,
+            "start_time": slate.start_time.isoformat() if slate.start_time else None,
+        }, source="admin")
+
+    # ── 2. Build canonical pool + freeze snapshot ──
     try:
-        task = run_optimal_sim.delay(platform=platform, sport=sport, slate_id=slate_id,
-                                      n_sims=n_sims, seed=42, timeout=1.0)
-        return wrap_data({"queued": True, "task_id": task.id, "slate_id": slate_id}, source="admin")
+        async with SessionLocal() as db:
+            pool, _ = await build_canonical_pool(
+                db, slate_id, platform=platform, with_ownership=True
+            )
+        if not pool:
+            return wrap_data({"queued": False, "error": "empty canonical pool"}, source="admin")
+
+        inputs_hash = _compute_inputs_hash(pool, sport, platform, 42, n_sims, "balanced")
+        snapshot = capture_snapshot(pool)
+        stored = store_snapshot(platform, sport, slate_id, inputs_hash, snapshot,
+                                metadata={"n_sims": n_sims, "seed": 42})
+
+        # ── 3. Enqueue worker with inputs_hash ──
+        task = run_optimal_sim.delay(
+            platform=platform, sport=sport, slate_id=slate_id,
+            n_sims=n_sims, seed=42, timeout=1.0,
+            inputs_hash=inputs_hash,
+        )
+        return wrap_data({
+            "queued": True,
+            "task_id": task.id,
+            "slate_id": slate_id,
+            "inputs_hash": inputs_hash,
+            "snapshot_stored": stored,
+            "pool_size": len(pool),
+            "lock_status": lock_status.value,
+        }, source="admin")
     except Exception as e:
-        # Celery worker may not be running — fall back to status message
-        return wrap_data({"queued": False, "error": str(e), "note": "Celery worker may be offline"}, source="admin")
+        return wrap_data({
+            "queued": False,
+            "error": str(e),
+            "note": "pool build or snapshot store failed"
+        }, source="admin")

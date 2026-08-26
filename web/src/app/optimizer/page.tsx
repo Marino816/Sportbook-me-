@@ -633,7 +633,7 @@ export default function OptimizerPage() {
                         <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th>
                         <Th><TTip help="SB ME projected field ownership estimate. Not actual contest ownership.">SB OWN%</TTip></Th>
                         <Th><TTip help="Positive values indicate players projected to provide stronger value relative to modeled ownership.">LEV</TTip></Th>
-                        <Th><TTip help="Percentage of SB ME simulations in which this player appeared in the highest-scoring legal lineup for the simulated slate outcome.">OPT%</TTip></Th>
+                        <Th><TTip help={optPctStatus === "LOCKED" ? "Optimal% is not available for locked/in-progress slates." : "Percentage of SB ME simulations in which this player appeared in the highest-scoring legal lineup for the simulated slate outcome."}>OPT%</TTip></Th>
                         <Th><TTip help="Modeled estimate: SB Projection × 1.35">CEIL</TTip></Th>
                         <Th><TTip help="Modeled estimate: SB Projection × 0.65">FLOOR</TTip></Th>
                         <Th><TTip help="Number of available player prop markets from SGO.">PROPS</TTip></Th>
@@ -682,7 +682,7 @@ export default function OptimizerPage() {
                             <Td style={{ color: value !== "—" ? "#c9a84c" : "#64748b", fontWeight: value !== "—" ? 700 : 400 }}>{value}</Td>
                             <Td style={{ color: ownPct != null ? "#94a3b8" : "#64748b" }}>{ownPct != null ? `${ownPct.toFixed(1)}%` : "N/A"}</Td>
                             <Td style={{ color: leverage != null ? (leverage > 0 ? "#4ade80" : "#f87171") : "#64748b" }}>{leverage != null ? leverage.toFixed(1) : "N/A"}</Td>
-                            <Td style={{ color: optPct != null ? "#c9a84c" : "#64748b", fontWeight: optPct != null ? 700 : 400 }}>{optPct != null ? `${optPct.toFixed(1)}%` : optPctStatus === "COMPLETE" ? "—" : optPctStatus === "RUNNING" || optPctStatus === "QUEUED" ? "Calculating…" : "—"}</Td>
+                            <Td style={{ color: optPct != null ? "#c9a84c" : "#64748b", fontWeight: optPct != null ? 700 : 400 }}>{optPct != null ? `${optPct.toFixed(1)}%` : optPctStatus === "LOCKED" ? "—" : optPctStatus === "COMPLETE" ? "—" : optPctStatus === "RUNNING" || optPctStatus === "QUEUED" ? "Calculating…" : "—"}</Td>
                             <Td style={{ color: ceiling != null ? "#94a3b8" : "#64748b" }}>{ceiling != null ? ceiling.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: floor != null ? "#94a3b8" : "#64748b" }}>{floor != null ? floor.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: mCount ? "#c9a84c" : "#64748b" }}>{mCount || "—"}</Td>

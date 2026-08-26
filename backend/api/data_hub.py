@@ -98,10 +98,35 @@ async def optimal_pct(
 ):
     """Customer: Optimal% simulation status + cached result (background-computed).
 
-    Returns status (NOT_RUN/QUEUED/RUNNING/COMPLETE/FAILED) and, when COMPLETE,
-    the per-player optimal_pct. Never runs the simulation synchronously.
+    Returns status (NOT_RUN/QUEUED/RUNNING/COMPLETE/FAILED/LOCKED) and, when
+    COMPLETE AND the slate is still unlocked, the per-player optimal_pct.
+    Never runs the simulation synchronously.
+
+    Phase 2D: after the slate locks (now >= start_time), the cached result
+    is NOT served as current actionable Optimal%.  Status returns LOCKED.
     """
     import dfs.optimal_cache as ocache
+    from dfs.optimal_lock import is_slate_locked, slate_lock_status
+    from models.domain import DFSSlate
+    from sqlalchemy import select
+
+    # ── Lock-time eligibility check ──
+    stmt = select(DFSSlate).where(DFSSlate.id == slate_id)
+    r = await db.execute(stmt)
+    slate = r.scalar_one_or_none()
+    if slate is None:
+        return wrap_data({"slate_id": slate_id, "status": "UNKNOWN"}, source="native")
+
+    lock_status = slate_lock_status(slate.start_time)
+    if is_slate_locked(slate.start_time):
+        return wrap_data({
+            "slate_id": slate_id,
+            "platform": platform,
+            "sport": sport,
+            "status": "LOCKED",
+            "lock_status": lock_status.value,
+            "note": "Optimal% is not available for locked/in-progress slates",
+        }, source="native")
 
     status = ocache.get_status(platform, sport, slate_id)
     result = None
@@ -113,6 +138,7 @@ async def optimal_pct(
         "platform": platform,
         "sport": sport,
         "status": status,
+        "lock_status": lock_status.value,
         "result": result,
     }, source="native")
 
