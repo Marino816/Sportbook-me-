@@ -6,7 +6,7 @@ import Image from "next/image";
 import {
   TrendingUp, Activity, Target, Layers, Bot, Sparkles,
   Users, BarChart3, Brain, Menu, X, ChevronRight, Check,
-  ArrowRight, Zap, Star,
+  ArrowRight, Zap, Star, Swords, Building2, Trophy, Flame, Shield,
 } from "lucide-react";
 
 /* ── Brand palette ── */
@@ -87,15 +87,133 @@ function Section({ id, className = "", children }: { id?: string; className?: st
   );
 }
 
+/* ── Parlay capability item ── */
+function ParlayCapability({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
+  return (
+    <div className="flex gap-4 p-5 rounded-2xl border transition-all hover:border-[#c9a84c30]"
+      style={{ background: cardElevated, borderColor: border }}>
+      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${gold}10`, border: `1px solid ${gold}15` }}>
+        {icon}
+      </div>
+      <div>
+        <h4 className="text-sm font-extrabold mb-1" style={{ color: textPrimary }}>{title}</h4>
+        <p className="text-xs leading-relaxed" style={{ color: textMuted }}>{description}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Bookmaker name pill (IP-safe: text only, no logos) ── */
+function BookPill({ name }: { name: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold shrink-0"
+      style={{ background: cardElevated, border: `1px solid ${border}`, color: textSecondary }}>
+      <span style={{ color: gold, fontSize: 9 }}>●</span>
+      {name}
+    </span>
+  );
+}
+
+/* ── Parlay Example Card (IP-safe: text names only, no logos) ── */
+function ParlayDemoCard() {
+  const legs = [
+    { event: "NYY @ LAD", market: "Moneyline", pick: "NYY ML", odds: "+145", result: true },
+    { event: "BOS @ HOU", market: "Run Line", pick: "BOS +1.5", odds: "-110", result: true },
+    { event: "CHC @ STL", market: "Total", pick: "Over 8.5", odds: "-105", result: true },
+    { event: "ATL @ NYM", market: "Player Prop", pick: "R. Acuna O 1.5 H+R+RBI", odds: "-120", result: null },
+  ];
+
+  const multiOdds = legs.reduce((acc, l) => { const o = Number(l.odds); return acc * (o > 0 ? 1 + o / 100 : 1 + 100 / Math.abs(o)); }, 1);
+  const payout = Math.round(multiOdds * 100 - 100);
+
+  return (
+    <div className="rounded-3xl border overflow-hidden shadow-2xl" style={{ background: cardElevated, borderColor: border }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: border }}>
+        <div className="flex items-center gap-2.5">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={gold} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+          </svg>
+          <span className="text-xs font-extrabold tracking-widest" style={{ color: gold }}>YOUR PARLAY</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${gold}12`, color: gold }}>4-LEG</span>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: "#4ade8012", color: "#4ade80" }}>DEMO</span>
+        </div>
+      </div>
+
+      {/* Legs */}
+      <div className="px-5 py-3 space-y-2">
+        {legs.map((leg, i) => (
+          <div key={i} className="flex items-center gap-3 py-2.5 px-3 rounded-xl border transition-all"
+            style={{
+              background: leg.result === true ? "rgba(74,222,128,0.04)" : leg.result === false ? "rgba(248,113,113,0.04)" : "rgba(255,255,255,0.01)",
+              borderColor: leg.result === true ? "rgba(74,222,128,0.15)" : leg.result === false ? "rgba(248,113,113,0.15)" : border,
+            }}>
+            {/* Result icon */}
+            <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: leg.result === true ? "rgba(74,222,128,0.15)" : leg.result === false ? "rgba(248,113,113,0.15)" : "rgba(255,255,255,0.05)" }}>
+              {leg.result === true ? <Check size={11} style={{ color: "#4ade80" }} /> :
+               leg.result === false ? <X size={11} style={{ color: "#f87171" }} /> :
+               <span className="text-[9px] font-bold" style={{ color: textMuted }}>{i + 1}</span>}
+            </div>
+            {/* Leg details */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold" style={{ color: textMuted }}>{leg.market}</span>
+                <span className="text-[10px]" style={{ color: textMuted }}>·</span>
+                <span className="text-[10px] font-semibold truncate" style={{ color: textPrimary }}>{leg.event}</span>
+              </div>
+              <div className="text-xs font-bold" style={{ color: textSecondary }}>{leg.pick}</div>
+            </div>
+            {/* Odds */}
+            <span className="text-sm font-extrabold shrink-0" style={{ color: gold }}>{leg.odds}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer — payout */}
+      <div className="px-5 py-3.5 border-t flex items-center justify-between" style={{ borderColor: border, background: "rgba(6,11,26,0.5)" }}>
+        <div>
+          <div className="text-[10px] font-bold tracking-wider uppercase" style={{ color: textMuted }}>4-Leg Multiplier</div>
+          <div className="text-xs" style={{ color: textMuted }}>{(multiOdds * 100).toFixed(0)} &times; $100</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] font-bold tracking-wider uppercase" style={{ color: textMuted }}>Potential Payout</div>
+          <div className="text-lg font-extrabold" style={{ color: "#4ade80" }}>+${payout}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── MAIN PAGE ── */
 export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const navLinks = [
     { label: "Features", href: "#features" },
+    { label: "Parlay Builder", href: "#parlay" },
     { label: "Pricing", href: "#pricing" },
     { label: "Resources", href: "#resources" },
     { label: "About", href: "#about" },
+  ];
+
+  // Featured 20 bookmakers (text names only — IP-safe)
+  const featuredBooks = [
+    "DraftKings", "FanDuel", "BetMGM", "Caesars", "ESPN BET",
+    "Bovada", "Bet365", "PointsBet", "BetRivers", "Pinnacle",
+    "Unibet", "William Hill", "Barstool", "Betway", "Betfred",
+    "Circa", "Hard Rock Bet", "BetOnline", "Polymarket", "Bally Bet",
+  ];
+
+  const coveredSports = [
+    { name: "MLB", icon: <Trophy size={18} style={{ color: gold }} />, count: "30 teams" },
+    { name: "NFL", icon: <Swords size={18} style={{ color: gold }} />, count: "32 teams" },
+    { name: "NBA", icon: <Target size={18} style={{ color: gold }} />, count: "30 teams" },
+    { name: "NHL", icon: <Flame size={18} style={{ color: gold }} />, count: "32 teams" },
+    { name: "NCAAF", icon: <Shield size={18} style={{ color: gold }} />, count: "130+ teams" },
+    { name: "NCAAB", icon: <Zap size={18} style={{ color: gold }} />, count: "350+ teams" },
   ];
 
   return (
@@ -351,6 +469,121 @@ export default function LandingPage() {
             })}
           </div>
         </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/*  PARLAY BUILDER SHOWCASE — MAJOR HOME PAGE FEATURE SECTION  */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <div id="parlay" style={{ background: navy, borderBottom: `1px solid ${border}` }}>
+        <Section className="py-20 md:py-24 lg:py-28">
+
+          {/* ── Section Header ── */}
+          <div className="text-center mb-14">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold tracking-widest mb-6"
+              style={{ borderColor: `${gold}40`, color: gold, background: `${gold}08` }}>
+              <Sparkles size={13} /> SB ME INTELLIGENCE&trade;
+            </div>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight mb-4" style={{ color: textPrimary }}>
+              The <span style={{ color: gold }}>Parlay Builder</span>
+            </h2>
+            <p className="text-base max-w-2xl mx-auto" style={{ color: textSecondary }}>
+              Stack moneyline, spreads, totals, and player props across 55+ sportsbooks — with real-time odds
+              comparison, smart leg validation, and SB ME Intelligence&trade; powering every selection.
+            </p>
+          </div>
+
+          {/* ── Main grid: demo card + capability list ── */}
+          <div className="grid lg:grid-cols-5 gap-10 lg:gap-14 items-start">
+            {/* Left: Parlay demo card (spans 2 cols) */}
+            <div className="lg:col-span-2">
+              <ParlayDemoCard />
+              {/* Mini CTA under the card */}
+              <div className="mt-5 text-center">
+                <Link href="/market-tools/parlay"
+                  className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl font-extrabold text-sm tracking-wide
+                    transition-all duration-200 hover:brightness-110 shadow-[0_4px_28px_rgba(201,168,76,0.40)]"
+                  style={{ background: gold, color: navy }}>
+                  <Swords size={16} /> BUILD MY PARLAY <ChevronRight size={16} />
+                </Link>
+                <p className="mt-2 text-[11px]" style={{ color: textMuted }}>
+                  Powered by real-time odds across 55+ platforms. No account required — try it now.
+                </p>
+              </div>
+            </div>
+
+            {/* Right: Capability highlights (spans 3 cols) */}
+            <div className="lg:col-span-3 space-y-6">
+              {/* Capability 1: 55+ Books */}
+              <ParlayCapability
+                icon={<Building2 size={22} style={{ color: gold }} />}
+                title="55+ Sportsbooks & Platforms"
+                description="Compare odds across DraftKings, FanDuel, BetMGM, Caesars, ESPN BET, Bovada, Bet365, PointsBet, BetRivers, Pinnacle, Unibet, William Hill, Barstool, Betway, Betfred, Circa, Hard Rock Bet, BetOnline, Polymarket, Bally Bet, and 35+ more. Find the best line for every leg of your parlay."
+              />
+
+              {/* Capability 2: 6 sports */}
+              <ParlayCapability
+                icon={<Trophy size={22} style={{ color: gold }} />}
+                title="6-Sport Coverage"
+                description="Build parlays across MLB, NFL, NBA, NHL, NCAAF, and NCAAB. Every major DFS sport is live with real-time odds, player props, team totals, game totals, spreads, and moneylines."
+              />
+
+              {/* Capability 3: Bet types */}
+              <ParlayCapability
+                icon={<Target size={22} style={{ color: gold }} />}
+                title="Moneyline, Spreads, Totals & Player Props"
+                description="Combine any bet type in a single parlay. Stack a moneyline from one game with a player prop from another and a total from a third. The Builder validates every leg and shows you the real multi-leg payout before you lock in."
+              />
+
+              {/* Capability 4: SB ME Intelligence */}
+              <ParlayCapability
+                icon={<Brain size={22} style={{ color: gold }} />}
+                title="SB ME Intelligence&trade; Integration"
+                description="Every parlay is backed by SB ME's AI-powered analysis. Check player projections, Optimal%, leverage scores, and SB OWN% alongside live odds — so you can build data-driven parlays, not guesses."
+              />
+            </div>
+          </div>
+
+          {/* ── Bookmakers strip ── */}
+          <div className="mt-16 pt-10 border-t" style={{ borderColor: border }}>
+            <div className="text-center mb-6">
+              <h3 className="text-sm font-bold tracking-widest uppercase" style={{ color: textMuted }}>
+                55+ Integrated Sportsbooks & Platforms
+              </h3>
+              <p className="mt-1 text-xs" style={{ color: textMuted }}>
+                Real-time odds comparison across every major operator.
+              </p>
+            </div>
+            {/* Scrollable book pill strip */}
+            <div className="flex flex-wrap justify-center gap-2 max-w-4xl mx-auto">
+              {featuredBooks.map((book) => (
+                <BookPill key={book} name={book} />
+              ))}
+              <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-[11px] font-extrabold"
+                style={{ background: `${gold}10`, border: `1px solid ${gold}25`, color: gold }}>
+                +35 MORE
+              </span>
+            </div>
+          </div>
+
+          {/* ── Sports coverage grid ── */}
+          <div className="mt-12 pt-10 border-t" style={{ borderColor: border }}>
+            <div className="text-center mb-6">
+              <h3 className="text-sm font-bold tracking-widest uppercase" style={{ color: textMuted }}>
+                Live Coverage Across 6 Sports
+              </h3>
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3 max-w-3xl mx-auto">
+              {coveredSports.map((sport) => (
+                <div key={sport.name} className="text-center p-4 rounded-2xl border transition-all hover:border-[#c9a84c30]"
+                  style={{ background: cardElevated, borderColor: border }}>
+                  <div className="flex justify-center mb-2">{sport.icon}</div>
+                  <div className="text-sm font-extrabold" style={{ color: textPrimary }}>{sport.name}</div>
+                  <div className="text-[10px] font-bold" style={{ color: textMuted }}>{sport.count}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Section>
       </div>
 
       {/* ═══ INTELLIGENCE ═══ */}
