@@ -57,7 +57,10 @@ function countPlayerMarkets(playerId: string, markets: SBMarket[]): number {
 }
 
 function normName(n: string): string {
-  return (n || "").toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+  // Normalize Unicode accents FIRST (NFD decomposes é → e + combining mark),
+  // then strip non-[a-z0-9] characters.  Prevents name mismatch between
+  // SGO ("Jesús Luzardo") and BC DFS ("Jesus Luzardo").
+  return (n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "").trim();
 }
 
 function matchDFS(
@@ -372,7 +375,26 @@ export default function OptimizerPage() {
   }, [players, subTab, excludedPlayerIds, likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers, projPool, optPctMap, sortField, sortDir]);
 
   const upcomingEvents = events.filter((e) => !liveClass(e.status));
-  const canGenerate = !slatesLoading && resolvedSlateId != null && filteredEvents.length > 0;
+
+  // Slate integrity: DFS‑player‑to‑SGO‑player match rate
+  const slateIntegrity = useMemo(() => {
+    if (!resolvedSlateId || dfsPlayers.length === 0) return { matchRate: 1.0, matched: 0, total: 0, missingPlayers: [] as string[], healthy: true };
+    // Match every DFS player against the SGO player universe
+    const matched = dfsPlayers.filter((dp) => {
+      return players.some((sp) => normName(sp.name) === normName(dp.name));
+    }).length;
+    const total = dfsPlayers.length;
+    const matchRate = total > 0 ? matched / total : 1.0;
+    const missingPlayers = dfsPlayers
+      .filter((dp) => !players.some((sp) => normName(sp.name) === normName(dp.name)))
+      .map((dp) => dp.name);
+    // 85% threshold — below this, something is systemically wrong (e.g. stale slate,
+    // mismatched sport, incorrect SGO league, or name‑normalisation bugs)
+    const healthy = matchRate >= 0.85;
+    return { matchRate, matched, total, missingPlayers, healthy };
+  }, [resolvedSlateId, dfsPlayers, players]);
+
+  const canGenerate = !slatesLoading && resolvedSlateId != null && filteredEvents.length > 0 && slateIntegrity.healthy;
 
   // ── Game toggles ──
   const selectAllGames = useCallback(() => setExcludedGameIds(new Set()), []);
@@ -533,7 +555,7 @@ export default function OptimizerPage() {
           <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate is available yet` : "Select a slate"}
+            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players · ${(slateIntegrity.matchRate * 100).toFixed(0)}% SGO-matched` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate is available yet` : "Select a slate"}
           </span>
         </div>
         <button onClick={() => setShowStackingRules(!showStackingRules)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: showStackingRules ? "rgba(201,168,76,0.15)" : "#0a0f24", border: showStackingRules ? "1px solid #c9a84c" : "1px solid #1e293b", color: showStackingRules ? "#c9a84c" : "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
@@ -780,6 +802,24 @@ export default function OptimizerPage() {
           <button onClick={() => optimizeMutation.mutate()} disabled={!canGenerate || optimizeMutation.isPending} style={{ width: "100%", padding: "16px", borderRadius: 14, fontWeight: 900, fontSize: 16, textTransform: "uppercase", letterSpacing: 1, background: canGenerate ? "#c9a84c" : "#1e293b", color: canGenerate ? "#060b1a" : "#64748b", border: "none", cursor: canGenerate ? "pointer" : "not-allowed", boxShadow: canGenerate ? "0 4px 24px rgba(201,168,76,0.4)" : "none", marginTop: 8 }}>
             {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>OPTIMIZE</>}
           </button>
+          {resolvedSlateId != null && !slateIntegrity.healthy && (
+            <div style={{ marginTop: 12, padding: "14px 18px", borderRadius: 12, background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.2)", fontSize: 11 }}>
+              <div style={{ fontWeight: 800, color: "#ef4444", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                <Ban size={13} /> SLATE INTEGRITY FAILURE — OPTIMIZE DISABLED
+              </div>
+              <div style={{ color: "#94a3b8", marginBottom: 4 }}>
+                Only {slateIntegrity.matched} of {slateIntegrity.total} DFS players ({Number(slateIntegrity.matchRate * 100).toFixed(1)}%) matched against the live SGO player pool.
+                Minimum threshold: 85%.
+              </div>
+              {slateIntegrity.missingPlayers.length > 0 && (
+                <div style={{ color: "#64748b", marginTop: 4 }}>
+                  <strong>{slateIntegrity.missingPlayers.length}</strong> unmatched DFS players include:{" "}
+                  {slateIntegrity.missingPlayers.slice(0, 8).join(", ")}
+                  {slateIntegrity.missingPlayers.length > 8 ? `, +${slateIntegrity.missingPlayers.length - 8} more` : ""}.
+                </div>
+              )}
+            </div>
+          )}
           {!slatesLoading && resolvedSlateId == null && (
             <div style={{ marginTop: 12, padding: "16px 18px", borderRadius: 12, background: "rgba(201,168,76,0.04)", border: "1px solid rgba(201,168,76,0.12)", textAlign: "center" }}>
               <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>⏳</div>
