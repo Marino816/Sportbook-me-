@@ -93,6 +93,7 @@ async def get_slate(
             "position": p.position,
             "eligible_positions": p.eligible_positions,
             "salary": p.salary,
+            "fppg": p.fppg,
             "game_info": p.game_info,
             "mapping_status": p.mapping_status,
         } for p in players],

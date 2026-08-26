@@ -215,7 +215,7 @@ export default function OptimizerPage() {
           const map: Record<string, CanonicalPlayer> = {};
           const projMap: Record<string, any> = {};
           for (const p of res?.data?.players ?? []) {
-            const nm = (p.name || "").toLowerCase().trim();
+            const nm = normName(p.name);
             if (nm) {
               map[nm] = p;
               // Seed projPool from canonical pool so SB PROJ & VALUE display before OPTIMIZE
@@ -253,7 +253,7 @@ export default function OptimizerPage() {
         if (status === "COMPLETE" && res?.data?.result?.players) {
           const m: Record<string, number> = {};
           for (const p of res.data.result.players) {
-            const nm = (p.name || "").toLowerCase().trim();
+            const nm = normName(p.name);
             if (nm) m[nm] = p.optimal_pct;
           }
           setOptPctMap(m);
@@ -348,8 +348,8 @@ export default function OptimizerPage() {
     const sorted = [...pool].sort((a, b) => {
       const dfsA = matchDFS({ name: a.name, team_id: a.team_id, position: a.position }, dfsPlayers);
       const dfsB = matchDFS({ name: b.name, team_id: b.team_id, position: b.position }, dfsPlayers);
-      const poolA = projPool[a.name.toLowerCase()];
-      const poolB = projPool[b.name.toLowerCase()];
+      const poolA = projPool[normName(a.name)];
+      const poolB = projPool[normName(b.name)];
       const fpA = poolA?.projected_fp != null && poolA?.projection_source !== "UNAVAILABLE" ? poolA.projected_fp : null;
       const fpB = poolB?.projected_fp != null && poolB?.projection_source !== "UNAVAILABLE" ? poolB.projected_fp : null;
       if (sortField === "salary") {
@@ -358,8 +358,8 @@ export default function OptimizerPage() {
         return sortDir === "desc" ? salB - salA : salA - salB;
       }
       if (sortField === "optimal") {
-        const optA = optPctMap[a.name.toLowerCase()] ?? null;
-        const optB = optPctMap[b.name.toLowerCase()] ?? null;
+        const optA = optPctMap[normName(a.name)] ?? null;
+        const optB = optPctMap[normName(b.name)] ?? null;
         if (optA == null && optB == null) return 0;
         if (optA == null) return 1;
         if (optB == null) return -1;
@@ -741,17 +741,17 @@ export default function OptimizerPage() {
                         const isExcluded = excludedPlayerIds.has(p.player_id);
                         const isLocked = lockedPlayerIds.has(p.player_id);
                         const startT = evt?.start_time ? new Date(evt.start_time).toLocaleString([], { hour: "numeric", minute: "2-digit" }) : "";
-                        const poolEntry = projPool[p.name.toLowerCase()];
+                        const poolEntry = projPool[normName(p.name)];
                         const sbProj = poolEntry?.projected_fp != null && poolEntry?.projection_source !== "UNAVAILABLE" ? poolEntry.projected_fp : null;
                         const salary = dfs?.salary ?? 0;
                         const effectiveProj = myProj[p.player_id] != null ? myProj[p.player_id] : sbProj;
                         const value = salary > 0 && effectiveProj != null ? (effectiveProj / (salary / 1000)).toFixed(2) : "—";
-                        const canon = canonicalPool[p.name.toLowerCase()];
+                        const canon = canonicalPool[normName(p.name)];
                         const ownPct = canon?.sbme_ownership_pct ?? null;
                         const leverage = canon?.leverage ?? null;
                         const ceiling = canon?.ceiling ?? null;
                         const floor = canon?.floor ?? null;
-                        const optPct = optPctMap[p.name.toLowerCase()] ?? null;
+                        const optPct = optPctMap[normName(p.name)] ?? null;
                         return (
                           <tr key={p.player_id} style={{ borderBottom: "1px solid #1e293b20", opacity: isExcluded ? 0.35 : 1, background: isLocked ? "rgba(201,168,76,0.08)" : isLiked ? "rgba(201,168,76,0.03)" : "transparent" }}>
                             <Td>{teamName}</Td>
