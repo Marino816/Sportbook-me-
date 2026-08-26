@@ -21,3 +21,4 @@ bcrypt>=4.0.0,<4.1
 python-jose[cryptography]
 python-multipart
 sports-odds-api
+feedparser
