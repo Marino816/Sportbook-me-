@@ -376,23 +376,91 @@ export default function OptimizerPage() {
 
   const upcomingEvents = events.filter((e) => !liveClass(e.status));
 
-  // Slate integrity: DFS‑player‑to‑SGO‑player match rate
+  // Slate integrity: bidirectional SGO↔DFS match rate scoped to this slate's games.
+  // SGO only returns bettable players (~8 per game), NOT full rosters (~92 per game).
+  // Comparing all 459 DFS players against the full-league SGO pool is incorrect.
+  // Instead: (1) scope SGO events to the teams in this slate, (2) count SGO players
+  // from those events, (3) measure how many of those SGO players match DFS, and (4)
+  // measure how many DFS players from those SGO-covered games match SGO players.
   const slateIntegrity = useMemo(() => {
-    if (!resolvedSlateId || dfsPlayers.length === 0) return { matchRate: 1.0, matched: 0, total: 0, missingPlayers: [] as string[], healthy: true };
-    // Match every DFS player against the SGO player universe
-    const matched = dfsPlayers.filter((dp) => {
-      return players.some((sp) => normName(sp.name) === normName(dp.name));
+    if (!resolvedSlateId || dfsPlayers.length === 0) return { matchRate: 1.0, matched: 0, total: 0, sgoPlayerCount: 0, dfsScopeCount: 0, dfsToSgoMatchRate: 0, dfsToSgoMatched: 0, missingPlayers: [] as string[], healthy: true };
+
+    // Get unique team abbreviations from the slate DFS pool
+    const slateTeamAbbrs = new Set(dfsPlayers.map((dp) => (dp.team || "").toUpperCase()).filter(Boolean));
+
+    // Find SGO events whose home/away teams are in this slate
+    const slateEvents = events.filter((e) => {
+      const ha = (e.home_team?.abbreviation || "").toUpperCase();
+      const aa = (e.away_team?.abbreviation || "").toUpperCase();
+      return slateTeamAbbrs.has(ha) || slateTeamAbbrs.has(aa);
+    });
+
+    // Build team_id → abbreviation map from these events
+    const teamIdToAbbr: Record<string, string> = {};
+    for (const e of slateEvents) {
+      if (e.home_team?.team_id && e.home_team?.abbreviation)
+        teamIdToAbbr[e.home_team.team_id.toUpperCase()] = e.home_team.abbreviation.toUpperCase();
+      if (e.away_team?.team_id && e.away_team?.abbreviation)
+        teamIdToAbbr[e.away_team.team_id.toUpperCase()] = e.away_team.abbreviation.toUpperCase();
+    }
+
+    // Collect SGO players ONLY from slate-scoped events
+    const slateSgoPlayers = slateEvents.flatMap((e) => e.players || []);
+    const sgoTotal = slateSgoPlayers.length;
+
+    if (sgoTotal === 0) return { matchRate: 1.0, matched: 0, total: 0, sgoPlayerCount: 0, dfsScopeCount: 0, dfsToSgoMatchRate: 1, dfsToSgoMatched: 0, missingPlayers: [] as string[], healthy: true };
+
+    // SGO→DFS: of the SGO players in slate games, how many have a DFS record
+    // with matching name AND team?
+    const sgoToDfsMatched = slateSgoPlayers.filter((sp) => {
+      const sgoTeamAbbr = teamIdToAbbr[(sp.team_id || "").toUpperCase()] || "";
+      return dfsPlayers.some((dp) =>
+        normName(dp.name) === normName(sp.name) &&
+        (dp.team || "").toUpperCase() === sgoTeamAbbr
+      );
     }).length;
-    const total = dfsPlayers.length;
-    const matchRate = total > 0 ? matched / total : 1.0;
-    const missingPlayers = dfsPlayers
-      .filter((dp) => !players.some((sp) => normName(sp.name) === normName(dp.name)))
-      .map((dp) => dp.name);
-    // 85% threshold — below this, something is systemically wrong (e.g. stale slate,
-    // mismatched sport, incorrect SGO league, or name‑normalisation bugs)
-    const healthy = matchRate >= 0.85;
-    return { matchRate, matched, total, missingPlayers, healthy };
-  }, [resolvedSlateId, dfsPlayers, players]);
+    const sgoMatchRate = sgoToDfsMatched / sgoTotal;
+
+    // DFS→SGO: of the DFS players whose teams are in the scoped SGO events,
+    // how many match an SGO player? This flags missing SGO coverage.
+    const dfsScopePlayers = dfsPlayers.filter((dp) => slateTeamAbbrs.has((dp.team || "").toUpperCase()));
+    const dfsToSgoMatched = dfsScopePlayers.filter((dp) => {
+      const dpTeam = (dp.team || "").toUpperCase();
+      return slateSgoPlayers.some((sp) => {
+        const sgoTeamAbbr = teamIdToAbbr[(sp.team_id || "").toUpperCase()] || "";
+        return normName(sp.name) === normName(dp.name) && sgoTeamAbbr === dpTeam;
+      });
+    }).length;
+    const dfsMatchRate = dfsScopePlayers.length > 0 ? dfsToSgoMatched / dfsScopePlayers.length : 1.0;
+
+    // Missing DFS players from SGO (scoped to slate games only)
+    const missingPlayers = dfsScopePlayers
+      .filter((dp) => {
+        const dpTeam = (dp.team || "").toUpperCase();
+        return !slateSgoPlayers.some((sp) => {
+          const sgoTeamAbbr = teamIdToAbbr[(sp.team_id || "").toUpperCase()] || "";
+          return normName(sp.name) === normName(dp.name) && sgoTeamAbbr === dpTeam;
+        });
+      })
+      .map((dp) => dp.name)
+      .slice(0, 20);
+
+    // Primary gate: SGO→DFS must be ≥ 85%. If the SGO players in slate games
+    // don't match DFS records, the slate date/teams are out of sync.
+    const healthy = sgoMatchRate >= 0.85;
+
+    return {
+      matchRate: sgoMatchRate,
+      matched: sgoToDfsMatched,
+      total: sgoTotal,
+      sgoPlayerCount: sgoTotal,
+      dfsScopeCount: dfsScopePlayers.length,
+      dfsToSgoMatchRate: dfsMatchRate,
+      dfsToSgoMatched,
+      missingPlayers,
+      healthy,
+    };
+  }, [resolvedSlateId, dfsPlayers, players, events]);
 
   const canGenerate = !slatesLoading && resolvedSlateId != null && filteredEvents.length > 0 && slateIntegrity.healthy;
 
@@ -555,7 +623,7 @@ export default function OptimizerPage() {
           <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players · ${(slateIntegrity.matchRate * 100).toFixed(0)}% SGO-matched` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate is available yet` : "Select a slate"}
+            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players · SGO {${slateIntegrity.total} players, ${(slateIntegrity.matchRate * 100).toFixed(0)}% matched}` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate is available yet` : "Select a slate"}
           </span>
         </div>
         <button onClick={() => setShowStackingRules(!showStackingRules)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: showStackingRules ? "rgba(201,168,76,0.15)" : "#0a0f24", border: showStackingRules ? "1px solid #c9a84c" : "1px solid #1e293b", color: showStackingRules ? "#c9a84c" : "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
@@ -808,14 +876,12 @@ export default function OptimizerPage() {
                 <Ban size={13} /> SLATE INTEGRITY FAILURE — OPTIMIZE DISABLED
               </div>
               <div style={{ color: "#94a3b8", marginBottom: 4 }}>
-                Only {slateIntegrity.matched} of {slateIntegrity.total} DFS players ({Number(slateIntegrity.matchRate * 100).toFixed(1)}%) matched against the live SGO player pool.
-                Minimum threshold: 85%.
+                Only {slateIntegrity.matched} of {slateIntegrity.total} SGO players in this slate's games ({Number(slateIntegrity.matchRate * 100).toFixed(1)}%) matched against DFS records. Minimum threshold: 85%.
+                ({slateIntegrity.dfsToSgoMatched} of {slateIntegrity.dfsScopeCount} DFS players matched back to SGO.)
               </div>
               {slateIntegrity.missingPlayers.length > 0 && (
                 <div style={{ color: "#64748b", marginTop: 4 }}>
-                  <strong>{slateIntegrity.missingPlayers.length}</strong> unmatched DFS players include:{" "}
-                  {slateIntegrity.missingPlayers.slice(0, 8).join(", ")}
-                  {slateIntegrity.missingPlayers.length > 8 ? `, +${slateIntegrity.missingPlayers.length - 8} more` : ""}.
+                  DFS players without SGO match (from scoped games): {slateIntegrity.missingPlayers.join(", ")}
                 </div>
               )}
             </div>
