@@ -225,15 +225,18 @@ async def run_optimizer(
         projection_overrides = _sget("projection_overrides", []) or []
         if projection_overrides:
             override_by_name = {}
+            import unicodedata, re
+            def _norm(n):
+                return re.sub(r'[^a-z0-9]', '', unicodedata.normalize('NFD', (n or '').lower()))
             for ov in projection_overrides:
                 if isinstance(ov, dict) and ov.get("name"):
                     try:
-                        override_by_name[str(ov["name"]).strip().lower()] = float(ov.get("projected_fp", 0))
+                        override_by_name[_norm(str(ov["name"]))] = float(ov.get("projected_fp", 0))
                     except (ValueError, TypeError):
                         continue
             if override_by_name:
                 for pl in projections_list:
-                    nm = (pl.get("name") or "").strip().lower()
+                    nm = _norm(pl.get("name") or "")
                     if nm in override_by_name:
                         pl["projected_fp"] = override_by_name[nm]
 

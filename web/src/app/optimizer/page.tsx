@@ -535,7 +535,7 @@ export default function OptimizerPage() {
           setProjPool(poolMap);
         } else { setProjPool({}); }
       } catch { setLineups([]); setProjPool({}); }
-      setLastGenMeta({ sport, platform, strategy, gameCount: filteredEvents.length });
+      setLastGenMeta({ sport, platform, strategy, gameCount: dfsPlayers.length > 0 ? (new Set(dfsPlayers.map(p => p.team)).size / 2) : 0 });
       setMainTab("built");
       setSelectedLineupIndex(0);
     },

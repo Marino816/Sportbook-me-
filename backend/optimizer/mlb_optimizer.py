@@ -21,7 +21,7 @@ from ortools.sat.python import cp_model
 PLATFORM_CONFIG = {
     "draftkings": {
         "salary_cap": 50000,
-        "min_salary": 42000,
+        "min_salary": 0,
         "player_count": 10,
         "slots": {
             "P": 2, "C": 1, "1B": 1, "2B": 1, "3B": 1, "SS": 1, "OF": 3,
@@ -149,11 +149,16 @@ class MLBOptimizer:
                 continue
             if (p.get("salary", 0) or 0) <= 0:
                 continue
-            if (p.get("projected_fp", 0) or 0) <= 0:
+            # Only exclude players with zero projection if they are hitters.
+            # Pitchers without projections (no SGO fantasyScore market) must
+            # remain selectable on salary/fppg/eligibility grounds — otherwise
+            # the solver cannot fill the 2 required P slots.
+            pos = _normalize_mlb_pos(p.get("roster_position") or p.get("position") or "", self.platform)
+            fp = p.get("projected_fp", 0) or 0
+            if fp <= 0 and pos != "P":
                 continue
             idx = len(self.players)
             self.players.append(p)
-            pos = _normalize_mlb_pos(p.get("roster_position") or p.get("position") or "", self.platform)
             self.pos_mask[idx] = pos
             self.idx_by_id[p.get("id", idx)] = idx
             team = p.get("team", "")
