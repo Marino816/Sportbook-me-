@@ -553,6 +553,17 @@ async def scheduler_tick(
         if len(targets) > 1:
             await asyncio.sleep(1)
 
+    # ── Optimal% auto-generation trigger (Phase 2E) ──
+    # After each BCDFS tick, check if any unlocked slates need fresh
+    # Optimal% computation. This is a lightweight eligibility check;
+    # the actual 500-sim workload runs asynchronously in the Celery worker.
+    if budget_type == "auto":
+        try:
+            from worker.tasks import auto_generate_optimal_pct
+            auto_generate_optimal_pct.delay()
+        except Exception:
+            pass  # non-blocking; try again next tick
+
     return {
         "status": "ok",
         "budget_type": budget_type,
