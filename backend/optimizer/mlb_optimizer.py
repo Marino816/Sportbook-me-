@@ -406,23 +406,26 @@ class MLBOptimizer:
             "solver_status": "OPTIMAL" if status == cp_model.OPTIMAL else "FEASIBLE",
         }
 
-    def generate(self, count: int = 1) -> list[dict]:
-        """
-        Generate count lineups with uniqueness + exposure enforcement.
-        Iterative CP-SAT solving — each solution adds no-good constraints.
-
-        Uses time-based seeding so consecutive calls (regenerate) produce
-        different solutions even without prior-lineup no-good constraints.
-        """
+    def generate(self, count: int = 1, regenerate_from_ids: list[list[str]] = None) -> list[dict]:
+        """Generate count lineups. regenerate_from_ids: prior lineup ID-sets
+        that become no-good constraints so regenerate produces new lineups."""
         import time as _time
         lineups = []
         player_exposure = {}
+        
+        # Pre-load regenerate constraints onto the prior-ids list
+        extra_prior_sets = []
+        if regenerate_from_ids:
+            for prior_set in regenerate_from_ids:
+                if prior_set:
+                    extra_prior_sets.append(set(prior_set))
 
-        for i in range(count * 3):
+        for i in range(count * 4):
             if len(lineups) >= count:
                 break
 
             prior_sets = [{p.get("id") for p in lu["players"]} for lu in lineups]
+            prior_sets = extra_prior_sets + prior_sets  # regenerate constraints first
             seed = int(_time.time_ns() % 999999) + i * 7 + random.randint(0, 999)
             lineup = self.build_lineup(
                 forbidden_ids=set(),

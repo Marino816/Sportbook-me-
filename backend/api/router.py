@@ -245,6 +245,7 @@ async def run_optimizer(
 
         locks = _sget("locked_player_ids", []) or []
         excludes = _sget("excluded_player_ids", []) or []
+        regenerate_from_ids = _sget("regenerate_from_ids", []) or []
         constraints = {
             "max_hitters_per_team": _sget("max_hitters_per_team"),
             "stack_size": _sget("stack_size"),
@@ -301,7 +302,7 @@ async def run_optimizer(
             locks=locks, excludes=all_excludes,
             **(constraints),
         )
-        lineups = opt.generate(count=requested_lineups)
+        lineups = opt.generate(count=requested_lineups, regenerate_from_ids=regenerate_from_ids)
 
         # Merge quarantine reports
         all_quarantined = list(quarantined_from_router)
