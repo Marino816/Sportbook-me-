@@ -341,9 +341,11 @@ async def get_espn_news_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Return cached ESPN sports news."""
-    from services.espn_news import get_news
-    from main import _maybe_sync_espn
-    await _maybe_sync_espn(db)
+    from services.espn_news import get_news, sync_espn_news
+    try:
+        await sync_espn_news(db)
+    except Exception:
+        pass
     items = await get_news(db, sport=sport, query=query, limit=min(limit, 30),
                            freshness_hours=freshness_hours)
     return wrap_data({"count": len(items), "sport": sport, "items": items})
