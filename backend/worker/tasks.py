@@ -26,7 +26,7 @@ if _parent not in sys.path:
 
 from integrations.balldontlie import BallDontLieAPI
 from integrations.odds import OddsAPI
-from models.database import SessionLocal
+from models.database import SessionLocal, SyncSessionLocal
 from models.domain import SystemStatus
 
 from worker.celery import celery_app
@@ -93,86 +93,52 @@ def auto_generate_optimal_pct():
     Phase 2D lock gates + snapshot rules applied.
     Concurrency=1 on the worker ensures only one sim at a time.
     Duplicate-lock in run_optimal_sim prevents double-enqueue.
+
+    Uses SyncSessionLocal to avoid the Celery worker's event-loop mismatch.
     """
-    return asyncio.run(_auto_generate_async())
+    return _auto_generate_sync()
 
 
-async def _auto_generate_async():
+def _auto_generate_sync():
+    """Lightweight eligibility check — enqueue if slate is unlocked.
+
+    Does NOT build canonical pools or compute hashes itself. The worker's
+    _run_sim_async already has cache-hit + inputs_hash comparison built in
+    (Phase 2D). This function only checks the lock gate and enqueues.
+    """
     import logging
     logger = logging.getLogger(__name__)
-
     from dfs.db import DFSSlate
-    from dfs.canonical import build_canonical_pool
-    from dfs.optimal_simulation import _compute_inputs_hash
-    from dfs.optimal_lock import is_slate_locked, slate_lock_status
-    from dfs.optimal_snapshot import capture_snapshot, store_snapshot
-    import dfs.optimal_cache as ocache
+    from dfs.optimal_lock import is_slate_locked
     from worker.optimal_sim_tasks import run_optimal_sim
 
+    with SyncSessionLocal() as db:
+        slates = (db.query(DFSSlate)
+                  .filter(DFSSlate.status == "PUBLISHED")
+                  .order_by(DFSSlate.start_time)
+                  .all())
+
     results = []
-    async with SessionLocal() as db:
-        from sqlalchemy import select
-        r = await db.execute(
-            select(DFSSlate)
-            .where(DFSSlate.status == "PUBLISHED")
-            .order_by(DFSSlate.start_time)
-        )
-        slates = r.scalars().all()
-
     for slate in slates:
+        # ONLY gate at trigger level: lock time
+        # Cache-hit / inputs_hash dedup handled by the worker
         if is_slate_locked(slate.start_time):
-            continue  # locked/expired — never generate
-
-        platform = slate.platform
-        sport = slate.sport
-        sid = slate.id
-
-        # Check if already completed with current inputs
-        try:
-            async with SessionLocal() as db2:
-                pool, _ = await build_canonical_pool(
-                    db2, sid, platform=platform, with_ownership=True
-                )
-            if not pool:
-                continue
-
-            chash = _compute_inputs_hash(pool, sport, platform, 42, 500, "balanced")
-            existing = ocache.get_result(platform, sport, sid, expected_hash=chash)
-            if existing:
-                results.append({
-                    "slate_id": sid, "slate_name": slate.slate_name,
-                    "action": "skip_cache_hit", "inputs_hash": chash,
-                })
-                continue
-        except Exception as e:
-            logger.warning(f"auto-gen: pool/hash check failed for slate {sid}: {e}")
             continue
 
-        # Freeze snapshot + enqueue with deterministic hash
         try:
-            snap = capture_snapshot(pool)
-            store_snapshot(platform, sport, sid, chash, snap)
-
             task = run_optimal_sim.delay(
-                platform=platform, sport=sport, slate_id=sid,
-                n_sims=500, seed=42, timeout=1.0, inputs_hash=chash,
+                platform=slate.platform, sport=slate.sport,
+                slate_id=slate.id, n_sims=500, seed=42, timeout=1.0,
             )
             results.append({
-                "slate_id": sid, "slate_name": slate.slate_name,
-                "action": "enqueued", "inputs_hash": chash,
-                "task_id": task.id, "pool_size": len(pool),
+                "slate_id": slate.id, "slate_name": slate.slate_name,
+                "action": "enqueued", "task_id": task.id,
             })
-            logger.info(
-                f"auto-gen: enqueued {sport}/{platform} slate {sid} "
-                f"({slate.slate_name}) hash={chash}"
-            )
         except Exception as e:
-            logger.warning(f"auto-gen: enqueue failed for slate {sid}: {e}")
-            results.append({
-                "slate_id": sid, "action": "error", "error": str(e),
-            })
+            logger.warning(f"auto-gen: enqueue failed for slate {slate.id}: {e}")
+            results.append({"slate_id": slate.id, "action": "error", "error": str(e)})
 
-    return {"checked": len(results), "results": results}
+    return {"enqueued": len(results), "results": results}
 
 # Import optimal-sim tasks so they register under the shared celery_app
 import worker.optimal_sim_tasks  # noqa: F401, E402 — registers run_optimal_sim
