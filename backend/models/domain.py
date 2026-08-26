@@ -157,19 +157,3 @@ class RevenueLog(Base):
     period_start = Column(DateTime(timezone=True), nullable=True)
     period_end = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-
-
-class ESPNNewsItem(Base):
-    """Cached ESPN RSS sports news item."""
-    __tablename__ = "espn_news_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    guid = Column(String, unique=True, index=True)
-    article_url = Column(String)
-    headline = Column(String)
-    summary = Column(String, nullable=True)
-    published_at = Column(DateTime(timezone=True), nullable=True)
-    ingested_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    sport = Column(String, index=True)
-    source = Column(String, default="ESPN")
-    stale = Column(Boolean, default=False)

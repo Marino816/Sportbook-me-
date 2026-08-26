@@ -280,22 +280,6 @@ def _fn_schema(name: str, description: str, properties: dict, required: list) ->
     }
 
 
-# ── Tool: get_sports_news ─────────────────────────────────────
-
-
-async def get_sports_news(db: AsyncSession, sport: Optional[str] = None, query: Optional[str] = None,
-                          limit: int = 10, freshness_hours: Optional[int] = None) -> dict:
-    """Return current ESPN sports news. Query for player/team names, filter by sport."""
-    from services.espn_news import get_news
-    items = await get_news(db, sport=sport, query=query, limit=min(limit, 20),
-                           freshness_hours=freshness_hours)
-    return {
-        "count": len(items),
-        "sport": sport,
-        "items": items,
-    }
-
-
 TOOLS = [
     _fn_schema(
         "get_current_slates",
@@ -341,17 +325,6 @@ TOOLS = [
         },
         ["slate_id"],
     ),
-    _fn_schema(
-        "get_sports_news",
-        "Return current ESPN sports news headlines and summaries. Use this for questions about player injuries, latest news, breaking stories, or any current-sports question. NEVER answer current-news questions from memory — use this tool instead.",
-        {
-            "sport": {"type": "string", "enum": ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB", "Soccer", "General"], "description": "Sport filter."},
-            "query": {"type": "string", "description": "Player name, team name, or keyword to search for in headlines and summaries."},
-            "limit": {"type": "integer", "description": "Max items (default 10, max 20)."},
-            "freshness_hours": {"type": "integer", "description": "Only return news from the last N hours."},
-        },
-        [],
-    ),
 ]
 
 # name → async handler(db, **args) -> dict
@@ -360,7 +333,6 @@ TOOL_HANDLERS = {
     "get_slate_players": get_slate_players,
     "get_player_sb_metrics": get_player_sb_metrics,
     "get_optimal_pct": get_optimal_pct,
-    "get_sports_news": get_sports_news,
 }
 
 ALLOWED_TOOLS = frozenset(TOOL_HANDLERS.keys())

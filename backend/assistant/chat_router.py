@@ -26,7 +26,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import get_db
 from models.domain import User
 from api.auth import get_current_user
-from api.utils import wrap_data
 from assistant.llm import LLMClient, LLMResult, ToolCall, get_llm
 from assistant.knowledge import (
     SYSTEM_PROMPT, PRODUCT_KNOWLEDGE_VERSION,
@@ -34,7 +33,6 @@ from assistant.knowledge import (
 )
 from assistant.tools import TOOLS, execute_tool, ALLOWED_TOOLS
 from assistant.limits import RateLimiter, resolve_tier
-from main import _maybe_sync_espn
 
 router = APIRouter(prefix="/api/ai", tags=["SB ME AI"])
 logger = logging.getLogger(__name__)
@@ -322,28 +320,3 @@ async def ai_chat(
         cost_estimate=cost_estimate,
         kb_version=PRODUCT_KNOWLEDGE_VERSION,
     )
-
-
-# ── ESPN News endpoint ────────────────────────────────────────
-
-
-class NewsResponse(BaseModel):
-    count: int
-    sport: Optional[str] = None
-    items: list[dict]
-
-
-@router.get("/news")
-async def get_espn_news_endpoint(
-    sport: Optional[str] = None,
-    query: Optional[str] = None,
-    limit: int = 15,
-    freshness_hours: Optional[int] = None,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Return cached ESPN sports news."""
-    from services.espn_news import get_news
-    await _maybe_sync_espn(db)
-    items = await get_news(db, sport=sport, query=query, limit=min(limit, 30),
-                           freshness_hours=freshness_hours)
-    return wrap_data({"count": len(items), "sport": sport, "items": items})

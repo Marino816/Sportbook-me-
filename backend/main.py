@@ -88,29 +88,6 @@ async def _bcdfs_scheduler_loop() -> None:
             logger.exception("BCDFS scheduler tick failed — continuing loop")
         await asyncio.sleep(BCDFS_TICK_INTERVAL)
 
-
-# Shared ESPN sync state so we don't hit ESPN RSS every AI call
-_espn_last_sync: float = 0.0
-ESPN_SYNC_INTERVAL = int(os.getenv("ESPN_SYNC_INTERVAL", "300"))  # 5 minutes
-
-
-async def _maybe_sync_espn(db) -> int:
-    """Sync ESPN RSS if the interval has elapsed. Returns count synced."""
-    global _espn_last_sync
-    now = asyncio.get_event_loop().time()
-    if now - _espn_last_sync < ESPN_SYNC_INTERVAL:
-        return 0
-    try:
-        from services.espn_news import sync_espn_news
-        count = await sync_espn_news(db)
-        _espn_last_sync = now
-        if count > 0:
-            logger.info("ESPN RSS: %d new items synced", count)
-        return count
-    except Exception:
-        logger.exception("ESPN RSS sync failed")
-        return 0
-
 app = FastAPI(
     title="Sportsbook Me DFS AI API",
     description="Backend for DFS Optimizer and ML Predictions",
