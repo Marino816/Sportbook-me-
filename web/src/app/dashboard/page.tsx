@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import {
-  Flame, MessageCircle, List, Activity, ChevronRight, Sparkles, BarChart3, Upload,
+  Flame, MessageCircle, List, Activity, ChevronRight, Sparkles, BarChart3, Upload, Swords,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLiveScores } from "@/lib/live-scores";
@@ -15,6 +15,7 @@ type Sport = typeof SPORTS[number];
 
 const QUICK = [
   { icon: Flame, label: "Build Lineup", href: "/optimizer" },
+  { icon: Swords, label: "Parlay Builder", href: "/market-tools/parlay" },
   { icon: BarChart3, label: "Market Tools", href: "/market-tools" },
   { icon: MessageCircle, label: "Ask SB ME AI", href: "/ai" },
   { icon: List, label: "My Lineups", href: "/lineups" },
@@ -186,12 +187,30 @@ export default function DashboardPage() {
       </div>
 
       {/* QUICK ACTIONS */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:14}}>
         {QUICK.map((a,i)=>{const Icon=a.icon;return(
-          <Link key={i} href={a.href} style={{background:C.card,borderRadius:12,border:"1px solid "+C.border,padding:"11px 10px",textAlign:"center",textDecoration:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
-            <Icon size={20} color={C.gold}/><span style={{fontSize:11,fontWeight:600,color:C.text}}>{a.label}</span>
+          <Link key={i} href={a.href} style={{background:C.card,borderRadius:12,border:"1px solid "+C.border,padding:"11px 6px",textAlign:"center",textDecoration:"none",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+            <Icon size={20} color={C.gold}/><span style={{fontSize:10,fontWeight:600,color:C.text,whiteSpace:"nowrap"}}>{a.label}</span>
           </Link>
         );})}
+      </div>
+
+      {/* BUILD YOUR PARLAY — COMPACT PROMO */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"10px 14px",borderRadius:10,background:"rgba(201,168,76,0.06)",border:"1px solid rgba(201,168,76,0.15)",marginBottom:14,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:32,height:32,borderRadius:8,background:"rgba(201,168,76,0.15)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <Swords size={16} color={C.gold}/>
+          </div>
+          <div>
+            <div style={{fontSize:12,fontWeight:800,color:C.text,letterSpacing:-0.3}}>BUILD YOUR PARLAY</div>
+            <div style={{fontSize:10,color:C.subtle}}>Moneylines · Spreads · Totals · Player Props</div>
+            <div style={{fontSize:9,color:C.muted}}>55+ Supported Sportsbooks & Platforms · Availability varies by sport and event.</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          <Link href="/market-tools/parlay" style={{textDecoration:"none",padding:"7px 14px",borderRadius:6,background:"rgba(201,168,76,0.15)",border:"1px solid rgba(201,168,76,0.3)",color:C.gold,fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>OPEN PARLAY BUILDER →</Link>
+          <Link href="/ai" style={{textDecoration:"none",padding:"7px 12px",borderRadius:6,background:"transparent",border:"1px solid rgba(30,41,59,0.5)",color:C.muted,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>ASK SB ME AI →</Link>
+        </div>
       </div>
 
       {/* SPORT TABS */}

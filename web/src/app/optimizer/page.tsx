@@ -630,7 +630,7 @@ export default function OptimizerPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: "#060b1a", position: "sticky", top: 0, zIndex: 1 }}>
-                        <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th><TTip help="DraftKings FPPG score from Blue Collar DFS. Independent external metric, not an SB ME projection.">DK FPPG</TTip></Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th>
+                        <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th><TTip help="Blue Collar DFS independently calculated fantasy-points projection. Not a DraftKings FPPG metric. Independent external estimate, not an SB ME projection.">BC Proj</TTip></Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th>
                         <Th><TTip help="SB ME projected field ownership estimate. Not actual contest ownership.">SB OWN%</TTip></Th>
                         <Th><TTip help="Positive values indicate players projected to provide stronger value relative to modeled ownership.">LEV</TTip></Th>
                         <Th><TTip help={optPctStatus === "LOCKED" ? "Optimal% is not available for locked/in-progress slates." : "Percentage of SB ME simulations in which this player appeared in the highest-scoring legal lineup for the simulated slate outcome."}>OPT%</TTip></Th>

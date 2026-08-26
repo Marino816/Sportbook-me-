@@ -9,10 +9,10 @@ const API_URL = "https://sportbook-me-production.up.railway.app/api";
 
 const ACTIONS = [
   { id: "best", icon: "sparkles", label: "Build Best\nLineup", route: "/(tabs)/optimizer" },
+  { id: "parlay", icon: "sword", label: "Parlay\nBuilder", route: "/(tabs)/market-tools/parlay" as any },
   { id: "cash", icon: "shield-checkmark", label: "Cash\nLineup", route: "/(tabs)/optimizer" },
   { id: "gpp", icon: "rocket", label: "GPP\nLineup", route: "/(tabs)/optimizer" },
   { id: "slate", icon: "analytics", label: "Slate\nSummary", route: "/(tabs)/optimizer" },
-  { id: "compare", icon: "git-compare", label: "Compare\nPlayers", route: "/(tabs)/optimizer" },
   { id: "ai", icon: "chatbubble-ellipses", label: "Ask\nSB ME AI", route: "/(tabs)/ai-chat" },
 ];
 
@@ -93,6 +93,21 @@ export default function DashboardScreen() {
           ))}
         </View>
 
+        {/* Parlay Builder — Prominent Promo */}
+        <TouchableOpacity style={s.parlayCard} onPress={() => router.push("/(tabs)/market-tools/parlay" as any)}>
+          <View style={s.parlayTop}>
+            <View style={s.parlayIconWrap}>
+              <Ionicons name="sword" size={16} color="#c9a84c" />
+            </View>
+            <View style={{ flex: 1 }}><Text style={s.parlayTitle}>BUILD YOUR PARLAY</Text></View>
+          </View>
+          <Text style={s.parlayBody}>Moneylines · Spreads · Totals · Player Props</Text>
+          <Text style={s.parlaySub}>55+ Supported Sportsbooks & Platforms{'\n'}Availability varies by sport and event.</Text>
+          <View style={s.parlayCTA}>
+            <Text style={s.parlayCTAText}>OPEN PARLAY BUILDER →</Text>
+          </View>
+        </TouchableOpacity>
+
         {/* Intelligence Overview */}
         <Text style={s.sectionTitle}>SB ME Intelligence</Text>
         <View style={s.intelCard}>
@@ -144,4 +159,13 @@ const s = StyleSheet.create({
   intelRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   intelLabel: { flex: 1, fontSize: 14, color: "#94a3b8" },
   intelVal: { fontSize: 14, fontWeight: "700", color: "#c9a84c" },
+  // Parlay promo card
+  parlayCard: { backgroundColor: "#0a0f24", borderRadius: 14, borderWidth: 1, borderColor: "rgba(201,168,76,0.15)", padding: 14, gap: 6 },
+  parlayTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+  parlayIconWrap: { width: 30, height: 30, borderRadius: 7, backgroundColor: "rgba(201,168,76,0.12)", alignItems: "center", justifyContent: "center" },
+  parlayTitle: { fontSize: 13, fontWeight: "800", color: "#f0f6fc" },
+  parlayBody: { fontSize: 10, color: "#64748b" },
+  parlaySub: { fontSize: 9, color: "#475569" },
+  parlayCTA: { marginTop: 2, alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6, backgroundColor: "rgba(201,168,76,0.12)", borderWidth: 1, borderColor: "rgba(201,168,76,0.25)" },
+  parlayCTAText: { fontSize: 11, fontWeight: "700", color: "#c9a84c" },
 });
