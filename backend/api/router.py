@@ -119,6 +119,7 @@ async def run_optimizer(
                     "team": np.team,
                     "position": np.position,
                     "salary": np.salary,
+                    "fppg": np.fppg,
                     "eligible_positions": np.eligible_positions or [np.position],
                     "projected_fp": 0.0,  # filled by projection engine below
                     "opponent": np.opponent or "",
@@ -142,6 +143,43 @@ async def run_optimizer(
                     projected_count = sum(1 for p in projs if p.projection_source != "UNAVAILABLE")
                     projections_list = projections_to_pool(projs)
                     logger.info(f"Native projections: {projected_count}/{len(projections_list)} projected")
+
+                    # ── sgo_team enrichment (for team-identity quarantine) ──
+                    # Cross-reference SGO events for this slate's teams to attach
+                    # the SGO-assigned team to each player dict.
+                    try:
+                        from dfs.db import DFSPlayer as NativePlayer
+                        slate_team_abbrs = set()
+                        # Get slate teams from player records
+                        for np_row in native_players:
+                            if np_row.team:
+                                slate_team_abbrs.add(np_row.team.upper())
+
+                        # Hit SGO events API to find team assignments
+                        sgo_name_to_team: dict[str, str] = {}
+                        from providers.sdk_provider import SdkSgoProvider
+                        sgo_events = await SdkSgoProvider().get_sb_events(sport)
+                        for evt in sgo_events:
+                            ha = (evt.home_team.abbreviation or "").upper()
+                            aa = (evt.away_team.abbreviation or "").upper()
+                            if ha in slate_team_abbrs or aa in slate_team_abbrs:
+                                for sp in evt.players:
+                                    nm = (sp.name or "").lower()
+                                    team = aa if (sp.team_id or "").upper() == (evt.away_team.team_id or "").upper() else ha
+                                    sgo_name_to_team[nm] = team
+                        # Attach sgo_team to pool entries by NFD-normalised name
+                        import unicodedata as _ucd, re as _re
+                        def _nf(n):
+                            return _re.sub(r'[^a-z0-9]', '', _ucd.normalize('NFD', (n or '').lower()))
+                        for pl in projections_list:
+                            nm = _nf(pl.get("name", ""))
+                            if nm in {_nf(k): v for k, v in sgo_name_to_team.items()}:
+                                for k, v in sgo_name_to_team.items():
+                                    if _nf(k) == nm:
+                                        pl["sgo_team"] = v
+                                        break
+                    except Exception as sgo_team_err:
+                        logger.warning(f"sgo_team enrichment skipped: {sgo_team_err}")
 
                     # UNAVAILABLE players stay at 0.0 projected_fp — the
                     # optimizer can still select them based on salary/value
@@ -219,6 +257,7 @@ async def run_optimizer(
             "min_salary": _sget("min_salary"),
             "max_salary": _sget("max_salary"),
             "max_exposure_pct": _sget("max_exposure_pct"),
+            "min_unique_players": _sget("min_unique_players"),
         }
 
         # Apply customer "My Projection" overrides (keyed by player name)
@@ -241,12 +280,25 @@ async def run_optimizer(
                         pl["projected_fp"] = override_by_name[nm]
 
         pool = projections_list
-        lineups = _generate_lineups(
-            pool, strategy, requested_lineups,
-            locks, excludes, 0.0, platform,
-            is_mlb=True, constraints=constraints,
+        from optimizer.mlb_optimizer import MLBOptimizer
+        opt = MLBOptimizer(
+            pool, platform=platform, strategy=strategy,
+            locks=locks, excludes=excludes,
+            **(constraints),
         )
-        # Format response using actual builder field names
+        lineups = opt.generate(count=requested_lineups)
+
+        # Objective documentation + solver pool metrics
+        solver_pool_count = len(opt.players)
+        quarantined = list(opt.quarantined) if hasattr(opt, "quarantined") else []
+        fppg_fallback_count = len(opt.fppg_fallback) if hasattr(opt, "fppg_fallback") else 0
+        objective = (
+            "MAXIMIZE SUM(projected_fp × 10 × x[i]) via OR-Tools CP-SAT; "
+            f"x[i] ∈ {{0,1}} select player i from {solver_pool_count} eligible; "
+            f"fp source: SGO_FANTASY_MARKET / PROP_BASED / BC_FPPG_FALLBACK({fppg_fallback_count}) / MyProj-override"
+        )
+
+        # Format response
         formatted = []
         for lu in lineups:
             formatted.append({
@@ -254,9 +306,12 @@ async def run_optimizer(
                 "projected_score": lu.get("projected_score", 0),
                 "remaining_salary": lu.get("remaining_salary", 0),
                 "players": lu.get("players", []),
+                "objective_function": lu.get("objective_function", objective),
+                "solver_status": lu.get("solver_status", "UNKNOWN"),
+                "stack_summary": lu.get("stack_summary", ""),
             })
 
-        # Save to lineup history (non-critical)
+        # Save to lineup history with slate metadata
         history_saved = False
         if formatted:
             try:
@@ -266,6 +321,9 @@ async def run_optimizer(
                     sport=sport,
                     platform=platform,
                     slate_id=request.slate_id,
+                    slate_name=native_slate.slate_name,
+                    slate_date=native_slate.start_time.date().isoformat() if native_slate.start_time else None,
+                    game_count=(len({p["team"] for p in projections_list if p.get("team")}) // 2),
                     strategy=strategy,
                     lineup_count=len(formatted),
                     player_count=len(formatted[0].get("players", [])),
@@ -286,11 +344,19 @@ async def run_optimizer(
                     "source": "native",
                     "sport": sport,
                     "platform": platform,
+                    "slate_id": request.slate_id,
+                    "slate_name": native_slate.slate_name,
+                    "slate_date": native_slate.start_time.date().isoformat() if native_slate.start_time else None,
+                    "game_count": len({p.get("team", "") for p in projections_list if p.get("team")}) // 2,
                     "requested_lineups": requested_lineups,
                     "generated_lineups": len(formatted),
                     "history_saved": history_saved,
                     "dfs_source": dfs_source,
-                    "slate_id": request.slate_id,
+                    "objective": objective,
+                    "solver_pool_count": solver_pool_count,
+                    "quarantined_count": len(quarantined),
+                    "quarantined": quarantined[:20],
+                    "fppg_fallback_count": fppg_fallback_count,
                     "pool": [
                         {
                             "id": str(p.get("id", "")),

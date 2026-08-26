@@ -101,6 +101,7 @@ class MLBOptimizer:
         min_salary: Optional[int] = None,
         max_salary: Optional[int] = None,
         max_exposure_pct: Optional[float] = None,
+        min_unique_players: Optional[int] = None,
     ):
         self.pool = pool
         self.platform = platform
@@ -118,6 +119,7 @@ class MLBOptimizer:
             pitcher_conflict if pitcher_conflict is not None else self.strat.get("pitch_conflict", True)
         )
         self.min_salary = min_salary if min_salary is not None else self.config["min_salary"]
+        self.min_unique = min_unique_players if min_unique_players is not None else self.strat.get("min_unique", 2)
         self.max_salary = max_salary if max_salary is not None else self.config["salary_cap"]
         self.max_exposure_pct = (
             max_exposure_pct if max_exposure_pct is not None else self.strat.get("max_exposure_pct")
@@ -129,14 +131,26 @@ class MLBOptimizer:
     def _build_maps(self):
         """Build position eligibility and index lookups.
 
-        Excluded players (by id OR name) are dropped from the pool. Locked
-        players are resolved to indices so they can be force-included."""
+        PITCHER ELIGIBILITY POLICY (no authoritative starter-status field exists):
+        - Pitchers with SGO_FANTASY_MARKET source are included (SGO only prices
+          fantasyScore markets for expected starters — this IS the starter signal).
+        - Pitchers WITHOUT an SGO projection but WITH a BC FPPG > 0 are included
+          and receive their BC FPPG as a fallback objective coefficient (labeled
+          'BC_FPPG_FALLBACK'). These are expected starters SGO does not price.
+        - Pitchers with neither projection nor BC FPPG (relievers, inactive arms)
+          are EXCLUDED — they have no fantasy-relevance signal.
+
+        TEAM-IDENTITY QUARANTINE: a player whose DFS team differs from the team
+        assigned by SGO for the same name is excluded and reported.
+        """
         self.players = []  # eligible player dicts
         self.pos_mask = {}  # player_idx -> normalized slot
         self.team_map = {}  # team_name -> list of player indices
         self.idx_by_id = {}  # player_id -> index
         self.pitchers = set()
         self.hitters = set()
+        self.quarantined: list[dict] = []  # team-mismatch players excluded from solver
+        self.fppg_fallback: dict[int, float] = {}  # player_idx -> BC FPPG used as fallback coeff
 
         def _excluded(p):
             if str(p.get("id", "")) in self.excludes:
@@ -144,19 +158,57 @@ class MLBOptimizer:
             nm = (p.get("name") or "").strip().lower()
             return bool(nm) and nm in self.excludes
 
+        # ── Team-identity quarantine (Jo Adell & friends) ──
+        # Build a DFS-team → SGO-team lookup from the pool.  When a player's
+        # DFS team conflicts with their SGO team, they cannot be optimized.
+        # Resolve by name (NFD-normalised).
+        import unicodedata as _ucd
+        import re as _re
+        def _norm(n):
+            return _re.sub(r'[^a-z0-9]', '', _ucd.normalize('NFD', (n or '').lower()))
+        sgo_team_by_name: dict[str, str] = {}
+        for p in self.pool:
+            sgo_t = p.get("sgo_team")
+            if sgo_t:
+                sgo_team_by_name[_norm(p.get("name", ""))] = sgo_t.upper()
+        for p in self.pool:
+            dfs_t = (p.get("team") or "").upper()
+            sgo_t = sgo_team_by_name.get(_norm(p.get("name", "")))
+            if sgo_t and dfs_t and dfs_t != sgo_t:
+                self.quarantined.append({
+                    "name": p.get("name", ""),
+                    "dfs_team": dfs_t,
+                    "sgo_team": sgo_t,
+                    "id": p.get("id", ""),
+                    "reason": f"DFS team {dfs_t} ≠ SGO team {sgo_t}",
+                })
+                continue  # exclude from solver pool
+
         for p in self.pool:
             if _excluded(p):
                 continue
             if (p.get("salary", 0) or 0) <= 0:
                 continue
-            # Only exclude players with zero projection if they are hitters.
-            # Pitchers without projections (no SGO fantasyScore market) must
-            # remain selectable on salary/fppg/eligibility grounds — otherwise
-            # the solver cannot fill the 2 required P slots.
             pos = _normalize_mlb_pos(p.get("roster_position") or p.get("position") or "", self.platform)
             fp = p.get("projected_fp", 0) or 0
-            if fp <= 0 and pos != "P":
-                continue
+
+            if pos == "P":
+                # Pitcher eligibility: SGO-projected OR BC-FPPG fallback
+                src = p.get("projection_source", "")
+                fppg = p.get("fppg")
+                if fp <= 0 and (fppg is None or fppg <= 0):
+                    continue  # reliever / inactive — no signal
+                # If unprojected but has BC FPPG, use it as a fallback and label it
+                if fp <= 0 and fppg is not None and fppg > 0:
+                    p = dict(p)  # shallow copy so we don't mutate the shared pool
+                    p["projected_fp"] = round(float(fppg), 1)
+                    p["projection_source"] = "BC_FPPG_FALLBACK"
+                    p["fppg_was_fallback"] = True
+            else:
+                # Hitters: must have a projection source
+                if fp <= 0:
+                    continue
+
             idx = len(self.players)
             self.players.append(p)
             self.pos_mask[idx] = pos
@@ -167,6 +219,8 @@ class MLBOptimizer:
             self.team_map[team].append(idx)
             if pos == "P":
                 self.pitchers.add(idx)
+                if p.get("fppg_was_fallback"):
+                    self.fppg_fallback[idx] = fp
             else:
                 self.hitters.add(idx)
 
@@ -289,7 +343,7 @@ class MLBOptimizer:
         for prior_set in prior_ids:
             prior_indices = [i for i in range(n) if self.players[i].get("id") in prior_set]
             if prior_indices:
-                model.Add(sum(x[i] for i in prior_indices) <= total_slots - self.strat["min_unique"])
+                model.Add(sum(x[i] for i in prior_indices) <= total_slots - self.min_unique)
 
         # Solve
         solver = cp_model.CpSolver()
@@ -385,7 +439,7 @@ class MLBOptimizer:
             ok = True
             for prior in lineups:
                 overlap = len(new_ids & {p.get("id") for p in prior["players"]})
-                if (self.config["player_count"] - overlap) < self.strat["min_unique"]:
+                if (self.config["player_count"] - overlap) < self.min_unique:
                     ok = False
                     break
             if not ok:
@@ -410,9 +464,10 @@ class MLBOptimizer:
             lineup["strategy"] = self.strategy
             lineup["data_source"] = "native"
             lineup["data_mode"] = "native"
-            lineup["min_uniqueness"] = self.strat["min_unique"]
+            lineup["min_uniqueness"] = self.min_unique
             lineup["requested_lineup_count"] = count
             lineup["generated_lineup_count"] = len(lineups) + 1
+            lineup["objective_function"] = "MAXIMIZE SUM(projected_fp × 10 × x[i]) via OR-Tools CP-SAT — x[i] ∈ {0,1} select player i. fp source: projected_fp from SGO_FANTASY_MARKET, PROP_BASED, BC_FPPG_FALLBACK, or My-Proj override."
             lineups.append(lineup)
 
             # Track exposure
