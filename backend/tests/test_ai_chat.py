@@ -375,6 +375,59 @@ class TestTools:
             result = await TOOL_HANDLERS["get_optimal_pct"](db, slate_id=1)
             assert result["status"] == "LOCKED"
 
+    async def test_optimal_pct_exposes_exact_numerator_denominator(self, monkeypatch):
+        """The Optimal% tool must expose exact n_completed + appearances so the
+        model can report '440 of 500' rather than an approximate fraction."""
+        import dfs.optimal_cache as ocache
+
+        future = datetime.now(timezone.utc) + timedelta(hours=8)
+        async with _TestSession() as db:
+            db.add(DFSSlate(id=1, platform="draftkings", sport="MLB", slate_name="Main",
+                            start_time=future, status="PUBLISHED"))
+            await db.commit()
+
+        fake_result = {
+            "n_requested": 500,
+            "n_completed": 500,
+            "inputs_hash": "abc123",
+            "generated_at": future.isoformat(),
+            "players": [
+                {"name": "Alan Roden", "position": "OF", "roster_position": "OF", "team": "TOR",
+                 "optimal_pct": 88.0, "appearances": 440},
+            ],
+        }
+
+        monkeypatch.setattr(ocache, "get_status", lambda *a, **k: ocache.STATUS_COMPLETE)
+        monkeypatch.setattr(ocache, "get_result", lambda *a, **k: fake_result)
+
+        async with _TestSession() as db:
+            result = await TOOL_HANDLERS["get_optimal_pct"](db, slate_id=1, top_n=10)
+
+        assert result["status"] == "COMPLETE"
+        assert result["n_completed"] == 500
+        assert result["simulation_count"] == 500
+        p = result["top_players"][0]
+        assert p["appearances"] == 440
+        assert p["appearances_numerator"] == 440
+        assert p["simulation_denominator"] == 500
+        assert p["optimal_pct"] == 88.0
+        # The note must instruct exact-count reporting.
+        assert "440 of 500" in result["note"] or "exact counts" in result["note"]
+
+
+# ═══════════════════════════════════════════════════════════════
+# KNOWLEDGE / PROMPT PRECISION TESTS
+# ═══════════════════════════════════════════════════════════════
+
+class TestPromptPrecision:
+    def test_system_prompt_has_exact_accounting_rule(self):
+        from assistant.knowledge import SYSTEM_PROMPT
+        assert "authoritative" in SYSTEM_PROMPT
+        assert "440 of" in SYSTEM_PROMPT and "500 completed simulations" in SYSTEM_PROMPT
+        assert "NEVER convert a percentage" in SYSTEM_PROMPT
+        assert "approximate fraction" in SYSTEM_PROMPT
+        assert "4 out of 5" in SYSTEM_PROMPT
+
 
 # ═══════════════════════════════════════════════════════════════
 # RATE LIMITER TESTS

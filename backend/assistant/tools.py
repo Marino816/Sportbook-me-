@@ -231,21 +231,34 @@ async def get_optimal_pct(
         reverse=True,
     )[: max(1, min(top_n, MAX_METRICS))]
 
+    n_completed = result.get("n_completed")
+    n_requested = result.get("n_requested")
+
     return {
         "slate_id": slate_id,
         "platform": platform,
         "sport": sport.upper(),
         "status": "COMPLETE",
-        "n_requested": result.get("n_requested"),
-        "n_completed": result.get("n_completed"),
+        "n_requested": n_requested,
+        "n_completed": n_completed,
+        # Explicit denominator alias so the model always reports exact counts.
+        "simulation_count": n_completed,
         "inputs_hash": result.get("inputs_hash"),
         "generated_at": result.get("generated_at"),
+        "note": (
+            "appearances = number of completed simulations in which the player "
+            "appeared in the optimal (highest-scoring) lineup. "
+            "optimal_pct = appearances / n_completed * 100. Report exact counts "
+            "(e.g. '440 of 500') — do not round to an approximate fraction."
+        ),
         "top_players": [{
             "name": p.get("name"),
             "position": p.get("position") or p.get("roster_position"),
             "team": p.get("team"),
             "optimal_pct": p.get("optimal_pct"),
             "appearances": p.get("appearances"),
+            "appearances_numerator": p.get("appearances"),
+            "simulation_denominator": n_completed,
         } for p in ordered],
     }
 
