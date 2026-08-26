@@ -257,7 +257,7 @@ async def run_optimizer(
             "min_salary": _sget("min_salary"),
             "max_salary": _sget("max_salary"),
             "max_exposure_pct": _sget("max_exposure_pct"),
-            "min_unique_players": _sget("min_unique_players"),
+            "min_unique_players": _sget("min_unique_players") or _sget("min_uniqueness"),
         }
 
         # Apply customer "My Projection" overrides (keyed by player name)
