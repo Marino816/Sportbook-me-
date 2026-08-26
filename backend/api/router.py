@@ -306,6 +306,7 @@ async def run_optimizer(
                 "projected_score": lu.get("projected_score", 0),
                 "remaining_salary": lu.get("remaining_salary", 0),
                 "players": lu.get("players", []),
+                "min_uniqueness": lu.get("min_uniqueness"),
                 "objective_function": lu.get("objective_function", objective),
                 "solver_status": lu.get("solver_status", "UNKNOWN"),
                 "stack_summary": lu.get("stack_summary", ""),
