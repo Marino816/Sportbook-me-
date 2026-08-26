@@ -144,40 +144,35 @@ async def run_optimizer(
                     projections_list = projections_to_pool(projs)
                     logger.info(f"Native projections: {projected_count}/{len(projections_list)} projected")
 
-                    # ── sgo_team enrichment (for team-identity quarantine) ──
-                    # Cross-reference SGO events for this slate's teams to attach
-                    # the SGO-assigned team to each player dict.
+                    # ── sgo_team + game_id enrichment ──
+                    # Hit SGO to resolve team assignments for every player on this
+                    # slate's games.  Builds name→(sgo_team, game_event_id) so the
+                    # quarantine layer can reject BC/SGO team mismatches.
                     try:
-                        from dfs.db import DFSPlayer as NativePlayer
-                        slate_team_abbrs = set()
-                        # Get slate teams from player records
-                        for np_row in native_players:
-                            if np_row.team:
-                                slate_team_abbrs.add(np_row.team.upper())
-
-                        # Hit SGO events API to find team assignments
-                        sgo_name_to_team: dict[str, str] = {}
+                        slate_team_abbrs = {np_row.team.upper() for np_row in native_players if np_row.team}
                         from providers.sdk_provider import SdkSgoProvider
                         sgo_events = await SdkSgoProvider().get_sb_events(sport)
-                        for evt in sgo_events:
-                            ha = (evt.home_team.abbreviation or "").upper()
-                            aa = (evt.away_team.abbreviation or "").upper()
-                            if ha in slate_team_abbrs or aa in slate_team_abbrs:
-                                for sp in evt.players:
-                                    nm = (sp.name or "").lower()
-                                    team = aa if (sp.team_id or "").upper() == (evt.away_team.team_id or "").upper() else ha
-                                    sgo_name_to_team[nm] = team
-                        # Attach sgo_team to pool entries by NFD-normalised name
+                        # Normalise function for fuzzy name matching
                         import unicodedata as _ucd, re as _re
                         def _nf(n):
                             return _re.sub(r'[^a-z0-9]', '', _ucd.normalize('NFD', (n or '').lower()))
+                        sgo_lookup: dict[str, tuple[str, str]] = {}  # norm_name → (team_abbr, event_id)
+                        for evt in sgo_events:
+                            ha = (evt.home_team.abbreviation or "").upper()
+                            aa = (evt.away_team.abbreviation or "").upper()
+                            if ha in slate_team_abbrs and aa in slate_team_abbrs:
+                                for sp in evt.players:
+                                    nm = _nf(sp.name)
+                                    team = aa if (sp.team_id or "").upper() == (evt.away_team.team_id or "").upper() else ha
+                                    sgo_lookup[nm] = (team, evt.id)
+                        enriched = 0
                         for pl in projections_list:
                             nm = _nf(pl.get("name", ""))
-                            if nm in {_nf(k): v for k, v in sgo_name_to_team.items()}:
-                                for k, v in sgo_name_to_team.items():
-                                    if _nf(k) == nm:
-                                        pl["sgo_team"] = v
-                                        break
+                            if nm in sgo_lookup:
+                                pl["sgo_team"] = sgo_lookup[nm][0]
+                                pl["game_id"] = sgo_lookup[nm][1]
+                                enriched += 1
+                        logger.info(f"sgo_team enriched: {enriched}/{len(projections_list)} players")
                     except Exception as sgo_team_err:
                         logger.warning(f"sgo_team enrichment skipped: {sgo_team_err}")
 
@@ -281,31 +276,69 @@ async def run_optimizer(
 
         pool = projections_list
         from optimizer.mlb_optimizer import MLBOptimizer
+
+        # ── Team-identity quarantine ──
+        # Players whose DFS team (Blue Collar) disagrees with their SGO team are
+        # excluded from optimization and reported.
+        quarantined_from_router: list[dict] = []
+        quarantined_ids: set[str] = set()
+        for pl in projections_list:
+            dfs_t = (pl.get("team") or "").upper()
+            sgo_t = (pl.get("sgo_team") or "").upper()
+            if dfs_t and sgo_t and dfs_t != sgo_t:
+                quarantined_from_router.append({
+                    "name": pl.get("name"), "dfs_team": dfs_t, "sgo_team": sgo_t,
+                    "id": str(pl.get("id", "")),
+                    "reason": f"DFS team {dfs_t} ≠ SGO team {sgo_t}",
+                })
+                quarantined_ids.add(str(pl.get("id", "")))
+        all_excludes = list(set(str(x) for x in (excludes or []) if x and str(x).strip()))
+        all_excludes.extend(quarantined_ids)
+        all_excludes = list(set(all_excludes))
+
         opt = MLBOptimizer(
             pool, platform=platform, strategy=strategy,
-            locks=locks, excludes=excludes,
+            locks=locks, excludes=all_excludes,
             **(constraints),
         )
         lineups = opt.generate(count=requested_lineups)
 
-        # Objective documentation + solver pool metrics
+        # Merge quarantine reports
+        all_quarantined = list(quarantined_from_router)
+        if hasattr(opt, "quarantined"):
+            for q in opt.quarantined:
+                if not any(qq.get("id") == q.get("id") for qq in all_quarantined):
+                    all_quarantined.append(q)
+        quarantined = all_quarantined
+
+        # Objective + pool metrics
         solver_pool_count = len(opt.players)
-        quarantined = list(opt.quarantined) if hasattr(opt, "quarantined") else []
-        fppg_fallback_count = len(opt.fppg_fallback) if hasattr(opt, "fppg_fallback") else 0
+        bc_proj_fallback_count = len(opt.bc_proj_fallback) if hasattr(opt, "bc_proj_fallback") else 0
         objective = (
             "MAXIMIZE SUM(projected_fp × 10 × x[i]) via OR-Tools CP-SAT; "
             f"x[i] ∈ {{0,1}} select player i from {solver_pool_count} eligible; "
-            f"fp source: SGO_FANTASY_MARKET / PROP_BASED / BC_FPPG_FALLBACK({fppg_fallback_count}) / MyProj-override"
+            f"fp source: SGO_FANTASY_MARKET / PROP_BASED / BC_PROJ_FALLBACK({bc_proj_fallback_count}) / MyProj-override"
         )
 
-        # Format response
+        # Format response with per-player projection_source
         formatted = []
         for lu in lineups:
+            players_out = []
+            for pl in lu.get("players", []):
+                players_out.append({
+                    "name": pl.get("name", ""),
+                    "team": pl.get("team", ""),
+                    "salary": pl.get("salary", 0),
+                    "projected_fp": pl.get("projected_fp", 0.0),
+                    "projection_source": pl.get("projection_source", "UNAVAILABLE"),
+                    "roster_slot": pl.get("roster_slot", "?"),
+                    "id": pl.get("id", ""),
+                })
             formatted.append({
                 "total_salary": lu.get("total_salary", 0),
                 "projected_score": lu.get("projected_score", 0),
                 "remaining_salary": lu.get("remaining_salary", 0),
-                "players": lu.get("players", []),
+                "players": players_out,
                 "min_uniqueness": lu.get("min_uniqueness"),
                 "objective_function": lu.get("objective_function", objective),
                 "solver_status": lu.get("solver_status", "UNKNOWN"),
@@ -357,7 +390,7 @@ async def run_optimizer(
                     "solver_pool_count": solver_pool_count,
                     "quarantined_count": len(quarantined),
                     "quarantined": quarantined[:20],
-                    "fppg_fallback_count": fppg_fallback_count,
+                    "bc_proj_fallback_count": bc_proj_fallback_count,
                     "pool": [
                         {
                             "id": str(p.get("id", "")),

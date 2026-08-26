@@ -119,7 +119,7 @@ class MLBOptimizer:
             pitcher_conflict if pitcher_conflict is not None else self.strat.get("pitch_conflict", True)
         )
         self.min_salary = min_salary if min_salary is not None else self.config["min_salary"]
-        self.min_unique = min_unique_players if min_unique_players is not None else self.strat.get("min_unique", 2)
+        self.min_unique = min_unique_players if min_unique_players is not None and isinstance(min_unique_players, (int, float)) else self.strat.get("min_unique", 2)
         self.max_salary = max_salary if max_salary is not None else self.config["salary_cap"]
         self.max_exposure_pct = (
             max_exposure_pct if max_exposure_pct is not None else self.strat.get("max_exposure_pct")
@@ -134,10 +134,10 @@ class MLBOptimizer:
         PITCHER ELIGIBILITY POLICY (no authoritative starter-status field exists):
         - Pitchers with SGO_FANTASY_MARKET source are included (SGO only prices
           fantasyScore markets for expected starters — this IS the starter signal).
-        - Pitchers WITHOUT an SGO projection but WITH a BC FPPG > 0 are included
-          and receive their BC FPPG as a fallback objective coefficient (labeled
-          'BC_FPPG_FALLBACK'). These are expected starters SGO does not price.
-        - Pitchers with neither projection nor BC FPPG (relievers, inactive arms)
+        - Pitchers WITHOUT an SGO projection but WITH a BC projection (fppg field) > 0 are
+          included and receive their BC projection as a fallback objective coefficient
+          (labeled 'BC_PROJ_FALLBACK'). These are expected starters SGO does not price.
+        - Pitchers with neither projection nor BC projection (relievers, inactive arms)
           are EXCLUDED — they have no fantasy-relevance signal.
 
         TEAM-IDENTITY QUARANTINE: a player whose DFS team differs from the team
@@ -150,7 +150,7 @@ class MLBOptimizer:
         self.pitchers = set()
         self.hitters = set()
         self.quarantined: list[dict] = []  # team-mismatch players excluded from solver
-        self.fppg_fallback: dict[int, float] = {}  # player_idx -> BC FPPG used as fallback coeff
+        self.bc_proj_fallback: dict[int, float] = {}  # player_idx -> BC projection used as fallback coeff
 
         def _excluded(p):
             if str(p.get("id", "")) in self.excludes:
@@ -193,16 +193,16 @@ class MLBOptimizer:
             fp = p.get("projected_fp", 0) or 0
 
             if pos == "P":
-                # Pitcher eligibility: SGO-projected OR BC-FPPG fallback
+                # Pitcher eligibility: SGO-projected OR BC-projection fallback
                 src = p.get("projection_source", "")
                 fppg = p.get("fppg")
                 if fp <= 0 and (fppg is None or fppg <= 0):
                     continue  # reliever / inactive — no signal
-                # If unprojected but has BC FPPG, use it as a fallback and label it
+                # If unprojected but has BC projection, use it as a fallback and label it
                 if fp <= 0 and fppg is not None and fppg > 0:
                     p = dict(p)  # shallow copy so we don't mutate the shared pool
                     p["projected_fp"] = round(float(fppg), 1)
-                    p["projection_source"] = "BC_FPPG_FALLBACK"
+                    p["projection_source"] = "BC_PROJ_FALLBACK"
                     p["fppg_was_fallback"] = True
             else:
                 # Hitters: must have a projection source
@@ -220,7 +220,7 @@ class MLBOptimizer:
             if pos == "P":
                 self.pitchers.add(idx)
                 if p.get("fppg_was_fallback"):
-                    self.fppg_fallback[idx] = fp
+                    self.bc_proj_fallback[idx] = fp
             else:
                 self.hitters.add(idx)
 
@@ -467,7 +467,7 @@ class MLBOptimizer:
             lineup["min_uniqueness"] = self.min_unique
             lineup["requested_lineup_count"] = count
             lineup["generated_lineup_count"] = len(lineups) + 1
-            lineup["objective_function"] = "MAXIMIZE SUM(projected_fp × 10 × x[i]) via OR-Tools CP-SAT — x[i] ∈ {0,1} select player i. fp source: projected_fp from SGO_FANTASY_MARKET, PROP_BASED, BC_FPPG_FALLBACK, or My-Proj override."
+            lineup["objective_function"] = "MAXIMIZE SUM(projected_fp × 10 × x[i]) via OR-Tools CP-SAT — x[i] ∈ {0,1} select player i. fp source: projected_fp from SGO_FANTASY_MARKET, PROP_BASED, BC_PROJ_FALLBACK, or My-Proj override."
             lineups.append(lineup)
 
             # Track exposure
