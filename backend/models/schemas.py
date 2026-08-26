@@ -46,6 +46,7 @@ class OptimizerSettings(BaseModel):
     strategy: str = "balanced"    # balanced / cash / gpp / aggressive / nuclear
     num_lineups: int = 20
     min_uniqueness: int = 2
+    min_unique_players: Optional[int] = None  # overrides min_uniqueness when set from optimizer UI
     max_exposure: float = 1.0
     randomness: float = 0.0
 
