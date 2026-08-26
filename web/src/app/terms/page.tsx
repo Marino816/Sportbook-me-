@@ -82,7 +82,7 @@ export default function TermsPage() {
         purposes only.
       </P>
 
-      <H2>9. No Gambling or Wagering Services</H2>
+      <H2 id="responsible-gaming">9. No Gambling or Wagering Services</H2>
       <P>
         SB ME DFS.AI does not operate a sportsbook or casino; does not accept or place wagers; does not accept
         gambling deposits; does not hold customer gambling balances; does not operate paid-entry fantasy contests;

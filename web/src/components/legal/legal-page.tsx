@@ -62,8 +62,8 @@ export function LegalPage({
 }
 
 /* ── Typography helpers ── */
-export function H2({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight mt-10 mb-4" style={{ color: textPrimary }}>{children}</h2>;
+export function H2({ children, id }: { children: React.ReactNode; id?: string }) {
+  return <h2 id={id} className="text-xl sm:text-2xl font-extrabold tracking-tight mt-10 mb-4" style={{ color: textPrimary }}>{children}</h2>;
 }
 
 export function H3({ children }: { children: React.ReactNode }) {
