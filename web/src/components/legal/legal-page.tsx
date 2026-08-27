@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 
-const navy = "#060b1a";
+const navy = "#0a0f24";
 const cardBg = "#0a0f24";
 export const gold = "#c9a84c";
 const border = "#1e293b";
@@ -23,7 +23,7 @@ export function LegalPage({
   return (
     <div style={{ background: navy, color: textPrimary, fontFamily: "'Inter', sans-serif", minHeight: "100vh" }}>
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b" style={{ background: "rgba(6,11,26,0.92)", backdropFilter: "blur(16px)", borderColor: border }}>
+      <header className="sticky top-0 z-50 border-b" style={{ background: "rgba(10,15,36,0.92)", backdropFilter: "blur(16px)", borderColor: border }}>
         <div className="max-w-5xl mx-auto flex items-center justify-between h-16 px-4 sm:px-6">
           <Link href="/" className="shrink-0">
             <Image src="/logo.png" alt="SB ME DFS.AI" width={100} height={53} priority />

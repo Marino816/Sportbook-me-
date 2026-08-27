@@ -12,7 +12,7 @@ const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"];
 const PLATFORMS = ["draftkings", "fanduel"];
 const POSITIONS = ["ALL", "P", "C", "1B", "2B", "3B", "SS", "OF"];
 
-const navy = "#060b1a";
+const navy = "#0a0f24";
 const cardBg = "#0a0f24";
 const gold = "#c9a84c";
 const border = "#1e293b";

@@ -7,11 +7,11 @@ export default function ProfilePage() {
 
   if (!isAuthenticated) {
     return (
-      <div style={{ background: "#060b1a", minHeight: "100vh", padding: 32, color: "#f0f6fc" }}>
+      <div style={{ background: "#0a0f24", minHeight: "100vh", padding: 32, color: "#f0f6fc" }}>
         <h1 style={{ fontSize: 28, fontWeight: 900, color: "#c9a84c", fontStyle: "italic" }}>Profile</h1>
         <div style={{ marginTop: 24, padding: 24, background: "#0a0f24", borderRadius: 16, border: "1px solid #1e293b" }}>
           <p style={{ color: "#94a3b8", marginBottom: 16 }}>Sign in to manage your profile and subscription.</p>
-          <Link href="/login" style={{ background: "#c9a84c", color: "#060b1a", padding: "12px 24px", borderRadius: 12, fontWeight: 700, textDecoration: "none" }}>
+          <Link href="/login" style={{ background: "#c9a84c", color: "#0a0f24", padding: "12px 24px", borderRadius: 12, fontWeight: 700, textDecoration: "none" }}>
             Sign In
           </Link>
         </div>
@@ -20,7 +20,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div style={{ background: "#060b1a", minHeight: "100vh", padding: 32, color: "#f0f6fc" }}>
+    <div style={{ background: "#0a0f24", minHeight: "100vh", padding: 32, color: "#f0f6fc" }}>
       <h1 style={{ fontSize: 28, fontWeight: 900, color: "#c9a84c", fontStyle: "italic" }}>Profile</h1>
 
       <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>

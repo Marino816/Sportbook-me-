@@ -598,7 +598,7 @@ export default function OptimizerPage() {
   }, [selectedLineup, platform, lockedPlayers, dfsPlayers]);
 
   return (
-    <div style={{ background: "#060b1a", minHeight: "100vh", color: "#f0f6fc" }}>
+    <div style={{ background: "#0a0f24", minHeight: "100vh", color: "#f0f6fc" }}>
       {/* HEADER */}
       <div style={{ padding: "20px 24px", borderBottom: "1px solid #1e293b", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <div>

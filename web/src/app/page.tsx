@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 
 /* ── Brand palette ── */
-const navy = "#060b1a";
+const navy = "#0a0f24";
 const cardBg = "#0a0f24";
 const cardElevated = "#10162f";
 const gold = "#c9a84c";
@@ -173,7 +173,7 @@ function ParlayDemoCard() {
       </div>
 
       {/* Footer — payout */}
-      <div className="px-5 py-3.5 border-t flex items-center justify-between" style={{ borderColor: border, background: "rgba(6,11,26,0.5)" }}>
+      <div className="px-5 py-3.5 border-t flex items-center justify-between" style={{ borderColor: border, background: "rgba(10,15,36,0.5)" }}>
         <div>
           <div className="text-[10px] font-bold tracking-wider uppercase" style={{ color: textMuted }}>4-Leg Multiplier</div>
           <div className="text-xs" style={{ color: textMuted }}>{(multiOdds * 100).toFixed(0)} &times; $100</div>
@@ -220,7 +220,7 @@ export default function LandingPage() {
     <div style={{ background: navy, color: textPrimary, fontFamily: "'Inter', sans-serif" }} className="min-h-screen">
 
       {/* ═══ HEADER ═══ */}
-      <header className="sticky top-0 z-50 border-b" style={{ background: "rgba(6,11,26,0.92)", backdropFilter: "blur(16px)", borderColor: border }}>
+      <header className="sticky top-0 z-50 border-b" style={{ background: "rgba(10,15,36,0.92)", backdropFilter: "blur(16px)", borderColor: border }}>
         <div className="max-w-7xl mx-auto flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
           {/* Logo */}
           <Link href="/" className="shrink-0">

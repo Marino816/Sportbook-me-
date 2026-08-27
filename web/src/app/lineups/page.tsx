@@ -23,7 +23,7 @@ export default function LineupsPage() {
 
   if (!user) {
     return (
-      <div style={{ background: "#060b1a", minHeight: "100vh", padding: 32, color: "#f0f6fc" }}>
+      <div style={{ background: "#0a0f24", minHeight: "100vh", padding: 32, color: "#f0f6fc" }}>
         <h1 style={{ fontSize: 28, fontWeight: 900, color: "#c9a84c", fontStyle: "italic" }}>Lineups</h1>
         <div style={{ marginTop: 24, padding: 24, background: "#0a0f24", borderRadius: 16, border: "1px solid #1e293b" }}>
           <p style={{ color: "#94a3b8" }}>Sign in to view your saved lineup history.</p>
@@ -33,7 +33,7 @@ export default function LineupsPage() {
   }
 
   return (
-    <div style={{ background: "#060b1a", minHeight: "100vh", padding: 32, color: "#f0f6fc", maxWidth: 1000, margin: "0 auto" }}>
+    <div style={{ background: "#0a0f24", minHeight: "100vh", padding: 32, color: "#f0f6fc", maxWidth: 1000, margin: "0 auto" }}>
       <h1 style={{ fontSize: 28, fontWeight: 900, color: "#c9a84c", fontStyle: "italic" }}>Lineups</h1>
       <p style={{ color: "#64748b", marginTop: 4, fontSize: 14 }}>Your saved lineup history across all sports and platforms.</p>
 

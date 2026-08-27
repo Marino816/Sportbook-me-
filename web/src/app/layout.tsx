@@ -47,7 +47,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
-        style={{ background: "#060b1a" }}
+        style={{ background: "#0a0f24" }}
       >
         <Providers>
           <AuthProvider>

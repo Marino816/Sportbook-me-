@@ -32,7 +32,7 @@ function TopNavInner() {
   return (
     <header style={{
       position: "sticky", top: 0, zIndex: 50,
-      background: "rgba(6,11,26,0.92)", backdropFilter: "blur(16px)",
+      background: "rgba(10,15,36,0.92)", backdropFilter: "blur(16px)",
       borderBottom: "1px solid #1e293b",
     }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", height: 64 }}>

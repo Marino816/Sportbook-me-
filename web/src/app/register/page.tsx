@@ -41,7 +41,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, background: "#060b1a" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, background: "#0a0f24" }}>
       <div style={{ width: "100%", maxWidth: 420 }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
           <Link href="/">
@@ -63,7 +63,7 @@ export default function RegisterPage() {
             <div style={{ position: "relative" }}>
               <Mail size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
               <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com"
-                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#060b1a", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
+                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#0a0f24", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
             </div>
           </div>
           <div>
@@ -71,7 +71,7 @@ export default function RegisterPage() {
             <div style={{ position: "relative" }}>
               <Lock size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
               <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 8 characters"
-                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#060b1a", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
+                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#0a0f24", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
             </div>
           </div>
           <div>
@@ -79,11 +79,11 @@ export default function RegisterPage() {
             <div style={{ position: "relative" }}>
               <Lock size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
               <input type="password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter password"
-                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#060b1a", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
+                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#0a0f24", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
             </div>
           </div>
           <button type="submit" disabled={loading}
-            style={{ padding: "14px", borderRadius: 14, background: "#c9a84c", color: "#060b1a", border: "none", fontWeight: 800, fontSize: 15, textTransform: "uppercase", cursor: "pointer", boxShadow: "0 4px 20px rgba(201,168,76,0.3)" }}>
+            style={{ padding: "14px", borderRadius: 14, background: "#c9a84c", color: "#0a0f24", border: "none", fontWeight: 800, fontSize: 15, textTransform: "uppercase", cursor: "pointer", boxShadow: "0 4px 20px rgba(201,168,76,0.3)" }}>
             {loading ? <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> : "Create Account"}
           </button>
         </form>

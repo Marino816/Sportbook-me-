@@ -36,7 +36,7 @@ function NavigationInner() {
   return (
     <div
       className="flex h-full w-64 flex-col border-r"
-      style={{ background: "#060b1a", borderColor: "#1e293b" }}
+      style={{ background: "#0a0f24", borderColor: "#1e293b" }}
     >
       {/* Logo */}
       <div

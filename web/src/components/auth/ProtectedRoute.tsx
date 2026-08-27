@@ -35,7 +35,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (requiresAuthentication && (isLoading || !isAuthenticated)) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0d1117] text-sm text-[#8b949e]">
+      <div className="flex min-h-screen items-center justify-center bg-[#0a0f24] text-sm text-[#8b949e]">
         Checking your session…
       </div>
     );

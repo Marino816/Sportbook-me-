@@ -67,7 +67,7 @@ export default function AIPage() {
 
   if (!user) {
     return (
-      <div style={{ background: "#060b1a", minHeight: "100vh", padding: 32, color: "#f0f6fc" }}>
+      <div style={{ background: "#0a0f24", minHeight: "100vh", padding: 32, color: "#f0f6fc" }}>
         <h1 style={{ fontSize: 28, fontWeight: 900, color: "#c9a84c", fontStyle: "italic" }}>SB ME AI</h1>
         <div style={{ marginTop: 24, padding: 24, background: "#0a0f24", borderRadius: 16, border: "1px solid #1e293b" }}>
           <p style={{ color: "#94a3b8", marginBottom: 16 }}>Sign in to access SB ME Intelligent AI.</p>
@@ -77,7 +77,7 @@ export default function AIPage() {
   }
 
   return (
-    <div style={{ background: "#060b1a", height: "calc(100vh - 64px)", display: "flex", flexDirection: "column", color: "#f0f6fc" }}>
+    <div style={{ background: "#0a0f24", height: "calc(100vh - 64px)", display: "flex", flexDirection: "column", color: "#f0f6fc" }}>
       <div style={{ padding: "20px 24px", borderBottom: "1px solid #1e293b" }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: "#c9a84c", fontStyle: "italic", margin: 0 }}>SB ME AI</h1>
         <p style={{ color: "#64748b", fontSize: 13, margin: "4px 0 0" }}>
@@ -91,7 +91,7 @@ export default function AIPage() {
             <div style={{
               maxWidth: "75%", padding: "12px 16px", borderRadius: 14,
               background: m.role === "user" ? "#c9a84c" : "#0a0f24",
-              color: m.role === "user" ? "#060b1a" : "#f0f6fc",
+              color: m.role === "user" ? "#0a0f24" : "#f0f6fc",
               border: m.role === "user" ? "none" : "1px solid #1e293b",
               fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap",
             }}>
@@ -117,7 +117,7 @@ export default function AIPage() {
               background: "#0a0f24", color: "#f0f6fc", fontSize: 14, outline: "none",
             }} />
           <button onClick={send} disabled={sending} style={{
-            padding: "12px 16px", borderRadius: 12, background: "#c9a84c", color: "#060b1a",
+            padding: "12px 16px", borderRadius: 12, background: "#c9a84c", color: "#0a0f24",
             border: "none", cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", gap: 6,
           }}>
             {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
