@@ -54,6 +54,32 @@ export function classifyPlatforms(observedSgoIds: string[]): {
   };
 }
 
+export function catalogHasSgoMapping(row: PlatformRow): boolean {
+  return (row.sgo_ids || []).length > 0;
+}
+
+export function catalogMappingCounts(): { total: number; mapped: number; mapping_needed: number } {
+  let mapped = 0;
+  let mapping_needed = 0;
+  for (const row of SBME_55_PLATFORMS) {
+    if (catalogHasSgoMapping(row)) mapped += 1;
+    else mapping_needed += 1;
+  }
+  return { total: SBME_55_PLATFORMS.length, mapped, mapping_needed };
+}
+
+export type DirectoryLane = "mapped" | "mapping_needed" | "no_current_data";
+
+/** Three-way directory status from catalog mapping + currently observed SGO ids. */
+export function directoryLane(
+  row: PlatformRow,
+  classified: ReturnType<typeof classifyPlatforms>,
+): DirectoryLane {
+  if (!catalogHasSgoMapping(row)) return "mapping_needed";
+  if (classified.noCurrentData.some((p) => p.id === row.id)) return "no_current_data";
+  return "mapped";
+}
+
 export function platformNameForSgoId(sgoId: string): string | null {
   const key = (sgoId || "").toLowerCase();
   const row = SBME_55_PLATFORMS.find((p) => p.sgo_ids.map((i) => i.toLowerCase()).includes(key));

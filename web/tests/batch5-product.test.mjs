@@ -47,6 +47,33 @@ test("protected routes still cover market tools, dashboard, admin, ai", () => {
   }
 });
 
+test("catalog mapping-needed rows are empty sgo_ids from JSON, not hardcoded counts", () => {
+  const needed = platforms.filter((p) => !(p.sgo_ids || []).length);
+  const mapped = platforms.filter((p) => (p.sgo_ids || []).length > 0);
+  assert.equal(needed.length + mapped.length, platforms.length);
+  assert.equal(platforms.length, 55);
+  const neededIds = needed.map((p) => p.id).sort();
+  assert.deepEqual(neededIds, ["bet365", "circa", "pinnacle"]);
+});
+
+test("bookmakers directory is a catalog page, not a live-odds claim", () => {
+  const bookmakers = readFileSync(join(root, "src/app/market-tools/bookmakers/page.tsx"), "utf8");
+  const platformsLib = readFileSync(join(root, "src/lib/platforms.ts"), "utf8");
+  assert.match(platformsLib, /export function catalogMappingCounts/);
+  assert.match(platformsLib, /export function directoryLane/);
+  assert.match(bookmakers, /classified\.counts\.mapped_to_sgo/);
+  assert.match(bookmakers, /classified\.counts\.mapping_needed/);
+  assert.match(bookmakers, /classified\.counts\.no_current_data/);
+  assert.match(bookmakers, /catalogMappingCounts/);
+  assert.match(bookmakers, /Search platforms/);
+  assert.match(bookmakers, /Mapping Needed/);
+  assert.match(bookmakers, /No Current Data/);
+  assert.match(bookmakers, /does not accept or place wagers/);
+  assert.doesNotMatch(bookmakers, /Line available/);
+  assert.doesNotMatch(bookmakers, /currently mapped to live/);
+  assert.match(bookmakers, /SBME_55_PLATFORMS\.filter/);
+});
+
 test("landing preserves prices and is not a sportsbook", () => {
   assert.match(landing, /\$39/);
   assert.match(landing, /\.99\/mo/);

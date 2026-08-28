@@ -2149,3 +2149,399 @@ body {
   .sbme-intel-bubble { max-width: 92%; }
   .sbme-intel-badge { letter-spacing: 0.08em; }
 }
+
+/* Bookmakers intelligence directory */
+.sbme-books {
+  position: relative;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+}
+.sbme-books-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, transparent 40%),
+    linear-gradient(180deg, rgba(16, 24, 48, 0.72), rgba(7, 11, 22, 0.88));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(96, 165, 250, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.sbme-books-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c9a84c;
+  background: rgba(201, 168, 76, 0.1);
+  border: 1px solid rgba(201, 168, 76, 0.28);
+  flex-shrink: 0;
+}
+.sbme-books-kicker {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #c9a84c;
+}
+.sbme-books-head h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #f7fafc;
+}
+.sbme-books-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #b4c0ce;
+  max-width: 46rem;
+}
+.sbme-books-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.sbme-books-stat {
+  padding: 14px 14px 12px;
+  border-radius: 1rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 50%),
+    rgba(10, 15, 36, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.sbme-books-stat-n {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #f7fafc;
+  font-variant-numeric: tabular-nums;
+}
+.sbme-books-stat-l {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8b9cb3;
+}
+.sbme-books-note {
+  margin: 0 0 22px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8b9cb3;
+  max-width: 52rem;
+}
+.sbme-books-directory { margin-bottom: 28px; }
+.sbme-books-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.sbme-books-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sbme-books-filter {
+  appearance: none;
+  font-family: inherit;
+  min-height: 36px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  color: #8b9cb3;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sbme-books-filter.is-on {
+  color: #0a0f24;
+  background: linear-gradient(180deg, #e4cc78, #c9a84c);
+  border-color: rgba(201, 168, 76, 0.7);
+}
+.sbme-books-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  flex: 1;
+  max-width: 320px;
+  padding: 0 12px;
+  min-height: 40px;
+  border-radius: 12px;
+  color: #8b9cb3;
+  background: rgba(10, 15, 36, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sbme-books-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #f7fafc;
+  font-size: 13px;
+  outline: none;
+  padding: 8px 0;
+}
+.sbme-books-search--events {
+  max-width: 320px;
+  margin: 12px 0 10px;
+}
+.sbme-books-shown {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b9cb3;
+}
+.sbme-books-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.sbme-books-card {
+  padding: 12px 14px 11px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 42%),
+    rgba(10, 15, 36, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.sbme-books-card--mapped { box-shadow: inset 3px 0 0 rgba(96, 165, 250, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.sbme-books-card--mapping-needed { box-shadow: inset 3px 0 0 rgba(201, 168, 76, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.sbme-books-card--no-current-data { box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.sbme-books-card--pending { box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.sbme-books-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sbme-books-card h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #f7fafc;
+  letter-spacing: -0.02em;
+}
+.sbme-books-pill {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sbme-books-pill--mapped {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+}
+.sbme-books-pill--mapping-needed {
+  color: #e4cc78;
+  background: rgba(201, 168, 76, 0.1);
+  border: 1px solid rgba(201, 168, 76, 0.28);
+}
+.sbme-books-pill--no-current-data {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+.sbme-books-pill--pending {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+.sbme-books-ids {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #8b9cb3;
+  word-break: break-word;
+}
+.sbme-books-card-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #94a3b8;
+}
+.sbme-books-empty {
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 13px;
+  color: #8b9cb3;
+}
+.sbme-books-empty--err { color: #f87171; }
+.sbme-books-markets {
+  padding: 18px 18px 16px;
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 36%),
+    rgba(10, 15, 36, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.sbme-books-markets-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.sbme-books-markets-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #f7fafc;
+}
+.sbme-books-markets-head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #8b9cb3;
+  max-width: 40rem;
+}
+.sbme-books-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sbme-books-events {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 4px 0 14px;
+  padding-bottom: 4px;
+}
+.sbme-books-event {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0f6fc;
+  cursor: pointer;
+  background: rgba(10, 15, 36, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sbme-books-event.is-on {
+  color: #c9a84c;
+  border-color: rgba(201, 168, 76, 0.55);
+  background: rgba(201, 168, 76, 0.1);
+}
+.sbme-books-event span {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  color: #64748b;
+  margin-top: 2px;
+}
+.sbme-books-event span.is-live { color: #ef4444; }
+.sbme-books-board {
+  padding-top: 4px;
+}
+.sbme-books-board-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.sbme-books-matchup {
+  font-size: 16px;
+  font-weight: 800;
+  color: #f7fafc;
+}
+.sbme-books-score {
+  font-size: 13px;
+  color: #c9a84c;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.sbme-books-marks {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sbme-books-final {
+  font-size: 12px;
+  color: #f59e0b;
+  margin-bottom: 12px;
+}
+.sbme-books-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.sbme-books-table-wrap { overflow-x: auto; }
+.sbme-books-table {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) 1fr 1fr 1fr 1fr;
+  gap: 6px;
+  min-width: 560px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.5);
+  font-size: 13px;
+  color: #f0f6fc;
+}
+.sbme-books-table span:not(:first-child) { text-align: center; }
+.sbme-books-table--head {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #1e293b;
+}
+.sbme-books-book { font-weight: 700; }
+.sbme-books-table:not(.sbme-books-table--head) span:nth-child(2),
+.sbme-books-table:not(.sbme-books-table--head) span:nth-child(3) { color: #c9a84c; font-weight: 700; }
+.sbme-books-table--head span { color: #64748b; font-weight: 700; }
+.sbme-books-table .is-muted { color: #94a3b8; font-weight: 500; }
+.sbme-books-board-note {
+  font-size: 11px;
+  color: #64748b;
+  margin: 12px 0 0;
+}
+
+@media (max-width: 1100px) {
+  .sbme-books-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sbme-books-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .sbme-books { padding: 16px 14px 48px; }
+  .sbme-books-head { align-items: flex-start; padding: 14px; }
+  .sbme-books-head h1 { font-size: 20px; }
+  .sbme-books-grid { grid-template-columns: 1fr; }
+  .sbme-books-stats { grid-template-columns: 1fr 1fr; }
+  .sbme-books-search { max-width: none; min-width: 0; width: 100%; }
+  .sbme-books-toolbar { align-items: stretch; }
+  .sbme-books-filters { width: 100%; }
+  .sbme-books-filter { flex: 1; min-width: calc(50% - 6px); }
+}

@@ -5,10 +5,14 @@ import { Building2, Search } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import { formatBookmakerName } from "@/lib/bookmakers";
 import {
+  catalogHasSgoMapping,
+  catalogMappingCounts,
   classifyPlatforms,
+  directoryLane,
   platformNameForSgoId,
   SBME_55_COUNT,
   SBME_55_PLATFORMS,
+  type DirectoryLane,
 } from "@/lib/platforms";
 import { filterEventsByStatus, filterMarkets, presentPeriodGroups, type LineMode, type PeriodGroup } from "@/lib/market-view";
 import { LeagueChips, LineModeChips, PeriodChips, StatusChips, LastUpdated, FairOddsMark, ConsensusMark } from "@/components/market-controls";
@@ -26,10 +30,20 @@ function fmtNum(v: number | null | undefined): string {
 }
 
 type MarketTab = "moneyline" | "spread" | "total" | "player_prop" | "team_prop";
+type CatalogFilter = "all" | DirectoryLane;
 
 function pickMarket(event: SBEvent, tab: MarketTab, side: string): SBMarket | undefined {
   const types = tab === "total" ? ["total", "over_under"] : [tab];
   return event.markets.find((m) => types.includes(m.bet_type) && (m.side || "") === side);
+}
+
+type CardLane = DirectoryLane | "pending";
+
+function laneLabel(lane: CardLane): string {
+  if (lane === "mapping_needed") return "Mapping Needed";
+  if (lane === "no_current_data") return "No Current Data";
+  if (lane === "pending") return "Awaiting Markets";
+  return "Mapped";
 }
 
 export default function BookmakersPage() {
@@ -39,21 +53,23 @@ export default function BookmakersPage() {
   const [period, setPeriod] = useState<PeriodGroup | "all">("full");
   const [tab, setTab] = useState<MarketTab>("moneyline");
   const [eventId, setEventId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [eventQuery, setEventQuery] = useState("");
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogFilter, setCatalogFilter] = useState<CatalogFilter>("all");
 
   const { events, loading, error, lastFetch } = useEvents(league);
+  const mappingCounts = catalogMappingCounts();
 
   const visibleEvents = useMemo(() => {
     const byStatus = filterEventsByStatus(events, status);
-    if (!search) return byStatus;
-    const q = search.toLowerCase();
+    if (!eventQuery) return byStatus;
+    const q = eventQuery.toLowerCase();
     return byStatus.filter((e) =>
       `${e.away_team.name} ${e.home_team.name} ${e.away_team.abbreviation} ${e.home_team.abbreviation}`
         .toLowerCase()
         .includes(q),
     );
-  }, [events, status, search]);
+  }, [events, status, eventQuery]);
 
   const selected = useMemo(
     () => visibleEvents.find((e) => e.id === eventId) ?? visibleEvents[0] ?? null,
@@ -83,6 +99,23 @@ export default function BookmakersPage() {
   }, [events]);
 
   const classified = useMemo(() => classifyPlatforms(observed), [observed]);
+  const dataReady = !loading && !error;
+
+  const directory = useMemo(() => {
+    const q = catalogQuery.trim().toLowerCase();
+    return SBME_55_PLATFORMS.filter((p) => {
+      if (catalogFilter === "mapping_needed" && catalogHasSgoMapping(p)) return false;
+      if (catalogFilter === "mapped") {
+        if (!dataReady || directoryLane(p, classified) !== "mapped") return false;
+      }
+      if (catalogFilter === "no_current_data") {
+        if (!dataReady || directoryLane(p, classified) !== "no_current_data") return false;
+      }
+      if (!q) return true;
+      const ids = (p.sgo_ids || []).join(" ").toLowerCase();
+      return p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || ids.includes(q);
+    });
+  }, [catalogFilter, catalogQuery, classified, dataReady]);
 
   const compareRows = useMemo(() => {
     if (!filteredEvent) return [];
@@ -134,171 +167,262 @@ export default function BookmakersPage() {
     : null;
   const isFinal = selected ? gameState(selected) === "FINAL" : false;
 
+  const FILTERS: { id: CatalogFilter; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "mapped", label: "Mapped" },
+    { id: "mapping_needed", label: "Mapping Needed" },
+    { id: "no_current_data", label: "No Current Data" },
+  ];
+
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 16px 56px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20, background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: "20px 24px", flexWrap: "wrap" }}>
-        <Building2 size={26} color="#c9a84c" />
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, color: "#c9a84c", margin: 0 }}>Bookmakers</h1>
-          <p style={{ fontSize: 13, color: "#94a3b8", margin: "2px 0 0" }}>
-            Compare available books on live SportsGameOdds markets. The {SBME_55_COUNT}-platform catalog is a separate SB ME product list — not the same as SGO bookmakers.
+    <div className="sbme-books">
+      <header className="sbme-books-head">
+        <span className="sbme-books-icon" aria-hidden>
+          <Building2 size={20} />
+        </span>
+        <div>
+          <p className="sbme-books-kicker">{mappingCounts.total} PLATFORM CATALOG</p>
+          <h1>Bookmakers</h1>
+          <p>
+            SB ME supported platform catalog and available SportsGameOdds market-data mappings.
+            Catalog membership is not live-odds coverage. SB ME does not accept or place wagers.
           </p>
         </div>
-        <LastUpdated fetchedAt={lastFetch ?? undefined} />
-      </div>
+      </header>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
-        <LeagueChips value={league} onChange={(id) => { setLeague(id); setEventId(null); }} />
-        <StatusChips value={status} onChange={setStatus} />
-        <LineModeChips value={lineMode} onChange={setLineMode} />
-        {periodOptions.length > 0 && (
-          <PeriodChips value={period} options={periodOptions} onChange={setPeriod} />
-        )}
-      </div>
+      <section className="sbme-books-stats" aria-label="Catalog summary">
+        <div className="sbme-books-stat">
+          <span className="sbme-books-stat-n">{mappingCounts.total}</span>
+          <span className="sbme-books-stat-l">Platform Catalog</span>
+        </div>
+        <div className="sbme-books-stat">
+          <span className="sbme-books-stat-n">{dataReady ? classified.counts.mapped_to_sgo : "—"}</span>
+          <span className="sbme-books-stat-l">Mapped</span>
+        </div>
+        <div className="sbme-books-stat">
+          <span className="sbme-books-stat-n">{classified.counts.mapping_needed}</span>
+          <span className="sbme-books-stat-l">Mapping Needed</span>
+        </div>
+        <div className="sbme-books-stat">
+          <span className="sbme-books-stat-n">{dataReady ? classified.counts.no_current_data : "—"}</span>
+          <span className="sbme-books-stat-l">No Current Data</span>
+        </div>
+      </section>
+      <p className="sbme-books-note">
+        Mapped is a catalog row whose SGO id appears in this league's loaded events — not a live-odds guarantee.
+        Mapping Needed is a catalog row with no SGO id. No Current Data is a catalog row with an SGO mapping
+        whose ids are not in this loaded view.
+        {classified.counts.sgo_unlisted > 0
+          ? ` ${classified.counts.sgo_unlisted} observed SGO book${classified.counts.sgo_unlisted === 1 ? "" : "s"} ${classified.counts.sgo_unlisted === 1 ? "is" : "are"} not in the ${SBME_55_COUNT}-platform catalog.`
+          : ""}
+      </p>
 
-      <div style={{ position: "relative", marginBottom: 16, maxWidth: 320 }}>
-        <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search events..."
-          style={{ width: "100%", padding: "8px 14px 8px 32px", borderRadius: 10, fontSize: 13, background: "#0a0f24", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none", boxSizing: "border-box" }}
-        />
-      </div>
-
-      {loading && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Loading markets…</div>}
-      {error && <div style={{ textAlign: "center", padding: 40, color: "#ef4444" }}>{error}</div>}
-
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 16, paddingBottom: 4 }}>
-        {visibleEvents.map((e) => {
-          const sel = selected?.id === e.id;
-          const st = gameState(e);
-          return (
-            <button
-              key={e.id}
-              type="button"
-              onClick={() => setEventId(e.id)}
-              style={{
-                flexShrink: 0,
-                padding: "10px 14px",
-                borderRadius: 12,
-                fontSize: 12,
-                fontWeight: 700,
-                background: sel ? "rgba(201,168,76,0.1)" : "#0a0f24",
-                border: sel ? "1px solid #c9a84c" : "1px solid #1e293b",
-                color: sel ? "#c9a84c" : "#f0f6fc",
-                cursor: "pointer",
-              }}
-            >
-              {e.away_team.abbreviation} @ {e.home_team.abbreviation}
-              <span style={{ display: "block", fontSize: 9, fontWeight: 600, color: st === "LIVE" ? "#ef4444" : "#64748b" }}>{st}</span>
-            </button>
-          );
-        })}
-        {!loading && visibleEvents.length === 0 && (
-          <div style={{ color: "#64748b", fontSize: 13, padding: 12 }}>No events for this filter.</div>
-        )}
-      </div>
-
-      {filteredEvent && (
-        <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: 16, marginBottom: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f6fc" }}>
-                {filteredEvent.away_team.name} @ {filteredEvent.home_team.name}
-              </div>
-              {(filteredEvent.home_score != null || filteredEvent.away_score != null) && (
-                <div style={{ fontSize: 13, color: "#c9a84c", fontWeight: 700, marginTop: 4 }}>
-                  {filteredEvent.away_score ?? 0}–{filteredEvent.home_score ?? 0} · {filteredEvent.status_display || filteredEvent.status}
-                </div>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <FairOddsMark value={fair} />
-              <ConsensusMark value={consensus} />
-            </div>
-          </div>
-          {isFinal && (
-            <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 12 }}>
-              Finalized event — shown for scores and results, not as a current bettable market.
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-            {(["moneyline", "spread", "total", "player_prop", "team_prop"] as MarketTab[]).map((t) => (
+      <section className="sbme-books-directory" aria-label="Platform directory">
+        <div className="sbme-books-toolbar">
+          <div className="sbme-books-filters" aria-label="Catalog status">
+            {FILTERS.map((f) => (
               <button
-                key={t}
+                key={f.id}
                 type="button"
-                onClick={() => setTab(t)}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 8,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  background: tab === t ? "rgba(201,168,76,0.12)" : "transparent",
-                  border: tab === t ? "1px solid #c9a84c" : "1px solid #1e293b",
-                  color: tab === t ? "#c9a84c" : "#94a3b8",
-                  cursor: "pointer",
-                }}
+                aria-pressed={catalogFilter === f.id}
+                className={`sbme-books-filter${catalogFilter === f.id ? " is-on" : ""}`}
+                onClick={() => setCatalogFilter(f.id)}
               >
-                {t === "player_prop" ? "Player Props" : t === "team_prop" ? "Team Props" : t === "moneyline" ? "Moneyline" : t === "spread" ? "Spread" : "Total"}
+                {f.label}
               </button>
             ))}
           </div>
-
-          {compareRows.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 28, color: "#64748b", fontSize: 13 }}>
-              No bookmaker returned this market for the selected event and filters. Missing books are not filled in.
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(140px,1.4fr) 1fr 1fr 1fr 1fr", gap: 6, minWidth: 560, fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", paddingBottom: 8, borderBottom: "1px solid #1e293b" }}>
-                <span>Book</span>
-                <span style={{ textAlign: "center" }}>{tab === "total" ? "Over" : filteredEvent.home_team.abbreviation}</span>
-                <span style={{ textAlign: "center" }}>{tab === "total" ? "Under" : filteredEvent.away_team.abbreviation}</span>
-                <span style={{ textAlign: "center" }}>Open</span>
-                <span style={{ textAlign: "center" }}>Close</span>
-              </div>
-              {compareRows.map((r) => (
-                <div key={r.bookmaker} style={{ display: "grid", gridTemplateColumns: "minmax(140px,1.4fr) 1fr 1fr 1fr 1fr", gap: 6, minWidth: 560, padding: "10px 0", borderBottom: "1px solid rgba(30,41,59,0.5)", fontSize: 13, color: "#f0f6fc" }}>
-                  <span style={{ fontWeight: 700 }}>{r.label}</span>
-                  <span style={{ textAlign: "center", color: "#c9a84c", fontWeight: 700 }}>{tab === "spread" || tab === "total" ? fmtNum(r.homeVal) : fmtOdds(r.homeVal)}</span>
-                  <span style={{ textAlign: "center", color: "#c9a84c", fontWeight: 700 }}>{tab === "spread" || tab === "total" ? fmtNum(r.awayVal) : fmtOdds(r.awayVal)}</span>
-                  <span style={{ textAlign: "center", color: "#94a3b8" }}>{fmtOdds(r.opening)}</span>
-                  <span style={{ textAlign: "center", color: "#94a3b8" }}>{fmtOdds(r.closing)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <p style={{ fontSize: 11, color: "#64748b", marginTop: 12 }}>
-            Bookmaker Price is the sportsbook line. Fair Odds and Consensus appear only when SportsGameOdds returned fairOdds / bookOdds. SB ME does not accept or place wagers.
-          </p>
+          <label className="sbme-books-search">
+            <Search size={14} aria-hidden />
+            <input
+              value={catalogQuery}
+              onChange={(e) => setCatalogQuery(e.target.value)}
+              placeholder="Search platforms…"
+              aria-label="Search platforms"
+            />
+          </label>
         </div>
-      )}
-
-      <div style={{ background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: 16 }}>
-        <button type="button" onClick={() => setCatalogOpen((v) => !v)} style={{ background: "none", border: "none", color: "#c9a84c", fontWeight: 800, fontSize: 14, cursor: "pointer", padding: 0 }}>
-          {SBME_55_COUNT} Platforms {catalogOpen ? "▲" : "▼"}
-        </button>
-        <p style={{ fontSize: 12, color: "#94a3b8", margin: "8px 0 0" }}>
-          {classified.counts.mapped_to_sgo} currently mapped to live SGO books · {classified.counts.no_current_data} mapped but no current line · {classified.counts.mapping_needed} mapping needed · {classified.counts.sgo_unlisted} SGO books not in the 55 catalog
+        <p className="sbme-books-shown">
+          Showing {directory.length} of {mappingCounts.total}
         </p>
-        {catalogOpen && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 14 }}>
-            {SBME_55_PLATFORMS.map((p) => {
-              const mapped = classified.mapped.some((m) => m.id === p.id);
-              const needed = classified.mappingNeeded.some((m) => m.id === p.id);
+        {directory.length === 0 ? (
+          <div className="sbme-books-empty">
+            {!dataReady && (catalogFilter === "mapped" || catalogFilter === "no_current_data")
+              ? "Current-data filters apply after this league's markets load."
+              : "No platforms in the loaded catalog match this filter or search."}
+          </div>
+        ) : (
+          <div className="sbme-books-grid">
+            {directory.map((p) => {
+              const ids = (p.sgo_ids || []).filter(Boolean);
+              const lane: CardLane = !catalogHasSgoMapping(p)
+                ? "mapping_needed"
+                : dataReady
+                  ? directoryLane(p, classified)
+                  : "pending";
               return (
-                <div key={p.id} style={{ padding: "10px 12px", borderRadius: 10, border: "1px solid #1e293b", background: "rgba(255,255,255,0.02)" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#f0f6fc" }}>{p.name}</div>
-                  <div style={{ fontSize: 10, color: mapped ? "#4ade80" : needed ? "#f59e0b" : "#64748b", marginTop: 4 }}>
-                    {mapped ? "Line available" : needed ? "Mapping needed" : "No current market"}
+                <article key={p.id} className={`sbme-books-card sbme-books-card--${lane.replace(/_/g, "-")}`}>
+                  <div className="sbme-books-card-top">
+                    <h2>{p.name}</h2>
+                    <span className={`sbme-books-pill sbme-books-pill--${lane.replace(/_/g, "-")}`}>
+                      {laneLabel(lane)}
+                    </span>
                   </div>
-                </div>
+                  <p className="sbme-books-ids">
+                    {ids.length ? `SGO id${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}` : "No SGO id mapped"}
+                  </p>
+                  {lane === "mapping_needed" && (
+                    <p className="sbme-books-card-note">
+                      In the SB ME catalog. Current canonical market data is not available — no SportsGameOdds id is mapped.
+                    </p>
+                  )}
+                  {lane === "pending" && (
+                    <p className="sbme-books-card-note">
+                      In the SB ME catalog with an SGO mapping. Current-data state appears when this league's markets load.
+                    </p>
+                  )}
+                  {lane === "no_current_data" && (
+                    <p className="sbme-books-card-note">
+                      In the SB ME catalog with an SGO mapping. Current canonical market data is not available in this loaded view.
+                    </p>
+                  )}
+                  {lane === "mapped" && (
+                    <p className="sbme-books-card-note">
+                      Catalog mapping present. This platform's SGO id appears in this league's loaded events — not a live-odds claim.
+                    </p>
+                  )}
+                </article>
               );
             })}
           </div>
         )}
-      </div>
+      </section>
+
+      <section className="sbme-books-markets">
+        <div className="sbme-books-markets-head">
+          <div>
+            <p className="sbme-books-kicker">LOADED MARKETS</p>
+            <h2>Available book comparison</h2>
+            <p>
+              Prices appear only for books that returned this market on the selected event.
+              Missing books are not filled in.
+            </p>
+          </div>
+          <LastUpdated fetchedAt={lastFetch ?? undefined} />
+        </div>
+
+        <div className="sbme-books-controls">
+          <LeagueChips value={league} onChange={(id) => { setLeague(id); setEventId(null); }} />
+          <StatusChips value={status} onChange={setStatus} />
+          <LineModeChips value={lineMode} onChange={setLineMode} />
+          {periodOptions.length > 0 && (
+            <PeriodChips value={period} options={periodOptions} onChange={setPeriod} />
+          )}
+        </div>
+
+        <label className="sbme-books-search sbme-books-search--events">
+          <Search size={14} aria-hidden />
+          <input
+            value={eventQuery}
+            onChange={(e) => setEventQuery(e.target.value)}
+            placeholder="Search events…"
+            aria-label="Search events"
+          />
+        </label>
+
+        {loading && <div className="sbme-books-empty">Loading markets…</div>}
+        {error && <div className="sbme-books-empty sbme-books-empty--err">{error}</div>}
+
+        <div className="sbme-books-events">
+          {visibleEvents.map((e) => {
+            const sel = selected?.id === e.id;
+            const st = gameState(e);
+            return (
+              <button
+                key={e.id}
+                type="button"
+                onClick={() => setEventId(e.id)}
+                className={`sbme-books-event${sel ? " is-on" : ""}`}
+              >
+                {e.away_team.abbreviation} @ {e.home_team.abbreviation}
+                <span className={st === "LIVE" ? "is-live" : undefined}>{st}</span>
+              </button>
+            );
+          })}
+          {!loading && visibleEvents.length === 0 && (
+            <div className="sbme-books-empty">No events for this filter.</div>
+          )}
+        </div>
+
+        {filteredEvent && (
+          <div className="sbme-books-board">
+            <div className="sbme-books-board-top">
+              <div>
+                <div className="sbme-books-matchup">
+                  {filteredEvent.away_team.name} @ {filteredEvent.home_team.name}
+                </div>
+                {(filteredEvent.home_score != null || filteredEvent.away_score != null) && (
+                  <div className="sbme-books-score">
+                    {filteredEvent.away_score ?? 0}–{filteredEvent.home_score ?? 0}
+                    {(filteredEvent.status_display || filteredEvent.status)
+                      ? ` · ${filteredEvent.status_display || filteredEvent.status}`
+                      : ""}
+                  </div>
+                )}
+              </div>
+              <div className="sbme-books-marks">
+                <FairOddsMark value={fair} />
+                <ConsensusMark value={consensus} />
+              </div>
+            </div>
+            {isFinal && (
+              <div className="sbme-books-final">
+                Finalized event — shown for scores and results, not as a current bettable market.
+              </div>
+            )}
+            <div className="sbme-books-tabs">
+              {(["moneyline", "spread", "total", "player_prop", "team_prop"] as MarketTab[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  className={`sbme-chip${tab === t ? " is-on" : ""}`}
+                >
+                  {t === "player_prop" ? "Player Props" : t === "team_prop" ? "Team Props" : t === "moneyline" ? "Moneyline" : t === "spread" ? "Spread" : "Total"}
+                </button>
+              ))}
+            </div>
+
+            {compareRows.length === 0 ? (
+              <div className="sbme-books-empty">
+                No bookmaker returned this market for the selected event and filters. Missing books are not filled in.
+              </div>
+            ) : (
+              <div className="sbme-books-table-wrap">
+                <div className="sbme-books-table sbme-books-table--head">
+                  <span>Book</span>
+                  <span>{tab === "total" ? "Over" : filteredEvent.home_team.abbreviation}</span>
+                  <span>{tab === "total" ? "Under" : filteredEvent.away_team.abbreviation}</span>
+                  <span>Open</span>
+                  <span>Close</span>
+                </div>
+                {compareRows.map((r) => (
+                  <div key={r.bookmaker} className="sbme-books-table">
+                    <span className="sbme-books-book">{r.label}</span>
+                    <span>{tab === "spread" || tab === "total" ? fmtNum(r.homeVal) : fmtOdds(r.homeVal)}</span>
+                    <span>{tab === "spread" || tab === "total" ? fmtNum(r.awayVal) : fmtOdds(r.awayVal)}</span>
+                    <span className="is-muted">{fmtOdds(r.opening)}</span>
+                    <span className="is-muted">{fmtOdds(r.closing)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="sbme-books-board-note">
+              Bookmaker Price is the sportsbook line. Fair Odds and Consensus appear only when SportsGameOdds returned fairOdds / bookOdds. SB ME does not accept or place wagers.
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
