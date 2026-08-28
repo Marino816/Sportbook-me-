@@ -54,13 +54,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Validate the stored token
     fetchCurrentUser()
-      .then((res) => {
+      .then((user) => {
+        const plan = user.plan || "Starter";
         setState({
           user: {
-            email: res.data.email,
-            plan: res.data.plan || "Starter",
-            isPro: res.data.is_pro || false,
-            role: res.data.role || "user",
+            email: user.email,
+            plan,
+            isPro: Boolean(user.is_pro) || plan !== "Starter",
+            role: user.role || "user",
           },
           isLoading: false,
           isAuthenticated: true,

@@ -115,3 +115,19 @@ class TestMLBOptimizer:
         lu = opt.generate(1)
         for p in lu[0]["players"]:
             assert p.get("ownership") is None or p.get("ownership", 0) > 0
+
+    def test_lock_and_exclude_by_player_name(self):
+        """Frontend/Data Hub send player names; solver must honor them."""
+        pool = [{**p, "fppg": float(p.get("projected_fp") or 1)} for p in TEST_POOL]
+        opt = MLBOptimizer(
+            pool,
+            platform="draftkings",
+            strategy="balanced",
+            locks=["P1"],
+            excludes=["OF7"],
+        )
+        lu = opt.generate(1)
+        assert lu
+        names = [p["name"] for p in lu[0]["players"]]
+        assert "P1" in names
+        assert "OF7" not in names

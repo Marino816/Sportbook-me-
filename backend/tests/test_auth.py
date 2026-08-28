@@ -215,6 +215,8 @@ async def test_me_endpoint_with_valid_token(client):
     )
     assert res.status_code == 200
     assert res.json()["email"] == "valid@test.com"
+    assert res.json()["plan"] == "Starter"
+    assert "is_pro" in res.json()
 
 
 @pytest.mark.asyncio

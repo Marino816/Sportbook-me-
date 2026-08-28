@@ -29,6 +29,8 @@ interface WorkspaceContextValue extends WorkspaceState {
   toggleExclude: (id: string) => void;
   toggleLike: (id: string) => void;
   setProjOverride: (name: string, value: number) => void;
+  setLockedIds: (ids: string[]) => void;
+  setExcludedIds: (ids: string[]) => void;
   setPendingLineups: (lineups: any[]) => void;
   reset: () => void;
 }
@@ -75,6 +77,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setProjOverrides((prev) => ({ ...prev, [name]: value }));
   }, []);
 
+  const setLockedIdsStable = useCallback((ids: string[]) => {
+    setLockedIds(ids);
+    setExcludedIds((prev) => prev.filter((x) => !ids.includes(x)));
+  }, []);
+
+  const setExcludedIdsStable = useCallback((ids: string[]) => {
+    setExcludedIds(ids);
+    setLockedIds((prev) => prev.filter((x) => !ids.includes(x)));
+  }, []);
+
   const setPendingLineups = useCallback((lineups: any[]) => {
     _setPendingLineups(lineups);
   }, []);
@@ -107,11 +119,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       toggleExclude,
       toggleLike,
       setProjOverride,
+      setLockedIds: setLockedIdsStable,
+      setExcludedIds: setExcludedIdsStable,
       setPendingLineups,
       reset,
     }),
     [sport, platform, slateId, lockedIds, excludedIds, likedIds, projOverrides, pendingLineups,
-     toggleLock, toggleExclude, toggleLike, setProjOverride, setPendingLineups, reset]
+     toggleLock, toggleExclude, toggleLike, setProjOverride, setLockedIdsStable, setExcludedIdsStable, setPendingLineups, reset]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

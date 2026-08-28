@@ -6,12 +6,18 @@ import { useAuth } from "@/lib/auth";
 
 const PROTECTED_PATHS = [
   "/admin",
+  "/ai",
   "/backtesting",
   "/billing",
   "/dashboard",
+  "/data-hub",
+  "/lineups",
   "/market-tools",
   "/optimizer",
+  "/profile",
   "/projections",
+  "/sims",
+  "/top-stacks",
 ] as const;
 
 function isProtectedPath(pathname: string): boolean {

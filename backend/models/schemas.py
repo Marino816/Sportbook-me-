@@ -107,6 +107,7 @@ class UserResponse(BaseModel):
     is_pro: bool
     is_active: bool
     created_at: datetime
+    plan: str = "Starter"
 
     model_config = ConfigDict(from_attributes=True)
 

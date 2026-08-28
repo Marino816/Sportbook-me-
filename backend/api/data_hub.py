@@ -89,6 +89,7 @@ async def run_sims(
 
 
 @router.get("/optimal-pct")
+@router.get("/data-hub/optimal-pct")
 async def optimal_pct(
     slate_id: int,
     platform: str = "draftkings",

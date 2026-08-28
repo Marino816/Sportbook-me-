@@ -132,7 +132,12 @@ async def run_optimizer(
 
                 # Compute native projections from SGO intelligence
                 try:
-                    from projection.native import compute_projections, projections_to_pool
+                    from projection.native import (
+                        compute_projections,
+                        projections_to_pool,
+                        apply_bc_proj_fallback,
+                        count_projected_players,
+                    )
                     from projection.sgo_intelligence import build_sgo_intelligence
 
                     # Fetch SGO prop data from cached events for real projections
@@ -140,8 +145,8 @@ async def run_optimizer(
                     slate_date = native_slate.start_time.date().isoformat() if native_slate.start_time else None
                     sgo_intel = await build_sgo_intelligence(sport, projections_list, event_date=slate_date)
                     projs = compute_projections(sport, projections_list, sgo_intelligence=sgo_intel)
-                    projected_count = sum(1 for p in projs if p.projection_source != "UNAVAILABLE")
-                    projections_list = projections_to_pool(projs)
+                    projections_list = apply_bc_proj_fallback(projections_to_pool(projs))
+                    projected_count = count_projected_players(projections_list)
                     logger.info(f"Native projections: {projected_count}/{len(projections_list)} projected")
 
                     # ── sgo_team + game_id enrichment ──
@@ -356,9 +361,6 @@ async def run_optimizer(
                     sport=sport,
                     platform=platform,
                     slate_id=request.slate_id,
-                    slate_name=native_slate.slate_name,
-                    slate_date=native_slate.start_time.date().isoformat() if native_slate.start_time else None,
-                    game_count=(len({p["team"] for p in projections_list if p.get("team")}) // 2),
                     strategy=strategy,
                     lineup_count=len(formatted),
                     player_count=len(formatted[0].get("players", [])),

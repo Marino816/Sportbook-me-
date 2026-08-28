@@ -209,6 +209,25 @@ async def login(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(user: User = Depends(get_current_user)):
-    """Return the current authenticated user's profile."""
-    return user
+async def get_me(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current authenticated user's profile, including plan."""
+    plan = "Starter"
+    if user.active_subscription_id:
+        sub_result = await db.execute(
+            select(Subscription).where(Subscription.id == user.active_subscription_id)
+        )
+        sub = sub_result.scalars().first()
+        if sub and sub.plan_name:
+            plan = sub.plan_name
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        role=user.role or "user",
+        is_pro=bool(user.is_pro),
+        is_active=bool(user.is_active),
+        created_at=user.created_at or datetime.now(timezone.utc),
+        plan=plan,
+    )

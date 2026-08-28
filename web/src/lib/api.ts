@@ -229,10 +229,51 @@ export async function login(email: string, password: string): Promise<AuthTokens
   return res.json();
 }
 
-export async function fetchCurrentUser(): Promise<ApiResponse<any>> {
-  return apiFetch<any>("/auth/me", {
-    headers: { Authorization: `Bearer ${getStoredToken()}` },
-  });
+export interface CurrentUser {
+  id?: number;
+  email: string;
+  role: string;
+  is_pro?: boolean;
+  is_active?: boolean;
+  plan?: string;
+}
+
+function unwrapCurrentUser(body: unknown): CurrentUser {
+  if (!body || typeof body !== "object") {
+    throw new Error("Invalid current-user response");
+  }
+  const raw = body as Record<string, unknown>;
+  const nested = raw.data;
+  const src =
+    nested && typeof nested === "object" && (nested as Record<string, unknown>).email
+      ? (nested as Record<string, unknown>)
+      : raw;
+  const email = typeof src.email === "string" ? src.email : "";
+  if (!email) {
+    throw new Error("Invalid current-user response");
+  }
+  return {
+    id: typeof src.id === "number" ? src.id : undefined,
+    email,
+    role: typeof src.role === "string" ? src.role : "user",
+    is_pro: Boolean(src.is_pro),
+    is_active: src.is_active !== false,
+    plan: typeof src.plan === "string" ? src.plan : "Starter",
+  };
+}
+
+export async function fetchCurrentUser(): Promise<CurrentUser> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(`${API_BASE_URL}/auth/me`, { headers });
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => "Unknown error");
+    throw new Error(`API Error ${res.status}: ${errorBody}`);
+  }
+  return unwrapCurrentUser(await res.json());
 }
 
 // ── Native DFS Slate API ──────────────────────────────────────
@@ -383,8 +424,17 @@ export interface OptimalPctResponse {
   } | null;
 }
 
-export async function fetchOptimalPct(slateId: number, platform: string): Promise<ApiResponse<OptimalPctResponse>> {
-  return apiFetch<any>(`/data-hub/optimal-pct?slate_id=${slateId}&platform=${platform}&sport=MLB`);
+export async function fetchOptimalPct(
+  slateId: number,
+  platform: string,
+  sport: string,
+): Promise<ApiResponse<OptimalPctResponse>> {
+  const params = new URLSearchParams({
+    slate_id: String(slateId),
+    platform,
+    sport,
+  });
+  return apiFetch<any>(`/optimal-pct?${params.toString()}`);
 }
 
 export interface SimPlayer {

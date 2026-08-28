@@ -148,12 +148,65 @@ def compute_projections(
                 proj.props_used = [k for k, v in props.items() if v is not None]
 
         # Hitters without fantasyScore: UNAVAILABLE (was PROP_BASED).
-        # The optimizer may later apply BC_PROJ_FALLBACK.
+        # apply_bc_proj_fallback() may later attach BC_PROJ_FALLBACK.
 
         proj.projection_updated_at = datetime.now(timezone.utc)
         results.append(proj)
 
     return results
+
+
+def _is_pitcher_pos(pos: str) -> bool:
+    p = (pos or "").upper()
+    return "P" in p or "SP" in p or "RP" in p
+
+
+def apply_bc_proj_fallback(pool: list[dict]) -> list[dict]:
+    """Apply Blue Collar fppg when SGO produced no usable fantasy-point value.
+
+    Policy matches MLBOptimizer so MIN_PROJECTED counts players the solver
+    will actually use:
+      - Pitchers: BC fppg>0 is the starter gate; missing fppg stays unusable
+      - Hitters: fppg>0 becomes BC_PROJ_FALLBACK when projected_fp<=0
+    """
+    out: list[dict] = []
+    for raw in pool:
+        p = dict(raw)
+        pos = str(p.get("roster_position") or p.get("position") or "")
+        fp = float(p.get("projected_fp") or 0)
+        fppg = p.get("fppg")
+        if _is_pitcher_pos(pos):
+            if fppg is None or float(fppg) <= 0:
+                out.append(p)
+                continue
+            if fp <= 0:
+                p["projected_fp"] = round(float(fppg), 1)
+                p["projection_source"] = "BC_PROJ_FALLBACK"
+                p["projection_confidence"] = 0.4
+                p["fppg_was_fallback"] = True
+        elif fp <= 0 and fppg is not None and float(fppg) > 0:
+            p["projected_fp"] = round(float(fppg), 1)
+            p["projection_source"] = "BC_PROJ_FALLBACK"
+            p["projection_confidence"] = 0.4
+            p["fppg_was_fallback"] = True
+        out.append(p)
+    return out
+
+
+def count_projected_players(pool: list[dict]) -> int:
+    """Count players with a usable projection under solver eligibility rules."""
+    n = 0
+    for p in pool:
+        fp = float(p.get("projected_fp") or 0)
+        if fp <= 0:
+            continue
+        pos = str(p.get("roster_position") or p.get("position") or "")
+        if _is_pitcher_pos(pos):
+            fppg = p.get("fppg")
+            if fppg is None or float(fppg) <= 0:
+                continue
+        n += 1
+    return n
 
 
 def projections_to_pool(projections: list[NativeProjection]) -> list[dict]:

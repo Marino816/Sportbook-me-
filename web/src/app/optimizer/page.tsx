@@ -79,6 +79,22 @@ function matchDFS(
   return null;
 }
 
+/** Solver accepts DFS player ids OR player names (case-insensitive). */
+function solverPlayerKeys(
+  names: string[],
+  dfsPool: DFSSlatePlayer[],
+): string[] {
+  const keys = new Set<string>();
+  for (const name of names) {
+    const trimmed = (name || "").trim();
+    if (!trimmed) continue;
+    keys.add(trimmed);
+    const dfs = matchDFS({ name: trimmed }, dfsPool);
+    if (dfs?.player_id) keys.add(String(dfs.player_id));
+  }
+  return Array.from(keys);
+}
+
 const SLOT_LABELS: Record<string, string> = { C1B: "C/1B", UTIL: "UTIL" };
 function slotLabel(s: string): string { return SLOT_LABELS[s] || s; }
 
@@ -123,10 +139,11 @@ function exportLineups(lineups: any[], meta: any): void {
 export default function OptimizerPage() {
   const router = useRouter();
   const ws = useWorkspace();
+  const sport = ws.sport;
+  const platform = ws.platform;
+  const resolvedSlateId = ws.slateId;
 
   // ── State ──
-  const [sport, setSport] = useState<string>("MLB");
-  const [platform, setPlatform] = useState<string>("draftkings");
   const [bookmakerSource, setBookmakerSource] = useState<string>("Best Available");
   const [strategy, setStrategy] = useState<string>("balanced");
   const [lineupCount, setLineupCount] = useState(4);
@@ -137,9 +154,6 @@ export default function OptimizerPage() {
   const [optPctMap, setOptPctMap] = useState<Record<string, number>>({});
 
   const [excludedGameIds, setExcludedGameIds] = useState<Set<string>>(new Set());
-  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
-  const [excludedPlayerIds, setExcludedPlayerIds] = useState<Set<string>>(new Set());
-  const [lockedPlayerIds, setLockedPlayerIds] = useState<Set<string>>(new Set());
 
   const [playerSearch, setPlayerSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -150,7 +164,6 @@ export default function OptimizerPage() {
 
   const [lineups, setLineups] = useState<LineupResponse[]>([]);
   const [slates, setSlates] = useState<DFSSlateSummary[]>([]);
-  const [resolvedSlateId, setResolvedSlateId] = useState<number | null>(null);
   const [slatesLoading, setSlatesLoading] = useState(true);
   const [hasStaleSlates, setHasStaleSlates] = useState(false);
   const [showStackingRules, setShowStackingRules] = useState(false);
@@ -164,7 +177,6 @@ export default function OptimizerPage() {
   const [lastGenMeta, setLastGenMeta] = useState<{ sport: string; platform: string; strategy: string; gameCount: number } | null>(null);
   const [selectedLineupIndex, setSelectedLineupIndex] = useState(0);
   const [projPool, setProjPool] = useState<Record<string, { projected_fp: number; salary: number; position: string; team: string; opponent: string; projection_source: string }>>({});
-  const [myProj, setMyProj] = useState<Record<string, number>>({});
 
   // ── DFS slate ──
   useEffect(() => {
@@ -180,13 +192,16 @@ export default function OptimizerPage() {
         const current = pub.filter((s: any) => s.is_current !== false);
         if (!cancelled) {
           setSlates(current);
-          // Auto-select: prefer Main slate, then first available
-          const main = current.find((s: any) => s.slate_name.toLowerCase().includes("main"));
-          const defaultId = main?.id ?? (current.length > 0 ? current[0].id : null);
-          setResolvedSlateId(defaultId);
+          // Keep a workspace slate if it still belongs to this sport/platform.
+          const existingOk = ws.slateId != null && current.some((s: any) => s.id === ws.slateId);
+          if (!existingOk) {
+            const main = current.find((s: any) => s.slate_name.toLowerCase().includes("main"));
+            const defaultId = main?.id ?? (current.length > 0 ? current[0].id : null);
+            ws.setSlateId(defaultId);
+          }
           setHasStaleSlates(pub.length > current.length);
         }
-      } catch { if (!cancelled) { setSlates([]); setResolvedSlateId(null); setHasStaleSlates(false); } }
+      } catch { if (!cancelled) { setSlates([]); ws.setSlateId(null); setHasStaleSlates(false); } }
       finally { if (!cancelled) setSlatesLoading(false); }
     }
     load();
@@ -246,7 +261,7 @@ export default function OptimizerPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetchOptimalPct(resolvedSlateId, platform);
+        const res = await fetchOptimalPct(resolvedSlateId, platform, sport);
         if (cancelled) return;
         const status = res?.data?.status ?? "NOT_RUN";
         setOptPctStatus(status);
@@ -265,7 +280,7 @@ export default function OptimizerPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [resolvedSlateId, platform]);
+  }, [resolvedSlateId, platform, sport]);
 
   useEffect(() => { setPlayerSearch(""); setPosFilter("ALL"); setLineups([]); setLastGenMeta(null); }, [sport, platform]);
 
@@ -325,9 +340,9 @@ export default function OptimizerPage() {
 
   const filteredPlayers = useMemo(() => {
     let pool = players;
-    if (subTab === "excluded") pool = players.filter((p) => excludedPlayerIds.has(p.player_id));
-    else if (subTab === "liked") pool = players.filter((p) => likedIds.has(p.player_id));
-    else pool = players.filter((p) => !excludedPlayerIds.has(p.player_id));
+    if (subTab === "excluded") pool = players.filter((p) => ws.excludedIds.includes(p.name));
+    else if (subTab === "liked") pool = players.filter((p) => ws.likedIds.includes(p.name));
+    else pool = players.filter((p) => !ws.excludedIds.includes(p.name));
     pool = pool.filter((p) => {
       if (posFilter !== "ALL") {
         let eligible = normalizePosForFilter(p.position);
@@ -372,7 +387,7 @@ export default function OptimizerPage() {
       return sortDir === "desc" ? fpB - fpA : fpA - fpB;
     });
     return sorted;
-  }, [players, subTab, excludedPlayerIds, likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers, projPool, optPctMap, sortField, sortDir]);
+  }, [players, subTab, ws.excludedIds, ws.likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers, projPool, optPctMap, sortField, sortDir]);
 
   const upcomingEvents = events.filter((e) => !liveClass(e.status));
 
@@ -474,21 +489,19 @@ export default function OptimizerPage() {
   }, []);
 
   // ── Player actions ──
-  const toggleLike = useCallback((id: string) => {
-    setLikedIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  }, []);
-  const toggleExclude = useCallback((id: string) => {
-    setExcludedPlayerIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-    setLockedPlayerIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
-  }, []);
-  const toggleLock = useCallback((id: string) => {
-    setLockedPlayerIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-    setExcludedPlayerIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
-  }, []);
+  const toggleLike = useCallback((name: string) => {
+    ws.toggleLike(name);
+  }, [ws]);
+  const toggleExclude = useCallback((name: string) => {
+    ws.toggleExclude(name);
+  }, [ws]);
+  const toggleLock = useCallback((name: string) => {
+    ws.toggleLock(name);
+  }, [ws]);
   const excludeAll = useCallback(() => {
-    setExcludedPlayerIds(new Set(players.map((p) => p.player_id)));
-    setLockedPlayerIds(new Set());
-  }, [players]);
+    ws.setExcludedIds(players.map((p) => p.name));
+    ws.setLockedIds([]);
+  }, [players, ws]);
 
   // ── Optimize ──
   const optimizeMutation = useMutation({
@@ -496,8 +509,8 @@ export default function OptimizerPage() {
       if (resolvedSlateId == null) throw new Error(`No ${platform === "draftkings" ? "DraftKings" : "FanDuel"} contest salary data.`);
       const setting: any = {
         sport, platform, strategy, num_lineups: lineupCount,
-        locked_player_ids: Array.from(lockedPlayerIds),
-        excluded_player_ids: Array.from(excludedPlayerIds),
+        locked_player_ids: solverPlayerKeys(ws.lockedIds, dfsPlayers),
+        excluded_player_ids: solverPlayerKeys(ws.excludedIds, dfsPlayers),
       };
       if (maxHittersPerTeam != null) setting.max_hitters_per_team = maxHittersPerTeam;
       if (stackSize != null) setting.stack_size = stackSize;
@@ -506,8 +519,8 @@ export default function OptimizerPage() {
       if (maxSalaryOverride != null) setting.max_salary = maxSalaryOverride;
       if (globalMaxExposure != null) setting.max_exposure_pct = globalMaxExposure;
       // My Proj overrides — send player name + custom projection to the solver
-      const overrides = Object.entries(myProj)
-        .map(([pid, proj]) => ({ name: players.find((x) => x.player_id === pid)?.name, projected_fp: proj }))
+      const overrides = Object.entries(ws.projOverrides)
+        .map(([name, proj]) => ({ name, projected_fp: proj }))
         .filter((x) => x.name && x.projected_fp != null && !Number.isNaN(x.projected_fp));
       if (overrides.length > 0) setting.projection_overrides = overrides;
       return runOptimizer(resolvedSlateId, setting);
@@ -547,7 +560,7 @@ export default function OptimizerPage() {
   const markSaved = useCallback(() => setSavedNote(true), []);
 
   const slots = platform === "fanduel" ? FD_SLOTS : DK_SLOTS;
-  const lockedPlayers = players.filter((p) => lockedPlayerIds.has(p.player_id));
+  const lockedPlayers = players.filter((p) => ws.lockedIds.includes(p.name));
 
   // Selected generated lineup (for right-side builder)
   const selectedLineup = lineups[selectedLineupIndex] ?? null;
@@ -609,7 +622,7 @@ export default function OptimizerPage() {
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           {PLATFORMS.map((p) => (
-            <button key={p} onClick={() => { setPlatform(p); setLineups([]); setLastGenMeta(null); }}
+            <button key={p} onClick={() => { ws.setPlatform(p); setLineups([]); setLastGenMeta(null); }}
               style={{ padding: "10px 18px", borderRadius: 10, fontWeight: 700, fontSize: 13, background: platform === p ? "rgba(201,168,76,0.15)" : "#0a0f24", border: platform === p ? "1px solid #c9a84c" : "1px solid #1e293b", color: platform === p ? "#c9a84c" : "#94a3b8", cursor: "pointer", textTransform: "uppercase" }}>
               {p === "draftkings" ? "DraftKings" : "FanDuel"}
             </button>
@@ -620,8 +633,8 @@ export default function OptimizerPage() {
       {/* SLATE + CONTROLS */}
       <div style={{ padding: "12px 24px", borderBottom: "1px solid #1e293b", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <Selector label="Sport" value={sport} options={[...SPORTS]} onChange={setSport} />
-          <Selector label="Slate" value={resolvedSlateId == null ? "" : String(resolvedSlateId)} options={slates.map((s) => String(s.id))} onChange={(v) => setResolvedSlateId(v ? Number(v) : null)} format={(v) => { const s = slates.find((x) => String(x.id) === v); return s ? `${s.slate_name} (${s.player_count})` : v; }} />
+          <Selector label="Sport" value={sport} options={[...SPORTS]} onChange={ws.setSport} />
+          <Selector label="Slate" value={resolvedSlateId == null ? "" : String(resolvedSlateId)} options={slates.map((s) => String(s.id))} onChange={(v) => ws.setSlateId(v ? Number(v) : null)} format={(v) => { const s = slates.find((x) => String(x.id) === v); return s ? `${s.slate_name} (${s.player_count})` : v; }} />
           <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
@@ -679,8 +692,8 @@ export default function OptimizerPage() {
               <div style={{ display: "flex", padding: "8px 16px", gap: 8, borderBottom: "1px solid #1e293b", flexWrap: "wrap", alignItems: "center" }}>
                 <div style={{ display: "flex", gap: 4 }}>
                   <SubTabChip label="ALL PLAYERS" active={subTab === "all"} onClick={() => setSubTab("all")} />
-                  <SubTabChip label={`EXCLUDED${excludedPlayerIds.size ? ` (${excludedPlayerIds.size})` : ""}`} active={subTab === "excluded"} onClick={() => setSubTab("excluded")} />
-                  <SubTabChip label={`LIKED${likedIds.size ? ` (${likedIds.size})` : ""}`} active={subTab === "liked"} onClick={() => setSubTab("liked")} />
+                  <SubTabChip label={`EXCLUDED${ws.excludedIds.length ? ` (${ws.excludedIds.length})` : ""}`} active={subTab === "excluded"} onClick={() => setSubTab("excluded")} />
+                  <SubTabChip label={`LIKED${ws.likedIds.length ? ` (${ws.likedIds.length})` : ""}`} active={subTab === "liked"} onClick={() => setSubTab("liked")} />
                 </div>
                 <div style={{ flex: 1 }} />
                 <button onClick={excludeAll} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "#1a1f33", border: "1px solid #1e293b", color: "#ef4444", cursor: "pointer" }}>Exclude All</button>
@@ -739,14 +752,14 @@ export default function OptimizerPage() {
                         const opp = evt ? opponentFor(p, evt) : "";
                         const mCount = countPlayerMarkets(p.player_id, markets);
                         const dfs = matchDFS({ name: p.name, team_id: p.team_id, position: p.position }, dfsPlayers);
-                        const isLiked = likedIds.has(p.player_id);
-                        const isExcluded = excludedPlayerIds.has(p.player_id);
-                        const isLocked = lockedPlayerIds.has(p.player_id);
+                        const isLiked = ws.likedIds.includes(p.name);
+                        const isExcluded = ws.excludedIds.includes(p.name);
+                        const isLocked = ws.lockedIds.includes(p.name);
                         const startT = evt?.start_time ? new Date(evt.start_time).toLocaleString([], { hour: "numeric", minute: "2-digit" }) : "";
                         const poolEntry = projPool[normName(p.name)];
                         const sbProj = poolEntry?.projected_fp != null && poolEntry?.projection_source !== "UNAVAILABLE" ? poolEntry.projected_fp : null;
                         const salary = dfs?.salary ?? 0;
-                        const effectiveProj = myProj[p.player_id] != null ? myProj[p.player_id] : sbProj;
+                        const effectiveProj = ws.projOverrides[p.name] != null ? ws.projOverrides[p.name] : sbProj;
                         const value = salary > 0 && effectiveProj != null ? (effectiveProj / (salary / 1000)).toFixed(2) : "—";
                         const canon = canonicalPool[normName(p.name)];
                         const ownPct = canon?.sbme_ownership_pct ?? null;
@@ -761,7 +774,7 @@ export default function OptimizerPage() {
                             <Td style={{ color: "#64748b", fontSize: 10 }}>{startT || "—"}</Td>
                             <Td style={{ color: "#c9a84c", fontWeight: 700, textTransform: "uppercase", fontSize: 10 }}>{dfs?.position || p.position || "—"}</Td>
                             <Td>
-                              <button onClick={() => toggleLike(p.player_id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                              <button onClick={() => toggleLike(p.name)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                                 <Heart size={14} color={isLiked ? "#c9a84c" : "#334155"} fill={isLiked ? "#c9a84c" : "none"} />
                               </button>
                             </Td>
@@ -770,7 +783,7 @@ export default function OptimizerPage() {
                             <Td style={{ color: dfs?.fppg != null ? "#94a3b8" : "#64748b", fontWeight: dfs?.fppg != null ? 600 : 400 }}>{dfs?.fppg != null ? dfs.fppg.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: sbProj != null ? "#c9a84c" : "#64748b", fontWeight: sbProj != null ? 700 : 400 }}>{sbProj != null ? sbProj.toFixed(1) : "N/A"}</Td>
                             <Td>
-                              <input type="number" step="0.1" value={myProj[p.player_id] ?? sbProj ?? ""} placeholder={sbProj != null ? "" : "—"} onChange={(e) => setMyProj((prev) => ({ ...prev, [p.player_id]: Number(e.target.value) }))} style={{ width: 56, padding: "4px 6px", borderRadius: 6, fontSize: 11, background: "#1a1f33", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
+                              <input type="number" step="0.1" value={ws.projOverrides[p.name] ?? sbProj ?? ""} placeholder={sbProj != null ? "" : "—"} onChange={(e) => ws.setProjOverride(p.name, Number(e.target.value))} style={{ width: 56, padding: "4px 6px", borderRadius: 6, fontSize: 11, background: "#1a1f33", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
                             </Td>
                             <Td style={{ color: value !== "—" ? "#c9a84c" : "#64748b", fontWeight: value !== "—" ? 700 : 400 }}>{value}</Td>
                             <Td style={{ color: ownPct != null ? "#94a3b8" : "#64748b" }}>{ownPct != null ? `${ownPct.toFixed(1)}%` : "N/A"}</Td>
@@ -781,8 +794,8 @@ export default function OptimizerPage() {
                             <Td style={{ color: mCount ? "#c9a84c" : "#64748b" }}>{mCount || "—"}</Td>
                             <Td>
                               <div style={{ display: "flex", gap: 4 }}>
-                                <IconBtn icon={<Lock size={12} />} active={isLocked} title="Lock player" onClick={() => toggleLock(p.player_id)} />
-                                <IconBtn icon={<Ban size={12} />} active={isExcluded} title="Exclude player" onClick={() => toggleExclude(p.player_id)} />
+                                <IconBtn icon={<Lock size={12} />} active={isLocked} title="Lock player" onClick={() => toggleLock(p.name)} />
+                                <IconBtn icon={<Ban size={12} />} active={isExcluded} title="Exclude player" onClick={() => toggleExclude(p.name)} />
                               </div>
                               <LastFive player={{ name: p.name, player_id: p.player_id }} platform={platform} />
                             </Td>
@@ -907,10 +920,10 @@ export default function OptimizerPage() {
               </Link>
             </div>
           )}
-          {(lockedPlayerIds.size > 0 || excludedPlayerIds.size > 0) && (
+          {(ws.lockedIds.length > 0 || ws.excludedIds.length > 0) && (
             <div style={{ fontSize: 10, color: "#64748b" }}>
-              {lockedPlayerIds.size > 0 && <span>🔒 {lockedPlayerIds.size} locked · </span>}
-              {excludedPlayerIds.size > 0 && <span>🚫 {excludedPlayerIds.size} excluded</span>}
+              {ws.lockedIds.length > 0 && <span>🔒 {ws.lockedIds.length} locked · </span>}
+              {ws.excludedIds.length > 0 && <span>🚫 {ws.excludedIds.length} excluded</span>}
             </div>
           )}
         </div>
