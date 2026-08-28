@@ -5,10 +5,10 @@ import type { LineMode, PeriodGroup } from "@/lib/market-view";
 import { formatFreshness, periodLabelForId } from "@/lib/market-view";
 import type { GameState } from "@/lib/live-scores";
 
-const gold = "#c9a84c";
-const border = "#1e293b";
 const muted = "#94a3b8";
 const card = "#0a0f24";
+const gold = "#c9a84c";
+const border = "#1e293b";
 
 const chip = (active: boolean): React.CSSProperties => ({
   padding: "6px 12px",
@@ -25,17 +25,38 @@ const chip = (active: boolean): React.CSSProperties => ({
 export function LeagueChips({
   value,
   onChange,
+  grouped = false,
 }: {
   value: string;
   onChange: (id: string) => void;
+  grouped?: boolean;
 }) {
+  const soccer = ROOKIE_LEAGUES.filter((lg) => lg.sportID === "SOCCER");
+  const rest = ROOKIE_LEAGUES.filter((lg) => lg.sportID !== "SOCCER");
+
+  const render = (list: typeof ROOKIE_LEAGUES[number][]) =>
+    list.map((lg) => (
+      <button
+        key={lg.leagueID}
+        type="button"
+        onClick={() => onChange(lg.leagueID)}
+        className={`sbme-chip${value === lg.leagueID ? " is-on" : ""}`}
+      >
+        {lg.label}
+      </button>
+    ));
+
+  if (!grouped) {
+    return <div className="sbme-chips">{render([...ROOKIE_LEAGUES])}</div>;
+  }
+
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-      {ROOKIE_LEAGUES.map((lg) => (
-        <button key={lg.leagueID} type="button" onClick={() => onChange(lg.leagueID)} style={chip(value === lg.leagueID)}>
-          {lg.label}
-        </button>
-      ))}
+    <div>
+      <div className="sbme-chips">{render(rest)}</div>
+      <div className="sbme-chips sbme-chips--soccer">
+        <span className="sbme-chips-label">Soccer</span>
+        {render(soccer)}
+      </div>
     </div>
   );
 }
@@ -50,9 +71,15 @@ export function StatusChips({
   const opts: Array<GameState | "ALL"> = ["ALL", "LIVE", "UPCOMING", "FINAL"];
   const labels: Record<string, string> = { ALL: "All", LIVE: "Live", UPCOMING: "Upcoming", FINAL: "Final" };
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+    <div className="sbme-seg">
       {opts.map((s) => (
-        <button key={s} type="button" onClick={() => onChange(s)} style={chip(value === s)}>
+        <button
+          key={s}
+          type="button"
+          onClick={() => onChange(s)}
+          className={`sbme-seg-btn${value === s ? " is-on" : ""}${s === "LIVE" ? " is-live" : ""}`}
+        >
+          {s === "LIVE" && <span className="sbme-live-dot" />}
           {labels[s]}
         </button>
       ))}
@@ -73,7 +100,7 @@ export function LineModeChips({
     { id: "all", label: "All Lines" },
   ];
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+    <div className="sbme-chips">
       {opts.map((o) => (
         <button key={o.id} type="button" onClick={() => onChange(o.id)} style={chip(value === o.id)}>
           {o.label}
@@ -94,7 +121,7 @@ export function PeriodChips({
 }) {
   const shown: Array<PeriodGroup | "all"> = ["all", ...options];
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+    <div className="sbme-chips">
       {shown.map((p) => (
         <button key={p} type="button" onClick={() => onChange(p)} style={chip(value === p)}>
           {p === "all" ? "All Periods" : periodLabelForId(p === "full" ? "game" : p)}
@@ -115,21 +142,21 @@ export function LastUpdated({ iso, fetchedAt }: { iso?: string | null; fetchedAt
 }
 
 export function FairOddsMark({ value }: { value: number | null | undefined }) {
-  if (value == null) return <span style={{ color: "#64748b", fontSize: 11 }}>Fair unavailable</span>;
+  if (value == null) return <span className="sbme-stat is-off">Fair unavailable</span>;
   const txt = value > 0 ? `+${value}` : `${value}`;
   return (
-    <span style={{ fontSize: 11, color: gold, fontWeight: 700 }} title="SportsGameOdds Fair Odds">
-      Fair {txt}
+    <span className="sbme-stat is-gold" title="SportsGameOdds Fair Odds">
+      Fair <strong>{txt}</strong>
     </span>
   );
 }
 
 export function ConsensusMark({ value }: { value: number | null | undefined }) {
-  if (value == null) return <span style={{ color: "#64748b", fontSize: 11 }}>Consensus unavailable</span>;
+  if (value == null) return <span className="sbme-stat is-off">Consensus unavailable</span>;
   const txt = value > 0 ? `+${value}` : `${value}`;
   return (
-    <span style={{ fontSize: 11, color: "#93c5fd", fontWeight: 700 }} title="SportsGameOdds bookOdds consensus">
-      Consensus {txt}
+    <span className="sbme-stat is-blue" title="SportsGameOdds bookOdds consensus">
+      Consensus <strong>{txt}</strong>
     </span>
   );
 }

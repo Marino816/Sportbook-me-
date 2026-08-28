@@ -98,7 +98,15 @@ export function SBMEBackground({
             <div className="sbme-bg-vignette" />
           </>
         ) : (
-          <div className="sbme-bg-beams" />
+          <>
+            <div className="sbme-bg-plate sbme-bg-plate--app" />
+            <div className="sbme-bg-haze sbme-bg-haze--app" />
+            <div className="sbme-bg-bank sbme-bg-bank--app-tl"><FloodBank id="app-tl" bulbs={4} /></div>
+            <div className="sbme-bg-bank sbme-bg-bank--app-tr"><FloodBank id="app-tr" bulbs={5} /></div>
+            <div className="sbme-bg-rays sbme-bg-rays--app" />
+            <div className="sbme-bg-embers sbme-bg-embers--app"><EmberField /></div>
+            <div className="sbme-bg-vignette sbme-bg-vignette--app" />
+          </>
         )}
       </div>
       <div className="sbme-bg-content">{children}</div>
