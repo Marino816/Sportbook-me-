@@ -19,6 +19,7 @@ from providers.event_parser import (
     build_player_props_list,
 )
 from providers.sbevent import SBEvent
+from providers.sgo_rookie import NESTED_EVENT_TTL_SECONDS, normalize_league_id
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ def _rget(key: str):
         return None
 
 
-def _rset(key: str, data, ttl: int = 900):
+def _rset(key: str, data, ttl: int = NESTED_EVENT_TTL_SECONDS):
     from providers.redis_client import get_redis_client
     r = get_redis_client()
     if r is None:
@@ -64,7 +65,7 @@ def _clear_obsolete_event_model_keys(league: str) -> None:
     if redis is None:
         return
     try:
-        normalized_league = league.upper()
+        normalized_league = normalize_league_id(league)
         redis.delete(
             f"sgo_cache:events:{normalized_league}",
             f"sgo_cache:raw_events:{normalized_league}",
@@ -219,14 +220,24 @@ def _sb_event_to_dict(evt: SBEvent) -> dict:
             "opening_odds": b.opening_odds,
             "opening_spread": b.opening_spread,
             "opening_over_under": b.opening_over_under,
+            "open_moneyline": b.opening_odds,
+            "close_odds": b.close_odds,
+            "close_moneyline": b.close_odds,
+            "close_spread": b.close_spread,
+            "close_over_under": b.close_over_under,
+            "book_odds": b.moneyline,
         } for b in m.books]
         markets.append({
             "odd_id": m.odd_id, "market_name": m.market_name,
             "bet_type": m.bet_type, "side": m.side,
             "player_id": m.player_id, "player_name": m.player_name,
             "stat_entity_id": m.stat_entity_id, "stat_id": m.stat_id,
+            "period_id": m.period_id,
+            "is_main_line": any(b.is_main_line for b in m.books) if m.books else False,
             "fair_odds": m.fair_odds, "fair_spread": m.fair_spread,
-            "fair_over_under": m.fair_over_under, "books": books,
+            "fair_over_under": m.fair_over_under,
+            "book_odds": m.book_odds, "book_spread": m.book_spread,
+            "book_over_under": m.book_over_under, "books": books,
         })
     payload = {
         "id": evt.id, "sport": evt.sport, "league": evt.league,
@@ -237,6 +248,7 @@ def _sb_event_to_dict(evt: SBEvent) -> dict:
         "home_score": evt.home_score, "away_score": evt.away_score, "period": evt.period,
         "players": [{"player_id": p.player_id, "name": p.name, "team_id": p.team_id, "position": p.position} for p in evt.players],
         "markets": markets, "bookmakers": evt.bookmakers,
+        "results": evt.results,
     }
     try:
         from providers.nested_events import derive_game_environment
@@ -254,7 +266,7 @@ async def get_events(
     user: User = Depends(get_current_user),
 ):
     """Canonical SDK Event → SBEvent JSON array for every SGO consumer."""
-    normalized_league = league.upper()
+    normalized_league = normalize_league_id(league)
     cache_key = f"sgo:v2:sbevents:{normalized_league}"
     cached = _rget(cache_key)
     if isinstance(cached, list) and cached:
@@ -275,67 +287,43 @@ async def get_events(
 
     events_list = [_sb_event_to_dict(event) for event in sb_events]
     _clear_obsolete_event_model_keys(normalized_league)
-    _rset(cache_key, events_list, ttl=900)
+    _rset(cache_key, events_list, ttl=NESTED_EVENT_TTL_SECONDS)
     return wrap_data(events_list, source="sportsgameodds")
 
 
 @router.get("/events/{event_id}/odds")
 async def get_event_odds(event_id: str, user: User = Depends(get_current_user)):
-    """Moneyline/spread/total per bookmaker, extracted from cached event."""
-    try:
-        events = await _get_raw_events("MLB")
-    except Exception as e:
-        logger.warning(f"Failed to fetch events for odds: {e}")
-        return wrap_data({"event_id": event_id, "books": [], "status": "unavailable"},
-                         source="cached")
+    """Moneyline/spread/total per bookmaker from the nested /v2/events cache."""
+    from providers.nested_events import extract_nested_odds_payload, find_cached_event
 
-    for e in events:
-        eid = _val(e, "eventID", "") or _val(e, "id", "")
-        if eid == event_id:
-            raw_odds = _val(e, "odds")
-            raw_players = _val(e, "players")
-            if isinstance(raw_odds, dict):
-                parsed = parse_event_odds(event_id, raw_odds,
-                                          raw_players if isinstance(raw_players, dict) else None)
-                table = extract_bookmaker_odds_table(parsed)
-                books = [{"bookmaker": k, **v} for k, v in table.items()]
-                return wrap_data({
-                    "event_id": event_id,
-                    "books": books,
-                    "book_count": len(books),
-                }, source="sportsgameodds")
-
-    return wrap_data({"event_id": event_id, "books": [], "message": "Event not found"}, source="cached")
+    evt = find_cached_event(event_id)
+    if not evt:
+        return wrap_data({"event_id": event_id, "books": [], "message": "Event not found"}, source="cached")
+    payload = extract_nested_odds_payload(evt)
+    return wrap_data(payload, source="sgo_nested_cache")
 
 
 @router.get("/events/{event_id}/props")
 async def get_event_props(event_id: str, user: User = Depends(get_current_user)):
-    """Player props extracted from cached event.odds."""
-    try:
-        events = await _get_raw_events("MLB")
-    except Exception as e:
-        logger.warning(f"Failed to fetch events for props: {e}")
-        return wrap_data({"event_id": event_id, "players": [], "prop_count": 0, "status": "unavailable"},
-                         source="cached")
+    """Player and team props from nested event.markets — not /props/players/{id}."""
+    from providers.nested_events import find_cached_event, sbevent_player_props, sbevent_team_props
 
-    for e in events:
-        eid = _val(e, "eventID", "") or _val(e, "id", "")
-        if eid == event_id:
-            raw_odds = _val(e, "odds")
-            raw_players = _val(e, "players")
-            if isinstance(raw_odds, dict):
-                parsed = parse_event_odds(event_id, raw_odds,
-                                          raw_players if isinstance(raw_players, dict) else None)
-                props = build_player_props_list(parsed,
-                                                raw_players if isinstance(raw_players, dict) else {})
-                return wrap_data({
-                    "event_id": event_id,
-                    "players": props,
-                    "prop_count": len(props),
-                }, source="sportsgameodds")
-
-    return wrap_data({"event_id": event_id, "players": [], "prop_count": 0,
-                       "message": "Event not found"}, source="cached")
+    evt = find_cached_event(event_id)
+    if not evt:
+        return wrap_data({
+            "event_id": event_id, "players": [], "prop_count": 0,
+            "team_props": [], "message": "Event not found",
+        }, source="cached")
+    props = sbevent_player_props(evt)
+    team_props = sbevent_team_props(evt)
+    return wrap_data({
+        "event_id": event_id,
+        "players": props,
+        "props": props,
+        "prop_count": len(props),
+        "team_props": team_props,
+        "source": "nested_v2_events",
+    }, source="sgo_nested_cache")
 
 
 @router.get("/bookmakers")
@@ -343,28 +331,25 @@ async def get_bookmakers(
     league: str = Query("MLB"),
     user: User = Depends(get_current_user),
 ):
-    """Available bookmakers from live SGO events."""
-    try:
-        events = await _get_raw_events(league.upper())
-    except Exception as e:
-        logger.warning(f"Failed to fetch events for bookmaker scan: {e}")
-        return wrap_data({"bookmakers": [], "count": 0, "status": "unavailable"}, source="cached")
+    """Available bookmakers from the canonical nested event cache."""
+    from providers.nested_events import load_cached_or_fetch_events
 
+    events = await load_cached_or_fetch_events(normalize_league_id(league))
     bookmakers: set[str] = set()
-    for e in events[:8]:
-        raw_odds = _val(e, "odds")
-        if isinstance(raw_odds, dict):
-            for odd_data in raw_odds.values():
-                if not isinstance(odd_data, dict):
-                    continue
-                by_bm = odd_data.get("byBookmaker", {})
-                if isinstance(by_bm, dict):
-                    for bk_id, bk_data in by_bm.items():
-                        if isinstance(bk_data, dict) and bk_data.get("available", False):
-                            bookmakers.add(bk_id)
-
+    for e in events:
+        if not isinstance(e, dict):
+            continue
+        for name in e.get("bookmakers") or []:
+            if name:
+                bookmakers.add(str(name))
+        for m in e.get("markets") or []:
+            if not isinstance(m, dict):
+                continue
+            for b in m.get("books") or []:
+                if isinstance(b, dict) and b.get("bookmaker"):
+                    bookmakers.add(str(b["bookmaker"]))
     sorted_bm = sorted(bookmakers)
-    return wrap_data({"bookmakers": sorted_bm, "count": len(sorted_bm)}, source="sportsgameodds")
+    return wrap_data({"bookmakers": sorted_bm, "count": len(sorted_bm)}, source="sgo_nested_cache")
 
 
 @router.get("/sports")
@@ -392,7 +377,7 @@ async def get_teams(
     try:
         sgo = await _get_sgo()
         async with sgo:
-            teams = await sgo.get_teams(league=league.upper())
+            teams = await sgo.get_teams(league=normalize_league_id(league))
     except Exception as e:
         logger.error(f"Failed to fetch teams for league={league}: {e}")
         return wrap_data({"teams": [], "count": 0, "status": "unavailable"}, source="cached")
@@ -404,7 +389,7 @@ async def get_teams(
         "abbreviation": t.get("names", {}).get("short", "") if isinstance(t, dict) \
                          else getattr(t, "abbreviation", ""),
     } for t in teams]
-    return wrap_data({"teams": teams_list, "league": league.upper(), "count": len(teams_list)},
+    return wrap_data({"teams": teams_list, "league": normalize_league_id(league), "count": len(teams_list)},
                      source="sportsgameodds")
 
 
@@ -416,7 +401,7 @@ async def get_players(
     try:
         sgo = await _get_sgo()
         async with sgo:
-            players = await sgo.get_players(league_id=league.upper())
+            players = await sgo.get_players(league_id=normalize_league_id(league))
     except Exception as e:
         logger.error(f"Failed to fetch players: {e}")
         return wrap_data({"players": [], "count": 0, "status": "unavailable"}, source="cached")
@@ -431,7 +416,7 @@ async def get_players(
                 "name": names.get("long", names.get("short", pid)),
                 "team": p.get("team", ""),
                 "position": p.get("position", ""),
-                "league": league.upper(),
+                "league": normalize_league_id(league),
             })
         else:
             players_list.append({
@@ -439,34 +424,61 @@ async def get_players(
                 "name": getattr(p, "name", getattr(p, "player_name", "")),
                 "team": getattr(p, "team", ""),
                 "position": getattr(p, "position", ""),
-                "league": league.upper(),
+                "league": normalize_league_id(league),
             })
     return wrap_data({"players": players_list, "count": len(players_list)}, source="sportsgameodds")
 
 
-# Stub routes for endpoints that don't exist on Rookie tier
+@router.get("/leagues")
+async def get_leagues(user: User = Depends(get_current_user)):
+    """Leagues available to this Rookie key from GET /v2/leagues/."""
+    try:
+        leagues = await _canonical_event_provider().get_leagues()
+    except Exception as exc:
+        logger.warning("SGO leagues fetch failed: %s", exc)
+        from providers.sgo_rookie import catalog_fallback
+        leagues = catalog_fallback()
+    return wrap_data({
+        "leagues": leagues,
+        "count": len(leagues),
+        "soccer": [row for row in leagues if (row.get("sportID") or "").upper() == "SOCCER"],
+    }, source="sportsgameodds_v2_leagues")
+
+
 @router.get("/events/{event_id}/fair-odds")
 async def get_fair_odds(event_id: str, user: User = Depends(get_current_user)):
+    """Fair odds from nested event.markets — not a dedicated /fair-odds/{id} fetch."""
+    from providers.nested_events import extract_nested_fair_odds, find_cached_event
+
+    evt = find_cached_event(event_id)
+    if not evt:
+        return wrap_data({"event_id": event_id, "markets": [], "message": "Event not found"}, source="cached")
+    markets = extract_nested_fair_odds(evt)
     return wrap_data({
-        "event_id": event_id, "status": "unavailable",
-        "message": "Fair odds available within event.odds[oddID].fairOdds"
-    }, source="sportsgameodds")
+        "event_id": event_id,
+        "source": "nested_v2_events",
+        "markets": markets,
+        "count": len(markets),
+    }, source="sgo_nested_cache")
 
 
 @router.get("/events/{event_id}/consensus")
 async def get_consensus(event_id: str, user: User = Depends(get_current_user)):
-    return wrap_data({
-        "event_id": event_id, "status": "unavailable",
-        "message": "Use /events/{id}/odds for per-bookmaker comparison"
-    }, source="sportsgameodds")
+    """Book consensus from nested bookOdds — not a dedicated /consensus/{id} fetch."""
+    from providers.nested_events import extract_nested_consensus, find_cached_event
+
+    evt = find_cached_event(event_id)
+    if not evt:
+        return wrap_data({"event_id": event_id, "message": "Event not found"}, source="cached")
+    return wrap_data(extract_nested_consensus(evt), source="sgo_nested_cache")
 
 
 @router.get("/usage")
 async def get_usage(user: User = Depends(get_current_user)):
-    # /v2/account/usage is wrapped by SdkSgoProvider.get_usage but has no
-    # confirmed live response on this integration. Leave the stub until verified.
-    return wrap_data({
-        "message": "Account usage is not confirmed on the current SportsGameOdds integration.",
-        "tier": "unconfirmed",
-        "available": False,
-    }, source="sportsgameodds")
+    """Live GET /v2/account/usage — never returns email, keyID, or customerID."""
+    try:
+        usage = await _canonical_event_provider().get_usage()
+    except Exception as exc:
+        logger.warning("SGO account usage fetch failed: %s", exc)
+        usage = {"available": False, "tier": None, "reason": type(exc).__name__}
+    return wrap_data(usage, source="sportsgameodds_v2_account_usage")

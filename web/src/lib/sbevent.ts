@@ -36,6 +36,9 @@ export interface SBBookLine {
   opening_odds: number | null;
   opening_spread: number | null;
   opening_over_under: number | null;
+  close_odds: number | null;
+  close_spread: number | null;
+  close_over_under: number | null;
 }
 
 export interface SBMarket {
@@ -47,9 +50,14 @@ export interface SBMarket {
   player_name: string;
   stat_entity_id: string;
   stat_id: string;
+  period_id: string;
+  is_main_line: boolean;
   fair_odds: number | null;
   fair_spread: number | null;
   fair_over_under: number | null;
+  book_odds: number | null;
+  book_spread: number | null;
+  book_over_under: number | null;
   books: SBBookLine[];
 }
 
@@ -69,6 +77,7 @@ export interface SBEvent {
   players: SBPlayer[];
   markets: SBMarket[];
   bookmakers: string[];
+  results?: Record<string, unknown> | null;
 }
 
 /* ── Defensive normalization helpers ─────────────────────────────── */
@@ -153,6 +162,9 @@ function asBook(v: unknown): SBBookLine {
     opening_odds: asNum(b.opening_odds),
     opening_spread: asNum(b.opening_spread),
     opening_over_under: asNum(b.opening_over_under),
+    close_odds: asNum(b.close_odds ?? b.close_moneyline),
+    close_spread: asNum(b.close_spread),
+    close_over_under: asNum(b.close_over_under),
   };
 }
 
@@ -167,9 +179,14 @@ function asMarket(v: unknown): SBMarket {
     player_name: asStr(m.player_name),
     stat_entity_id: asStr(m.stat_entity_id),
     stat_id: asStr(m.stat_id),
+    period_id: asStr(m.period_id),
+    is_main_line: asBool(m.is_main_line, false),
     fair_odds: asNum(m.fair_odds),
     fair_spread: asNum(m.fair_spread),
     fair_over_under: asNum(m.fair_over_under),
+    book_odds: asNum(m.book_odds),
+    book_spread: asNum(m.book_spread),
+    book_over_under: asNum(m.book_over_under),
     books: asArray(m.books)
       .filter((b): b is Record<string, unknown> => b !== null && typeof b === "object")
       .map(asBook),
@@ -208,6 +225,7 @@ export function normalizeEvent(v: unknown): SBEvent | null {
     bookmakers: asArray(e.bookmakers)
       .map((b) => asStr(b))
       .filter(Boolean),
+    results: e.results && typeof e.results === "object" ? (e.results as Record<string, unknown>) : null,
   };
 }
 

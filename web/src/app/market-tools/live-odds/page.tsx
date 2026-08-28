@@ -5,9 +5,16 @@ import { TrendingUp, AlertTriangle, Search } from "lucide-react";
 import { useLiveScores, ScoreBadge, GameStatusBadge } from "@/lib/live-scores";
 import { BookmakerLogo } from "@/lib/assets";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
+import { ROOKIE_LEAGUES } from "@/lib/sgo-leagues";
 
-const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
-type League = (typeof LEAGUES)[number];
+const LEAGUES = ROOKIE_LEAGUES;
+type League = (typeof LEAGUES)[number]["leagueID"];
+
+const FULL_GAME = new Set(["", "game", "ft", "full", "regulation"]);
+
+function isFullGame(market: SBMarket): boolean {
+  return FULL_GAME.has((market.period_id || "").toLowerCase());
+}
 
 function fmtOdds(v: number | null | undefined): string {
   if (v == null) return "—";
@@ -52,18 +59,18 @@ interface MergedBookRow {
 
 /** Build per-bookmaker rows by merging across all market types for a single event. */
 function buildBookmakerRows(markets: SBMarket[]): MergedBookRow[] {
-  // Index markets by bet_type+side for quick lookup
+  const fullGame = markets.filter(isFullGame);
   const marketMap = new Map<string, SBMarket>();
-  for (const m of markets) {
+  for (const m of fullGame) {
     const key = `${m.bet_type}::${m.side}`;
-    marketMap.set(key, m);
+    if (!marketMap.has(key) || m.is_main_line) marketMap.set(key, m);
   }
 
   const awayMLMarket = marketMap.get("moneyline::away");
   const homeMLMarket = marketMap.get("moneyline::home");
   const spreadMarket = marketMap.get("spread::away") ?? marketMap.get("spread::home") ?? marketMap.get("spread::") ;
-  const totalOverMarket = marketMap.get("over_under::over");
-  const totalUnderMarket = marketMap.get("over_under::under");
+  const totalOverMarket = marketMap.get("over_under::over") ?? marketMap.get("total::over");
+  const totalUnderMarket = marketMap.get("over_under::under") ?? marketMap.get("total::under");
 
   // Collect all unique bookmakers
   const bookmakerSet = new Set<string>();
@@ -158,20 +165,20 @@ export default function LiveOddsPage() {
       >
         {LEAGUES.map((lg) => (
           <button
-            key={lg}
-            onClick={() => setActiveLeague(lg)}
+            key={lg.leagueID}
+            onClick={() => setActiveLeague(lg.leagueID)}
             style={{
               padding: "8px 16px",
               borderRadius: 10,
               fontSize: 12,
               fontWeight: 700,
-              background: activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24",
-              border: activeLeague === lg ? "1px solid #c9a84c" : "1px solid #1e293b",
-              color: activeLeague === lg ? "#c9a84c" : "#94a3b8",
+              background: activeLeague === lg.leagueID ? "rgba(201,168,76,0.1)" : "#0a0f24",
+              border: activeLeague === lg.leagueID ? "1px solid #c9a84c" : "1px solid #1e293b",
+              color: activeLeague === lg.leagueID ? "#c9a84c" : "#94a3b8",
               cursor: "pointer",
             }}
           >
-            {lg}
+            {lg.label}
           </button>
         ))}
         <div style={{ position: "relative", marginLeft: "auto" }}>

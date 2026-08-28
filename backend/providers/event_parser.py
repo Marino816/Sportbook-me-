@@ -77,25 +77,14 @@ class ParsedEventMarkets:
     bookmakers: list[str] = field(default_factory=list)
 
 
-def _classify_market(odd_id: str, stat_entity_id: str) -> str:
+def _classify_market(odd_id: str, stat_entity_id: str, player_id: str = "") -> str:
     """Classify a market into: moneyline, spread, total, player_prop, team_prop, other."""
-    oid = odd_id.lower()
-    
-    # Player props: statEntityID references a specific player (not home/away/all)
-    if stat_entity_id and stat_entity_id not in ("home", "away", "all", ""):
-        return "player_prop"
-    
-    # Team-level markets
-    if "ml" in oid or "moneyline" in oid:
-        return "moneyline"
-    if "sp" in oid or "spread" in oid or "handicap" in oid:
-        return "spread"
-    if "ou" in oid or "total" in oid or "over" in oid or "under" in oid:
-        return "total"
-    if "prop" in oid and stat_entity_id in ("home", "away"):
-        return "team_prop"
-    
-    return "other"
+    from providers.sgo_rookie import classify_sgo_market
+    return classify_sgo_market(
+        odd_id=odd_id or "",
+        stat_entity_id=stat_entity_id or "",
+        player_id=player_id or "",
+    )
 
 
 def parse_event_odds(event_id: str, raw_odds: dict, raw_players: dict | None = None) -> ParsedEventMarkets:
@@ -150,7 +139,7 @@ def parse_event_odds(event_id: str, raw_odds: dict, raw_players: dict | None = N
         market.books.sort(key=lambda b: (not b.available, -(b.odds if b.odds is not None else -99999)))
         
         # Classify
-        category = _classify_market(odd_id, market.stat_entity_id)
+        category = _classify_market(odd_id, market.stat_entity_id, odd_data.get("playerID", ""))
         if category == "moneyline":
             result.moneylines.append(market)
         elif category == "spread":

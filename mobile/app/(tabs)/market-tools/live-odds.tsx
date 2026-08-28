@@ -136,7 +136,7 @@ export default function LiveOddsScreen() {
     >
       {/* League selector — nested SGO events, not DFS slate IDs */}
       <View style={s.filterRow}>
-        {["MLB", "NFL", "NBA", "NHL"].map((lg) => (
+        {["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB", "WNBA", "UFC", "EPL", "MLS", "LA_LIGA", "BUNDESLIGA", "FR_LIGUE_1", "IT_SERIE_A", "UEFA_CHAMPIONS_LEAGUE", "INTERNATIONAL_SOCCER", "EHF_EURO"].map((lg) => (
           <TouchableOpacity
             key={lg}
             style={[s.slateBtn, league === lg && s.slateBtnActive]}

@@ -28,12 +28,12 @@ CACHE_TTL = {
     "leagues": 86400,
     "teams": 86400,
     "players": 86400,
-    "events": 900,         # 15min
-    "odds": 120,           # 2min
-    "props": 300,          # 5min
-    "scores": 60,          # 1min
-    "fair_odds": 300,
-    "consensus": 300,
+    "events": 180,         # ~3 min Rookie nested-event cadence
+    "odds": 180,
+    "props": 180,
+    "scores": 180,
+    "fair_odds": 180,
+    "consensus": 180,
     "stats": 3600,
     "usage": 1800,
 }
@@ -248,54 +248,51 @@ class SGOIntegration:
         raw = await provider.get_raw_sdk_events(league_id)
         return [from_sdk_event(e) for e in raw]
 
-    async def get_odds(self, event_id: str) -> Optional[NormalizedGameOdds]:
-        """DEPRECATED for customer features — dedicated /odds/{id} is unconfirmed
-        on the current tier. Use nested /v2/events via providers.nested_events."""
-        key = f"odds:{event_id}"
-        data, source = await self._fetch_or_cache(key, "odds",
-            lambda: self._provider.get_odds(event_id),
-            normalize_fn=lambda raw: SportsGameOddsNormalizer.normalize_game_odds(raw, event_id)
-        )
-        return data if data else None
+    async def get_odds(self, event_id: str) -> Optional[dict]:
+        """Nested /v2/events markets — never dedicated /odds/{id}."""
+        from providers.nested_events import extract_nested_odds_payload, find_cached_event
+        evt = find_cached_event(event_id)
+        return extract_nested_odds_payload(evt) if evt else None
 
     async def get_player_props(self, event_id: str) -> list:
-        """DEPRECATED for customer features — use nested event.markets."""
-        key = f"props:{event_id}"
-        data, source = await self._fetch_or_cache(key, "props",
-            lambda: self._provider.get_player_props(event_id),
-            normalize_fn=lambda raw: [SportsGameOddsNormalizer.normalize_player_prop(p) for p in raw]
-        )
-        return data if data is not None else []
+        from providers.nested_events import find_cached_event, sbevent_player_props
+        evt = find_cached_event(event_id)
+        return sbevent_player_props(evt) if evt else []
 
     async def get_fair_odds(self, event_id: str) -> Optional[dict]:
-        """DEPRECATED — fairOdds lives on nested event.odds[oddID]. Do not call /fair-odds/{id}."""
-        key = f"fair_odds:{event_id}"
-        data, source = await self._fetch_or_cache(key, "fair_odds",
-            lambda: self._provider.get_fair_odds(event_id)
-        )
-        return data
+        from providers.nested_events import extract_nested_fair_odds, find_cached_event
+        evt = find_cached_event(event_id)
+        if not evt:
+            return None
+        return {"event_id": event_id, "source": "nested_v2_events", "markets": extract_nested_fair_odds(evt)}
 
     async def get_consensus(self, event_id: str) -> Optional[dict]:
-        """DEPRECATED — use nested per-bookmaker lines. Do not call /consensus/{id}."""
-        key = f"consensus:{event_id}"
-        data, source = await self._fetch_or_cache(key, "consensus",
-            lambda: self._provider.get_consensus(event_id)
-        )
-        return data
+        from providers.nested_events import extract_nested_consensus, find_cached_event
+        evt = find_cached_event(event_id)
+        return extract_nested_consensus(evt) if evt else None
 
     async def get_scores(self, event_id: str) -> Optional[dict]:
-        key = f"scores:{event_id}"
-        data, source = await self._fetch_or_cache(key, "scores",
-            lambda: self._provider.get_scores(event_id)
-        )
-        return data
+        from providers.nested_events import find_cached_event
+        evt = find_cached_event(event_id)
+        if not evt:
+            return None
+        return {
+            "event_id": event_id,
+            "status": evt.get("status"),
+            "home_score": evt.get("home_score"),
+            "away_score": evt.get("away_score"),
+            "period": evt.get("period"),
+            "results": evt.get("results"),
+            "source": "nested_v2_events",
+        }
 
     async def get_usage(self) -> Optional[dict]:
-        key = "usage"
-        data, source = await self._fetch_or_cache(key, "usage",
-            lambda: self._provider.get_usage()
-        )
-        return data
+        from providers.sdk_provider import SdkSgoProvider
+        return await SdkSgoProvider().get_usage()
+
+    async def get_leagues(self) -> list:
+        from providers.sdk_provider import SdkSgoProvider
+        return await SdkSgoProvider().get_leagues()
 
     async def get_sports(self) -> list:
         key = "sports"
@@ -335,19 +332,15 @@ class SGOIntegration:
         return data
 
     async def build_game_environment(self, event_id: str) -> GameEnvironment:
-        odds = await self.get_odds(event_id)
-        scores = await self.get_scores(event_id)
-        impl_home = None
-        impl_away = None
-        game_total = None
-        if odds and odds.consensus:
-            game_total = odds.consensus.total_over
+        from providers.nested_events import derive_game_environment, find_cached_event
+        evt = find_cached_event(event_id)
+        env = derive_game_environment(evt) if evt else {}
         return GameEnvironment(
             event_id=event_id,
-            home_team="",
-            away_team="",
-            implied_total_home=impl_home,
-            implied_total_away=impl_away,
-            game_total=game_total,
-            bookmakers_available=len(odds.books) if odds else 0,
+            home_team=env.get("home_abbr") or "",
+            away_team=env.get("away_abbr") or "",
+            implied_total_home=env.get("sbme_implied_team_total_home"),
+            implied_total_away=env.get("sbme_implied_team_total_away"),
+            game_total=env.get("sbme_game_total"),
+            bookmakers_available=len((evt or {}).get("bookmakers") or []),
         )

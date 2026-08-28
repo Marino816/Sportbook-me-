@@ -73,19 +73,39 @@ class SGOClient:
         return None
 
     async def get_events(self, league_id="MLB"):
-        return await self._get("/events", {"leagueID": league_id, "oddsAvailable": "true", "limit": "50"})
+        return await self._get("/events", {
+            "leagueID": league_id,
+            "oddsAvailable": "true",
+            "includeAltLines": "true",
+            "includeOpenCloseOdds": "true",
+            "limit": "50",
+        })
 
     async def get_player_props(self, event_id):
-        return await self._get(f"/props/players/{event_id}")
+        """Extract nested player props from /v2/events — never /props/players/{id}."""
+        payload = await self._get("/events", {
+            "eventID": event_id,
+            "oddsAvailable": "true",
+            "includeAltLines": "true",
+            "limit": "1",
+        })
+        return payload
 
     async def get_odds(self, event_id):
-        return await self._get(f"/odds/{event_id}")
+        """Nested event odds from /v2/events — never /odds/{id}."""
+        return await self._get("/events", {
+            "eventID": event_id,
+            "oddsAvailable": "true",
+            "includeAltLines": "true",
+            "includeOpenCloseOdds": "true",
+            "limit": "1",
+        })
 
     async def get_fair_odds(self, event_id):
-        return await self._get(f"/fair-odds/{event_id}")
+        return await self.get_odds(event_id)
 
     async def get_consensus(self, event_id):
-        return await self._get(f"/consensus/{event_id}")
+        return await self.get_odds(event_id)
 
     async def close(self):
         await self.client.aclose()

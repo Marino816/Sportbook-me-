@@ -7,6 +7,7 @@ from assistant.tools import (
     TOOL_HANDLERS,
     get_sgo_current_events,
     get_sgo_current_odds,
+    get_sgo_team_props,
     get_sbme_game_environment,
 )
 
@@ -44,9 +45,13 @@ async def test_sgo_tools_are_cache_only(monkeypatch):
         events = await get_sgo_current_events(None, sport="MLB")
         odds = await get_sgo_current_odds(None, sport="MLB")
         env = await get_sbme_game_environment(None, sport="MLB")
+        team = await get_sgo_team_props(None, sport="MLB")
     assert events["available"] is True
     assert odds["available"] is True
+    assert "fair_odds" in odds["games"][0]
+    assert "book_consensus" in odds["games"][0]
     assert env["source"] == "sbme_derived"
+    assert team["source"] == "sgo_nested_cache"
     assert called["fetch"] == 0
 
 
@@ -64,6 +69,7 @@ def test_sgo_tools_registered():
         "get_sgo_game_status",
         "get_sgo_current_odds",
         "get_sgo_player_props",
+        "get_sgo_team_props",
         "get_player_last_n",
         "get_sbme_game_environment",
     ):

@@ -13,6 +13,13 @@ from typing import Optional
 
 from dfs.name_normalize import fold_player_name
 from dfs.team_normalize import normalize_team_abbr, teams_equivalent
+from providers.sgo_rookie import (
+    NESTED_EVENT_TTL_SECONDS,
+    ROOKIE_LEAGUE_IDS,
+    SGO_ID_SPORT_SUFFIXES,
+    is_full_game_period,
+    normalize_league_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +31,6 @@ RESEARCH_PROP_MAP = (
     ("pitcherstrikeouts", "strikeouts_line"),
     ("pitcher_strikeouts", "strikeouts_line"),
 )
-
-SGO_ID_SPORT_SUFFIXES = ("_MLB", "_NFL", "_NBA", "_NHL", "_NCAAF", "_NCAAB")
 
 
 def looks_like_sgo_player_id(player_id: str | None) -> bool:
@@ -66,13 +71,13 @@ def load_cached_events(league: str) -> list[dict]:
     """Redis-only. Never hits SGO. Empty list on miss."""
     from api.sgo_data import _rget
 
-    data = _rget(f"sgo:v2:sbevents:{(league or 'MLB').upper()}")
+    data = _rget(f"sgo:v2:sbevents:{normalize_league_id(league)}")
     return data if isinstance(data, list) else []
 
 
 async def load_cached_or_fetch_events(league: str, *, allow_fetch: bool = True) -> list[dict]:
     """Return nested SBEvent dicts. Writes Redis on live fetch so later callers share it."""
-    league_u = (league or "MLB").upper()
+    league_u = normalize_league_id(league)
     cached = load_cached_events(league_u)
     if cached:
         return cached
@@ -85,7 +90,7 @@ async def load_cached_or_fetch_events(league: str, *, allow_fetch: bool = True) 
         events = [_sb_event_to_dict(e) for e in (sb_events or [])]
         if events:
             _clear_obsolete_event_model_keys(league_u)
-            _rset(f"sgo:v2:sbevents:{league_u}", events, ttl=900)
+            _rset(f"sgo:v2:sbevents:{league_u}", events, ttl=NESTED_EVENT_TTL_SECONDS)
         return events
     except Exception as exc:
         logger.warning("Nested SGO event fetch failed for %s: %s", league_u, exc)
@@ -105,16 +110,19 @@ def find_event_by_id(events: list[dict], event_id: str) -> Optional[dict]:
 
 
 def find_cached_event(event_id: str, leagues: Optional[list[str]] = None) -> Optional[dict]:
-    for lg in leagues or ["MLB", "NFL", "NBA", "NHL"]:
+    for lg in leagues or list(ROOKIE_LEAGUE_IDS):
         found = find_event_by_id(load_cached_events(lg), event_id)
         if found:
             return found
     return None
 
 
-def _markets(evt: dict) -> list[dict]:
+def _markets(evt: dict, *, full_game_only: bool = False) -> list[dict]:
     raw = evt.get("markets") if isinstance(evt, dict) else None
-    return raw if isinstance(raw, list) else []
+    markets = raw if isinstance(raw, list) else []
+    if not full_game_only:
+        return markets
+    return [m for m in markets if isinstance(m, dict) and is_full_game_period(m.get("period_id"))]
 
 
 def _main_books(market: dict) -> list[dict]:
@@ -127,7 +135,7 @@ def _main_books(market: dict) -> list[dict]:
 
 def _collect_numeric(evt: dict, bet_types: tuple[str, ...], side: str, book_field: str, fair_field: str) -> list[float]:
     out: list[float] = []
-    for m in _markets(evt):
+    for m in _markets(evt, full_game_only=True):
         if (m.get("bet_type") or "") not in bet_types:
             continue
         if side and (m.get("side") or "") != side:
@@ -281,7 +289,7 @@ def sbevent_to_game_row(evt: dict) -> dict:
     home = evt.get("home_team") if isinstance(evt.get("home_team"), dict) else {}
     away = evt.get("away_team") if isinstance(evt.get("away_team"), dict) else {}
     books = []
-    for m in _markets(evt):
+    for m in _markets(evt, full_game_only=True):
         if (m.get("bet_type") or "") != "moneyline":
             continue
         side = m.get("side")
@@ -321,8 +329,10 @@ def sbevent_to_game_row(evt: dict) -> dict:
 
 def sbevent_to_compare_books(evt: dict) -> list[dict]:
     by_book: dict[str, dict] = {}
-    for m in _markets(evt):
+    for m in _markets(evt, full_game_only=True):
         bt = m.get("bet_type") or ""
+        if bt not in ("moneyline", "spread", "total", "over_under"):
+            continue
         side = m.get("side") or ""
         for b in m.get("books") or []:
             if not isinstance(b, dict):
@@ -334,9 +344,12 @@ def sbevent_to_compare_books(evt: dict) -> list[dict]:
                 "bookmaker_name": name, "sportsbook": name, "name": name,
                 "moneyline_home": None, "moneyline_away": None,
                 "spread_home": None, "spread_away": None, "total": None,
+                "open_moneyline_home": None, "close_moneyline_home": None,
             })
             if bt == "moneyline" and side == "home":
                 row["moneyline_home"] = b.get("moneyline")
+                row["open_moneyline_home"] = b.get("open_moneyline")
+                row["close_moneyline_home"] = b.get("close_moneyline")
             elif bt == "moneyline" and side == "away":
                 row["moneyline_away"] = b.get("moneyline")
             elif bt == "spread" and side == "home":
@@ -368,19 +381,122 @@ def sbevent_player_props(evt: dict, player_id: str = "") -> list[dict]:
                 "price": b.get("moneyline"),
                 "over_price": b.get("moneyline") if (m.get("side") or "") == "over" else None,
                 "under_price": b.get("moneyline") if (m.get("side") or "") == "under" else None,
+                "book_odds": b.get("book_odds"),
+                "open_over_under": b.get("open_over_under"),
+                "close_over_under": b.get("close_over_under"),
                 "last_updated": b.get("last_updated"),
             })
         out.append({
             "player_id": pid,
             "player_name": pname,
             "market": m.get("market_name"),
-            "line": m.get("fair_over_under"),
+            "stat_id": m.get("stat_id"),
+            "period_id": m.get("period_id"),
+            "is_main_line": m.get("is_main_line"),
+            "line": m.get("fair_over_under") if m.get("fair_over_under") is not None else (books[0].get("line") if books else None),
             "fair_odds": m.get("fair_odds"),
             "fair_over_under": m.get("fair_over_under"),
+            "book_odds": m.get("book_odds"),
+            "book_over_under": m.get("book_over_under"),
             "note": "SGO betting O/U threshold. Not an expected-value fantasy-point projection.",
             "books": books,
         })
     return out
+
+
+def sbevent_team_props(evt: dict) -> list[dict]:
+    """Team-level O/U (home/away totals) — distinct from game totals and player props."""
+    out = []
+    for m in _markets(evt):
+        if (m.get("bet_type") or "") != "team_prop":
+            continue
+        books = [
+            {
+                "bookmaker_name": b.get("bookmaker"),
+                "line": b.get("over_under"),
+                "price": b.get("moneyline"),
+                "book_odds": b.get("book_odds"),
+                "open_over_under": b.get("open_over_under"),
+                "close_over_under": b.get("close_over_under"),
+            }
+            for b in (m.get("books") or [])
+            if isinstance(b, dict)
+        ]
+        out.append({
+            "market": m.get("market_name"),
+            "stat_id": m.get("stat_id"),
+            "period_id": m.get("period_id"),
+            "side": m.get("side"),
+            "is_main_line": m.get("is_main_line"),
+            "line": m.get("fair_over_under") if m.get("fair_over_under") is not None else m.get("book_over_under"),
+            "fair_odds": m.get("fair_odds"),
+            "fair_over_under": m.get("fair_over_under"),
+            "book_odds": m.get("book_odds"),
+            "book_over_under": m.get("book_over_under"),
+            "books": books,
+        })
+    return out
+
+
+def extract_nested_odds_payload(evt: dict) -> dict:
+    """Customer-facing odds from nested markets — never a dedicated /odds/{id} fetch."""
+    return {
+        "event_id": evt.get("id"),
+        "source": "nested_v2_events",
+        "status": evt.get("status"),
+        "game": sbevent_to_game_row(evt),
+        "books": sbevent_to_compare_books(evt),
+        "player_props": sbevent_player_props(evt),
+        "team_props": sbevent_team_props(evt),
+        "environment": derive_game_environment(evt),
+        "results": evt.get("results"),
+    }
+
+
+def extract_nested_fair_odds(evt: dict) -> list[dict]:
+    out = []
+    for m in _markets(evt):
+        if m.get("fair_odds") is None and m.get("fair_over_under") is None and m.get("fair_spread") is None:
+            continue
+        out.append({
+            "market": m.get("market_name"),
+            "bet_type": m.get("bet_type"),
+            "stat_id": m.get("stat_id"),
+            "period_id": m.get("period_id"),
+            "side": m.get("side"),
+            "player_id": m.get("player_id"),
+            "player_name": m.get("player_name"),
+            "fair_odds": m.get("fair_odds"),
+            "fair_over_under": m.get("fair_over_under"),
+            "fair_spread": m.get("fair_spread"),
+            "book_odds": m.get("book_odds"),
+            "is_main_line": m.get("is_main_line"),
+        })
+    return out
+
+
+def extract_nested_consensus(evt: dict) -> dict:
+    """Book consensus from nested bookOdds — not a dedicated /consensus/{id} fetch."""
+    env = derive_game_environment(evt)
+    by_market: dict[str, list] = {}
+    for m in _markets(evt, full_game_only=True):
+        bt = m.get("bet_type") or "unknown"
+        if m.get("book_odds") is not None:
+            by_market.setdefault(bt, []).append({
+                "side": m.get("side"),
+                "book_odds": m.get("book_odds"),
+                "fair_odds": m.get("fair_odds"),
+            })
+    return {
+        "event_id": evt.get("id"),
+        "source": "nested_v2_events",
+        "environment": env,
+        "book_consensus": by_market,
+        "home_ml": env.get("sbme_home_ml"),
+        "away_ml": env.get("sbme_away_ml"),
+        "total": env.get("sbme_game_total"),
+        "spread": env.get("sbme_home_spread"),
+    }
 
 
 def resolve_sgo_id_from_events(

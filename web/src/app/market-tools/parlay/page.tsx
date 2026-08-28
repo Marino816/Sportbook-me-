@@ -5,10 +5,11 @@ import { Layers, X, ChevronRight, SearchIcon, ChevronDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { formatBookmakerName, buildBookmakerUniverse } from "@/lib/bookmakers";
+import { MARKET_TOOL_LEAGUES, leagueLabel } from "@/lib/sgo-leagues";
 
-const LEAGUES = ["MLB","NFL","NBA","NHL","NCAAF","NCAAB"] as const;
+const LEAGUES = MARKET_TOOL_LEAGUES;
 type League = typeof LEAGUES[number];
-const BET_TYPES = ["moneyline","spread","total","player_prop","other"] as const;
+const BET_TYPES = ["moneyline","spread","total","player_prop","team_prop","other"] as const;
 const INITIAL_VISIBLE_BOOKS = 12;  // number of sportsbook tiles shown before "Show More"
 
 interface Leg {
@@ -344,7 +345,7 @@ export default function ParlayBuilderPage() {
             style={{padding:"4px 12px",borderRadius:6,fontSize:11,fontWeight:700,
               background:activeLeague===lg?"rgba(201,168,76,0.1)":C.card,
               border:activeLeague===lg?"1px solid "+C.gold:"1px solid "+C.border,
-              color:activeLeague===lg?C.gold:C.muted,cursor:"pointer"}}>{lg}</button>
+              color:activeLeague===lg?C.gold:C.muted,cursor:"pointer"}}>{leagueLabel(lg)}</button>
         ))}
       </div>
 

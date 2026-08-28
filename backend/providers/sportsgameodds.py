@@ -24,7 +24,7 @@ BASE_URL = "https://api.sportsgameodds.com/v2"
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0  # seconds
 DEFAULT_TIMEOUT = 15  # seconds
-RATE_LIMIT_PAUSE = 1.2  # seconds between requests (free plan safe)
+RATE_LIMIT_PAUSE = 1.2  # seconds between requests (Rookie 50 req/min)
 
 
 @dataclass
@@ -190,8 +190,16 @@ class SportsGameOddsProvider:
         """List events with leagueID (e.g., 'MLB', 'NFL', 'NBA').
 
         *extra_params* is merged into the query string for historical
-        lookups (e.g. include=results, finalized=true, teamID=…)."""
-        params = {"oddsAvailable": "true", "limit": "50"}
+        lookups (e.g. finalized=true, expandResults=true, teamID=…).
+        Current-event fetches include alt lines and open/close by default.
+        Do not use dedicated /odds, /fair-odds, /consensus, /props, or /scores URLs.
+        """
+        params = {
+            "oddsAvailable": "true",
+            "includeAltLines": "true",
+            "includeOpenCloseOdds": "true",
+            "limit": "50",
+        }
         if league_id:
             params["leagueID"] = league_id
         if date:
@@ -219,8 +227,9 @@ class SportsGameOddsProvider:
         return await self._request("GET", "/players", params=params, paginated=True)
 
     async def get_player_stats(self, player_id: str, season: str = None) -> dict:
-        """NOT used by customer Last-N. Dedicated /players/{id}/stats is unconfirmed
-        on the current tier. Historical scoring uses /events?include=results."""
+        """NOT used by customer Last-N. Dedicated /players/{id}/stats is not a
+        confirmed Rookie v2 path. Historical scoring uses /v2/events with
+        finalized=true and expandResults=true."""
         params = {"season": season} if season else None
         return await self._request("GET", f"/players/{player_id}/stats", params=params)
 
@@ -230,36 +239,31 @@ class SportsGameOddsProvider:
         return await self._request("GET", f"/teams/{team_id}/stats", params=params)
 
     async def get_odds(self, event_id: str) -> dict:
-        """DEPRECATED for customer features. Dedicated /odds/{id} is unconfirmed.
-        Use nested event markets via providers.nested_events."""
-        return await self._request("GET", f"/odds/{event_id}")
+        raise RuntimeError("Dedicated /odds/{id} is not used. Read nested /v2/events markets.")
 
     async def get_player_props(self, event_id: str) -> list:
-        """DEPRECATED for customer features. Use nested event.markets."""
-        return await self._request("GET", f"/props/players/{event_id}", paginated=True)
+        raise RuntimeError("Dedicated /props/players/{id} is not used. Read nested /v2/events markets.")
 
     async def get_team_props(self, event_id: str) -> list:
-        """Get team prop markets."""
-        return await self._request("GET", f"/props/teams/{event_id}", paginated=True)
+        raise RuntimeError("Dedicated /props/teams/{id} is not used. Read nested /v2/events team_prop markets.")
 
     async def get_fair_odds(self, event_id: str) -> dict:
-        """DEPRECATED. Fair odds are on nested event.odds[oddID].fairOdds."""
-        return await self._request("GET", f"/fair-odds/{event_id}")
+        raise RuntimeError("Dedicated /fair-odds/{id} is not used. Read nested fairOdds on event markets.")
 
     async def get_consensus(self, event_id: str) -> dict:
-        """DEPRECATED. Use nested per-bookmaker lines."""
-        return await self._request("GET", f"/consensus/{event_id}")
+        raise RuntimeError("Dedicated /consensus/{id} is not used. Read nested bookOdds on event markets.")
 
     async def get_scores(self, event_id: str) -> dict:
-        """Get live/historical scores."""
-        return await self._request("GET", f"/scores/{event_id}")
+        raise RuntimeError("Dedicated /scores/{id} is not used. Read nested event status/results.")
 
     async def get_account(self) -> dict:
-        """Get account/plan/usage info."""
-        return await self._request("GET", "/account")
+        """Deprecated alias — use GET /v2/account/usage via get_usage()."""
+        return await self.get_usage()
 
     # ── Account ──
 
     async def get_usage(self) -> dict:
-        """Get account usage stats."""
-        return await self._request("GET", "/account/usage")
+        """GET /v2/account/usage — parsed, secrets stripped."""
+        from providers.sgo_rookie import parse_account_usage
+        raw = await self._request("GET", "/account/usage")
+        return parse_account_usage(raw)

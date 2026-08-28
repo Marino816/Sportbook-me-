@@ -31,7 +31,7 @@ async def build_game_log(
 ) -> Optional[PlayerGameLog]:
     """Build a last-N game log from a list of finalized SGO events.
 
-    *events* must be SGO /v2/events responses with include=results —
+    *events* must be SGO /v2/events responses with expandResults=true —
     each dict contains results.game.{playerID} stat objects.
 
     Returns None when the player is not found in any event.

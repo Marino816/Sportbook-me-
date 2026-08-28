@@ -93,7 +93,7 @@ async def _get_market_cache():
 @router.get("/live-odds")
 async def get_live_odds(
     event_id: str = Query("", description="Optional SGO event ID"),
-    league: str = Query("MLB", description="League when listing games (MLB, NFL, NBA, NHL)"),
+    league: str = Query("MLB", description="Rookie league ID (MLB, EPL, UEFA_CHAMPIONS_LEAGUE, …)"),
     slate_id: Optional[int] = Query(None, description="Ignored — DFS slate IDs are not SGO event IDs"),
     user: User = Depends(get_current_user),
 ):
@@ -103,6 +103,7 @@ async def get_live_odds(
     (mobile Market Tools). slate_id is accepted only so old clients do not 422;
     it is not used as an SGO identifier.
     """
+    from providers.sgo_rookie import normalize_league_id
     from providers.nested_events import (
         derive_game_environment,
         find_cached_event,
@@ -111,7 +112,7 @@ async def get_live_odds(
         sbevent_to_game_row,
     )
 
-    league_u = (league or "MLB").upper()
+    league_u = normalize_league_id(league)
     events = await load_cached_or_fetch_events(league_u)
 
     if event_id:
@@ -150,16 +151,18 @@ async def compare_odds(
     user: User = Depends(get_current_user),
 ):
     """Side-by-side bookmaker lines from nested event.markets — no dedicated /odds URL."""
+    from providers.sgo_rookie import normalize_league_id
     from providers.nested_events import (
         derive_game_environment,
         find_cached_event,
         find_event_by_id,
         load_cached_or_fetch_events,
         sbevent_player_props,
+        sbevent_team_props,
         sbevent_to_compare_books,
     )
 
-    events = await load_cached_or_fetch_events(league)
+    events = await load_cached_or_fetch_events(normalize_league_id(league))
     evt = find_event_by_id(events, event_id) or find_cached_event(event_id)
     if not evt:
         raise HTTPException(404, f"No nested market data found for event {event_id}")
@@ -174,6 +177,7 @@ async def compare_odds(
         "bookmakers": books,
         "books": books,
         "player_props": sbevent_player_props(evt) if market_type in ("all", "props") else [],
+        "team_props": sbevent_team_props(evt) if market_type in ("all", "team_prop", "team_props") else [],
         "sbme_environment": derive_game_environment(evt),
         "market_type": market_type,
     }, source="sgo_nested_cache")
@@ -207,33 +211,39 @@ async def get_player_props(
 
     Betting O/U thresholds are research signals — not fantasy-point projections.
     """
+    from providers.sgo_rookie import normalize_league_id
     from providers.nested_events import (
         find_cached_event,
         find_event_by_id,
         load_cached_or_fetch_events,
         sbevent_player_props,
+        sbevent_team_props,
     )
 
-    league = (sport or "MLB").upper()
+    league = normalize_league_id(sport)
     events = await load_cached_or_fetch_events(league)
     if event_id:
         evt = find_event_by_id(events, event_id) or find_cached_event(event_id)
         events = [evt] if evt else []
     props = []
+    team_props = []
     for evt in events:
         if not isinstance(evt, dict):
             continue
         props.extend(sbevent_player_props(evt, player_id=player_id))
+        if not player_id:
+            team_props.extend(sbevent_team_props(evt))
 
-    if not props:
+    if not props and not team_props:
         return wrap_data({
             "event_id": event_id or None,
             "sport": league,
             "player_count": 0,
             "players": [],
             "props": [],
+            "team_props": [],
             "available": False,
-            "note": "No nested player-prop markets in the cached /v2/events payload.",
+            "note": "No nested player-prop or team-prop markets in the cached /v2/events payload.",
         }, source="sgo_nested_cache")
 
     return wrap_data({
@@ -242,6 +252,7 @@ async def get_player_props(
         "player_count": len({p.get("player_id") for p in props}),
         "players": props,
         "props": props,
+        "team_props": team_props,
         "available": True,
         "note": "SGO betting O/U thresholds from nested events. Not fantasy-point projections.",
     }, source="sgo_nested_cache")
@@ -329,10 +340,12 @@ async def arbitrage_scan(
     """
     from market_engine.arbitrage import arbitrage_check, format_arbitrage_response
     from providers.nested_events import load_cached_or_fetch_events, sbevent_to_compare_books
+    from providers.sgo_rookie import normalize_league_id
 
-    events = await load_cached_or_fetch_events(league)
+    league_u = normalize_league_id(league)
+    events = await load_cached_or_fetch_events(league_u)
     if not events:
-        return wrap_data(format_arbitrage_response("", [], league), source="sgo_nested_cache")
+        return wrap_data(format_arbitrage_response("", [], league_u), source="sgo_nested_cache")
 
     all_opportunities = []
     scanned = 0
@@ -368,7 +381,7 @@ async def arbitrage_scan(
                     from market_engine.arbitrage import _format_opp
                     all_opportunities.append(_format_opp(opp) if not isinstance(opp, dict) else opp)
 
-    response = format_arbitrage_response("", all_opportunities, league)
+    response = format_arbitrage_response("", all_opportunities, league_u)
     response["events_scanned"] = scanned
     return wrap_data(response, source="sgo_nested_cache")
 
@@ -476,9 +489,8 @@ async def get_usage(
       - Request history
     """
     try:
-        sgo = await _get_sgo_integration()
-        async with sgo:
-            sgo_usage = await sgo.get_usage()
+        from providers.sdk_provider import SdkSgoProvider
+        sgo_usage = await SdkSgoProvider().get_usage()
 
         cache = await _get_market_cache()
         async with cache:
@@ -497,7 +509,7 @@ async def get_usage(
                     if cache and cache.stats.last_request_at else None
                 ),
             },
-        }, source="sportsgameodds")
+        }, source="sportsgameodds_v2_account_usage")
     except Exception as e:
         logger.warning(f"Usage stats unavailable: {e}")
         return wrap_data({

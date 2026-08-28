@@ -6,8 +6,9 @@ import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket } from "@/lib/sbevent";
 import { formatBookmakerName } from "@/lib/bookmakers";
 import { LastFive } from "@/lib/last-five";
+import { MARKET_TOOL_LEAGUES, leagueLabel } from "@/lib/sgo-leagues";
 
-const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
+const LEAGUES = MARKET_TOOL_LEAGUES;
 type League = (typeof LEAGUES)[number];
 
 const PROP_TYPE_LABELS: Record<string, string> = {
@@ -283,7 +284,7 @@ export default function PlayerPropsPage() {
         {LEAGUES.map((lg) => (
           <button key={lg} onClick={() => { setActiveLeague(lg); resetFilters(); }}
             style={{ padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24", border: activeLeague === lg ? "1px solid #c9a84c" : "1px solid #1e293b", color: activeLeague === lg ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>
-            {lg}
+            {leagueLabel(lg)}
           </button>
         ))}
       </div>

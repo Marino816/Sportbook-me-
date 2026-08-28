@@ -1,7 +1,7 @@
 """
 Historical player game-log endpoint — Last-5 / Last-10 fantasy scoring.
 
-Uses SGO finalized events with include=results to retrieve per-game
+Uses SGO finalized events with expandResults=true to retrieve per-game
 player performance statistics, then scores them through the historical
 scoring service (NOT the projection approximation).
 """
@@ -105,7 +105,7 @@ async def get_player_game_log(
     to SportsGameOdds. Unmatched players return available=false (not an error).
 
     Scoring follows official DraftKings MLB DFS rules using finalized SGO
-    results (include=results). FanDuel historical scoring is disabled.
+    results (expandResults=true). FanDuel historical scoring is disabled.
     """
     platform_lower = platform.lower()
     if platform_lower not in ("draftkings", "dk"):
@@ -144,8 +144,11 @@ async def compute_last_n(
     scoring_platform: ScoringPlatform = ScoringPlatform.DRAFTKINGS,
 ) -> dict:
     """Shared Last-N payload used by the customer route and SB ME AI tools."""
+    from providers.sgo_rookie import normalize_league_id
+
+    sport_u = normalize_league_id(sport)
     sgo_id, reason = await resolve_sgo_player_id(
-        db, player_id, sport=sport.upper(), name=name, team=team, slate_id=slate_id,
+        db, player_id, sport=sport_u, name=name, team=team, slate_id=slate_id,
     )
     if not sgo_id:
         return {
@@ -159,19 +162,21 @@ async def compute_last_n(
     start = end - timedelta(days=HISTORICAL_WINDOW_DAYS)
 
     extra = {
-        "include": "results",
         "finalized": "true",
+        "expandResults": "true",
         "startsAfter": start.strftime("%Y-%m-%d"),
         "startsBefore": end.strftime("%Y-%m-%d"),
         "limit": str(MAX_HISTORICAL_EVENTS),
         "oddsAvailable": "false",
+        "includeAltLines": "false",
+        "includeOpenCloseOdds": "false",
     }
 
     try:
         from providers.sportsgameodds import SportsGameOddsProvider
         async with SportsGameOddsProvider() as provider:
             sgo_events_all = await provider.get_events(
-                league_id=sport.upper(),
+                league_id=sport_u,
                 extra_params=extra,
             )
     except Exception as e:

@@ -308,7 +308,8 @@ async def get_optimal_pct(
 
 
 def _league(sport: Optional[str]) -> str:
-    return (sport or "MLB").upper()
+    from providers.sgo_rookie import normalize_league_id
+    return normalize_league_id(sport)
 
 
 async def _cached_events(sport: Optional[str] = "MLB") -> list:
@@ -378,6 +379,7 @@ async def get_sgo_game_status(
             "home_score": evt.get("home_score"),
             "away_score": evt.get("away_score"),
             "period": evt.get("period"),
+            "results": evt.get("results"),
         })
     return {
         "available": bool(games),
@@ -393,7 +395,14 @@ async def get_sgo_current_odds(
     event_id: Optional[str] = None,
     sport: str = "MLB",
 ) -> dict:
-    from providers.nested_events import find_event_by_id, sbevent_to_game_row, sbevent_to_compare_books
+    from providers.nested_events import (
+        extract_nested_consensus,
+        extract_nested_fair_odds,
+        find_event_by_id,
+        sbevent_team_props,
+        sbevent_to_compare_books,
+        sbevent_to_game_row,
+    )
     events = await _cached_events(sport)
     if event_id:
         evt = find_event_by_id(events, event_id)
@@ -404,11 +413,14 @@ async def get_sgo_current_odds(
             continue
         row = sbevent_to_game_row(evt)
         row["books"] = sbevent_to_compare_books(evt)
+        row["fair_odds"] = extract_nested_fair_odds(evt)
+        row["book_consensus"] = extract_nested_consensus(evt)
+        row["team_props"] = sbevent_team_props(evt)
         games.append(row)
     return {
         "available": bool(games),
         "source": "sgo_nested_cache",
-        "note": "Bookmaker prices from nested event.markets. Fair odds included when present on the market.",
+        "note": "Bookmaker prices, fairOdds, bookOdds consensus, and team props from nested event.markets.",
         "games": games,
     }
 
@@ -441,6 +453,31 @@ async def get_sgo_player_props(
     }
 
 
+# ── Tool: get_sgo_team_props ───────────────────────────────────
+
+async def get_sgo_team_props(
+    db: AsyncSession,
+    event_id: Optional[str] = None,
+    sport: str = "MLB",
+) -> dict:
+    from providers.nested_events import find_event_by_id, sbevent_team_props
+    events = await _cached_events(sport)
+    if event_id:
+        evt = find_event_by_id(events, event_id)
+        events = [evt] if evt else []
+    props = []
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        props.extend(sbevent_team_props(evt))
+    return {
+        "available": bool(props),
+        "source": "sgo_nested_cache",
+        "note": "Team totals (home/away O/U), distinct from game totals and player props.",
+        "team_props": props[:80],
+    }
+
+
 # ── Tool: get_player_last_n ────────────────────────────────────
 
 async def get_player_last_n(
@@ -452,7 +489,7 @@ async def get_player_last_n(
     n: int = 5,
     slate_id: Optional[int] = None,
 ) -> dict:
-    """Last-N via the existing historical /events?include=results path after ID reconcile."""
+    """Last-N via finalized /v2/events?expandResults=true after ID reconcile."""
     from api.player_stats import compute_last_n
     from scoring import ScoringPlatform
 
@@ -588,7 +625,7 @@ TOOLS = [
     ),
     _fn_schema(
         "get_sgo_current_odds",
-        "Return current moneyline/spread/total and per-bookmaker prices from the nested event cache, including fair odds when present.",
+        "Return current moneyline/spread/total, per-bookmaker prices, fairOdds, bookOdds consensus, and team props from the nested event cache.",
         {
             "event_id": {"type": "string", "description": "Optional SGO event ID."},
             "sport": {"type": "string", "description": "League/sport, e.g. MLB."},
@@ -603,6 +640,15 @@ TOOLS = [
             "player_id": {"type": "string", "description": "SGO player ID if known."},
             "event_id": {"type": "string", "description": "Optional SGO event ID."},
             "sport": {"type": "string", "description": "League/sport, e.g. MLB."},
+        },
+        [],
+    ),
+    _fn_schema(
+        "get_sgo_team_props",
+        "Return nested SportsGameOdds team-prop markets (home/away totals). Distinct from game totals and player props.",
+        {
+            "event_id": {"type": "string", "description": "Optional SGO event ID."},
+            "sport": {"type": "string", "description": "League/sport, e.g. MLB or EPL."},
         },
         [],
     ),
@@ -641,6 +687,7 @@ TOOL_HANDLERS = {
     "get_sgo_game_status": get_sgo_game_status,
     "get_sgo_current_odds": get_sgo_current_odds,
     "get_sgo_player_props": get_sgo_player_props,
+    "get_sgo_team_props": get_sgo_team_props,
     "get_player_last_n": get_player_last_n,
     "get_sbme_game_environment": get_sbme_game_environment,
 }

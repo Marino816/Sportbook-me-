@@ -68,6 +68,7 @@ async def test_resolve_from_cached_event_name():
 class _FakeProvider:
     def __init__(self, events):
         self._events = events
+        self.extra_params = None
 
     async def __aenter__(self):
         return self
@@ -76,6 +77,7 @@ class _FakeProvider:
         return None
 
     async def get_events(self, league_id="MLB", extra_params=None):
+        self.extra_params = extra_params
         return self._events
 
 
@@ -112,8 +114,9 @@ async def test_last_n_filters_non_finalized_and_missing_results():
     game.result.raw_stats = {"hits": 2}
     fake_log.games = [game]
 
+    fake = _FakeProvider(events)
     with patch("providers.nested_events.load_cached_events", return_value=[]), \
-         patch("providers.sportsgameodds.SportsGameOddsProvider", return_value=_FakeProvider(events)), \
+         patch("providers.sportsgameodds.SportsGameOddsProvider", return_value=fake), \
          patch("api.player_stats.build_game_log", new=AsyncMock(return_value=fake_log)) as mock_log:
         payload = await compute_last_n(
             _DB(), "JOSE_RAMIREZ_1_MLB", scoring_platform=ScoringPlatform.DRAFTKINGS,
@@ -121,6 +124,10 @@ async def test_last_n_filters_non_finalized_and_missing_results():
         passed = mock_log.await_args.args[0]
         assert len(passed) == 1
         assert passed[0]["results"]["game"]["hits"] == 2
+    assert fake.extra_params["finalized"] == "true"
+    assert fake.extra_params["expandResults"] == "true"
+    assert fake.extra_params["oddsAvailable"] == "false"
+    assert "include" not in fake.extra_params
     assert payload["available"] is True
     assert payload["games"][0]["fantasy_points"] == 8.0
 

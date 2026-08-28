@@ -244,8 +244,9 @@ PRODUCT_KNOWLEDGE = [
             "implied team totals). Derived environment fields are SB ME "
             "calculations, not provider facts. Prop lines are betting thresholds, "
             "not fantasy-point projections. Tools do not call SportsGameOdds "
-            "directly except Last-N, which uses the existing historical "
-            "/events?include=results path after player-ID reconciliation."
+            "directly except Last-N, which uses finalized /v2/events with "
+            "expandResults=true after player-ID reconciliation. Coverage includes "
+            "all 17 Rookie leagues (including 8 soccer leagues)."
         ),
     },
 ]

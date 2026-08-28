@@ -7,8 +7,9 @@ No custom field guessing. All field names match frontend expectations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Optional
+
+from providers.sgo_rookie import classify_sgo_market, parse_american, parse_float
 
 
 @dataclass
@@ -39,6 +40,9 @@ class SBBookLine:
     opening_odds: Optional[int] = None
     opening_spread: Optional[float] = None
     opening_over_under: Optional[float] = None
+    close_odds: Optional[int] = None
+    close_spread: Optional[float] = None
+    close_over_under: Optional[float] = None
 
 
 @dataclass
@@ -55,6 +59,9 @@ class SBMarket:
     fair_odds: Optional[int] = None
     fair_spread: Optional[float] = None
     fair_over_under: Optional[float] = None
+    book_odds: Optional[int] = None
+    book_spread: Optional[float] = None
+    book_over_under: Optional[float] = None
     books: list[SBBookLine] = field(default_factory=list)
 
 
@@ -75,36 +82,64 @@ class SBEvent:
     away_score: Optional[float] = None
     period: Optional[str] = None
     venue: str = ""
+    results: Optional[dict] = None
+
+
+def _attr(obj, *names, default=None):
+    for name in names:
+        if obj is None:
+            continue
+        if isinstance(obj, dict) and name in obj:
+            return obj[name]
+        if hasattr(obj, name):
+            val = getattr(obj, name)
+            if val is not None:
+                return val
+    return default
+
+
+def _results_dict(raw) -> Optional[dict]:
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    dump = getattr(raw, "model_dump", None)
+    if callable(dump):
+        try:
+            data = dump(mode="json")
+        except TypeError:
+            data = dump()
+        return data if isinstance(data, dict) else None
+    return None
 
 
 def from_sdk_event(sdk_event) -> SBEvent:
-    """
-    Convert an official SportsGameOdds SDK Event to SBEvent.
-
-    Uses the official SDK models — no raw dict field guessing.
-    """
-    from sports_odds_api.types.event import Event as SdkEvent
-
-    event: SdkEvent = sdk_event
-    event_id = event.event_id or ""
+    """Convert an official SportsGameOdds SDK Event (or duck-typed stand-in) to SBEvent."""
+    event = sdk_event
+    event_id = _attr(event, "event_id", "eventID") or ""
 
     # Teams — from official SDK Teams model
     home = SBTeam(name="", abbreviation="")
     away = SBTeam(name="", abbreviation="")
-    if event.teams:
-        if event.teams.home:
+    teams_obj = _attr(event, "teams")
+    if teams_obj:
+        home_sdk = _attr(teams_obj, "home")
+        away_sdk = _attr(teams_obj, "away")
+        if home_sdk:
+            names = _attr(home_sdk, "names")
             home = SBTeam(
-                name=event.teams.home.names.long if event.teams.home.names else "",
-                abbreviation=event.teams.home.names.short if event.teams.home.names else "",
-                team_id=event.teams.home.team_id or "",
-                score=event.teams.home.score,
+                name=_attr(names, "long") or "" if names else "",
+                abbreviation=_attr(names, "short") or "" if names else "",
+                team_id=_attr(home_sdk, "team_id", "teamID") or "",
+                score=_attr(home_sdk, "score"),
             )
-        if event.teams.away:
+        if away_sdk:
+            names = _attr(away_sdk, "names")
             away = SBTeam(
-                name=event.teams.away.names.long if event.teams.away.names else "",
-                abbreviation=event.teams.away.names.short if event.teams.away.names else "",
-                team_id=event.teams.away.team_id or "",
-                score=event.teams.away.score,
+                name=_attr(names, "long") or "" if names else "",
+                abbreviation=_attr(names, "short") or "" if names else "",
+                team_id=_attr(away_sdk, "team_id", "teamID") or "",
+                score=_attr(away_sdk, "score"),
             )
 
     # Status — from official SDK Status model
@@ -112,58 +147,64 @@ def from_sdk_event(sdk_event) -> SBEvent:
     status_display = ""
     start_time = None
     period = None
-    if event.status:
-        if event.status.live:
+    status_obj = _attr(event, "status")
+    if status_obj:
+        if _attr(status_obj, "live"):
             status = "LIVE"
-        elif event.status.completed or event.status.finalized:
+        elif _attr(status_obj, "completed") or _attr(status_obj, "finalized"):
             status = "FINAL"
-        status_display = event.status.display_long or ""
-        if event.status.starts_at:
-            start_time = event.status.starts_at
-        if event.status.current_period_id:
-            period = event.status.current_period_id
+        status_display = _attr(status_obj, "display_long", "displayLong") or ""
+        if _attr(status_obj, "starts_at", "startsAt"):
+            start_time = _attr(status_obj, "starts_at", "startsAt")
+            if hasattr(start_time, "isoformat"):
+                start_time = start_time.isoformat()
+            else:
+                start_time = str(start_time)
+        if _attr(status_obj, "current_period_id", "currentPeriodID"):
+            period = _attr(status_obj, "current_period_id", "currentPeriodID")
 
     # Players — from official SDK Players model
     players = []
-    if event.players:
-        for pid, psdk in event.players.items():
-            player_name = psdk.name or f"{psdk.first_name or ''} {psdk.last_name or ''}".strip()
+    players_map = _attr(event, "players") or {}
+    if players_map and hasattr(players_map, "items"):
+        for pid, psdk in players_map.items():
+            player_name = _attr(psdk, "name") or f"{_attr(psdk, 'first_name', 'firstName') or ''} {_attr(psdk, 'last_name', 'lastName') or ''}".strip()
             players.append(SBPlayer(
-                player_id=psdk.player_id or pid,
+                player_id=_attr(psdk, "player_id", "playerID") or pid,
                 name=player_name or pid,
-                team_id=psdk.team_id or "",
+                team_id=_attr(psdk, "team_id", "teamID") or "",
             ))
 
     # Markets — from official SDK Odds model
     markets = []
     bookmaker_set: set[str] = set()
-    if event.odds:
-        for odd_id, o in event.odds.items():
-            # Determine bet type
-            bet_type = "other"
-            side = ""
-            mid = (o.market_name or odd_id).lower()
-            seid = o.stat_entity_id or ""
-            pid = o.player_id or ""
-            if "moneyline" in mid or "ml" in mid.split("-"):
-                bet_type = "moneyline"
-            elif "spread" in mid or "handicap" in mid:
-                bet_type = "spread"
-            elif "over" in mid or "under" in mid or "total" in mid:
-                bet_type = "total"
-
-            # Player prop detection via stat_entity_id / player_id
+    odds_map = _attr(event, "odds") or {}
+    players_map = _attr(event, "players") or {}
+    if odds_map:
+        for odd_id, o in odds_map.items():
+            seid = _attr(o, "stat_entity_id", "statEntityID") or ""
+            pid = _attr(o, "player_id", "playerID") or ""
+            period_id = _attr(o, "period_id", "periodID") or ""
+            stat_id = _attr(o, "stat_id", "statID") or ""
+            bet_type_id = _attr(o, "bet_type_id", "betTypeID") or ""
+            bet_type = classify_sgo_market(
+                odd_id=odd_id or "",
+                stat_entity_id=seid,
+                player_id=pid,
+                bet_type_id=bet_type_id,
+                stat_id=stat_id,
+                period_id=period_id,
+            )
             player_name = ""
-            if pid or (seid and seid not in ("home", "away", "all", "")):
-                bet_type = "player_prop"
+            if bet_type == "player_prop":
                 sid = pid or seid
-                if sid and event.players:
-                    p_sdk = event.players.get(sid)
-                    if p_sdk:
-                        player_name = p_sdk.name or f"{p_sdk.first_name or ''} {p_sdk.last_name or ''}".strip()
+                p_sdk = players_map.get(sid) if hasattr(players_map, "get") else None
+                if p_sdk:
+                    player_name = (
+                        _attr(p_sdk, "name")
+                        or f"{_attr(p_sdk, 'first_name', 'firstName') or ''} {_attr(p_sdk, 'last_name', 'lastName') or ''}".strip()
+                    )
 
-            # Side — authoritative from stat_entity_id (home/away), otherwise the
-            # odd_id's final segment (over/under/draw/not_draw/yes/no/even/odd).
             if seid == "home":
                 side = "home"
             elif seid == "away":
@@ -172,69 +213,52 @@ def from_sdk_event(sdk_event) -> SBEvent:
                 parts = (odd_id or "").split("-")
                 side = parts[-1] if parts else ""
 
-            # Parse books
             books = []
-            if o.by_bookmaker:
-                for bk_id, bk in o.by_bookmaker.items():
-                    bookmaker_set.add(bk.bookmaker_id or bk_id)
-                    def _opt_int(val):
-                        if val is None:
-                            return None
-                        try:
-                            return int(val)
-                        except (TypeError, ValueError):
-                            return None
-
-                    def _opt_float(val):
-                        if val is None:
-                            return None
-                        try:
-                            return float(val)
-                        except (TypeError, ValueError):
-                            return None
-
+            by_book = _attr(o, "by_bookmaker", "byBookmaker") or {}
+            if by_book:
+                for bk_id, bk in by_book.items():
+                    bookmaker_set.add(_attr(bk, "bookmaker_id", "bookmakerID") or bk_id)
                     books.append(SBBookLine(
-                        bookmaker=bk.bookmaker_id or bk_id,
-                        available=bk.available if bk.available is not None else True,
-                        moneyline=int(bk.odds) if bk.odds is not None else None,
-                        spread=float(bk.spread) if bk.spread is not None else None,
-                        over_under=float(bk.over_under) if bk.over_under is not None else None,
-                        is_main_line=bk.is_main_line if bk.is_main_line is not None else False,
-                        last_updated=str(bk.last_updated_at) if getattr(bk, "last_updated_at", None) else None,
-                        opening_odds=_opt_int(
-                            getattr(bk, "opening_odds", None) or getattr(bk, "openingOdds", None)
-                        ),
-                        opening_spread=_opt_float(
-                            getattr(bk, "opening_spread", None) or getattr(bk, "openingSpread", None)
-                        ),
-                        opening_over_under=_opt_float(
-                            getattr(bk, "opening_over_under", None)
-                            or getattr(bk, "openingOverUnder", None)
-                        ),
+                        bookmaker=_attr(bk, "bookmaker_id", "bookmakerID") or bk_id,
+                        available=_attr(bk, "available") if _attr(bk, "available") is not None else True,
+                        moneyline=parse_american(_attr(bk, "odds")),
+                        spread=parse_float(_attr(bk, "spread")),
+                        over_under=parse_float(_attr(bk, "over_under", "overUnder")),
+                        is_main_line=bool(_attr(bk, "is_main_line", "isMainLine")),
+                        last_updated=str(_attr(bk, "last_updated_at", "lastUpdatedAt")) if _attr(bk, "last_updated_at", "lastUpdatedAt") else None,
+                        opening_odds=parse_american(_attr(bk, "opening_odds", "openOdds", "openingOdds")),
+                        opening_spread=parse_float(_attr(bk, "opening_spread", "openSpread", "openingSpread")),
+                        opening_over_under=parse_float(_attr(bk, "opening_over_under", "openOverUnder", "openingOverUnder")),
+                        close_odds=parse_american(_attr(bk, "close_odds", "closeOdds")),
+                        close_spread=parse_float(_attr(bk, "close_spread", "closeSpread")),
+                        close_over_under=parse_float(_attr(bk, "close_over_under", "closeOverUnder")),
                     ))
 
             markets.append(SBMarket(
                 odd_id=odd_id,
-                market_name=o.market_name or odd_id,
+                market_name=_attr(o, "market_name", "marketName") or odd_id,
                 bet_type=bet_type,
                 side=side,
                 stat_entity_id=seid,
-                stat_id=o.stat_id or "",
-                period_id=o.period_id or "",
+                stat_id=stat_id,
+                period_id=period_id,
                 player_id=pid,
                 player_name=player_name,
-                fair_odds=int(o.fair_odds) if o.fair_odds is not None else None,
-                fair_spread=float(o.fair_spread) if o.fair_spread is not None else None,
-                fair_over_under=float(o.fair_over_under) if o.fair_over_under is not None else None,
+                fair_odds=parse_american(_attr(o, "fair_odds", "fairOdds")),
+                fair_spread=parse_float(_attr(o, "fair_spread", "fairSpread")),
+                fair_over_under=parse_float(_attr(o, "fair_over_under", "fairOverUnder")),
+                book_odds=parse_american(_attr(o, "book_odds", "bookOdds")),
+                book_spread=parse_float(_attr(o, "book_spread", "bookSpread")),
+                book_over_under=parse_float(_attr(o, "book_over_under", "bookOverUnder")),
                 books=books,
             ))
 
-    # Scores — extract numeric points from SGO score dict if needed
+    results = _results_dict(_attr(event, "results"))
     home_score = None
     away_score = None
-    if event.results:
-        game = event.results.get("game", {})
-        if game:
+    if results:
+        game = results.get("game", {})
+        if isinstance(game, dict):
 
             def _extract_score(val):
                 if isinstance(val, dict):
@@ -247,11 +271,15 @@ def from_sdk_event(sdk_event) -> SBEvent:
 
             home_score = _extract_score(game.get("home"))
             away_score = _extract_score(game.get("away"))
+        if home_score is None:
+            home_score = home.score
+        if away_score is None:
+            away_score = away.score
 
     return SBEvent(
         id=event_id,
-        sport=event.sport_id or "",
-        league=event.league_id or "",
+        sport=_attr(event, "sport_id", "sportID") or "",
+        league=_attr(event, "league_id", "leagueID") or "",
         start_time=start_time,
         status=status,
         status_display=status_display,
@@ -263,4 +291,5 @@ def from_sdk_event(sdk_event) -> SBEvent:
         home_score=home_score,
         away_score=away_score,
         period=period,
+        results=results,
     )

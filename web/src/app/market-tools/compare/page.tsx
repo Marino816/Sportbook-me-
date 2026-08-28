@@ -5,8 +5,9 @@ import { GitCompare, Trophy, Search } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { formatBookmakerName } from "@/lib/bookmakers";
+import { MARKET_TOOL_LEAGUES, leagueLabel } from "@/lib/sgo-leagues";
 
-const LEAGUES = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
+const LEAGUES = MARKET_TOOL_LEAGUES;
 type League = (typeof LEAGUES)[number];
 
 type MarketTab = "moneyline" | "spread" | "total";
@@ -228,7 +229,7 @@ export default function CompareOddsPage() {
               cursor: "pointer",
             }}
           >
-            {lg}
+            {leagueLabel(lg)}
           </button>
         ))}
       </div>

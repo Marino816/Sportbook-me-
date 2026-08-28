@@ -19,17 +19,17 @@ from market_engine import MarketIdentity, MarketType, BookmakerLine, MarketSnaps
 
 logger = logging.getLogger(__name__)
 
-# Cache TTLs (seconds)
+# Cache TTLs (seconds) — Rookie nested events update ~every 3 minutes
 CACHE_TTL = {
-    "events": 900,         # 15 min
-    "odds": 120,           # 2 min (pre-game market moves)
-    "props": 300,          # 5 min
-    "fair_odds": 300,
-    "consensus": 300,
-    "scores": 60,          # 1 min (live)
+    "events": 180,
+    "odds": 180,
+    "props": 180,
+    "fair_odds": 180,
+    "consensus": 180,
+    "scores": 180,
     "players": 86400,      # 24h
     "teams": 86400,
-    "usage": 3600,
+    "usage": 1800,
 }
 
 
@@ -125,7 +125,8 @@ class MarketCache:
             )
             evt = find_cached_event(event_id)
             if evt is None:
-                for lg in ("MLB", "NFL", "NBA", "NHL"):
+                from providers.sgo_rookie import ROOKIE_LEAGUE_IDS
+                for lg in ROOKIE_LEAGUE_IDS:
                     events = await load_cached_or_fetch_events(lg)
                     evt = find_event_by_id(events, event_id)
                     if evt is not None:
@@ -151,8 +152,8 @@ class MarketCache:
         return await self._cached(key, "events", _fetch)
 
     async def get_usage(self):
-        return await self._cached("usage", "usage",
-            lambda: self._provider.get_usage())
+        from providers.sdk_provider import SdkSgoProvider
+        return await self._cached("usage", "usage", SdkSgoProvider().get_usage)
 
     def invalidate(self, key: str = None):
         """Clear cache entries. If key is None, clear all."""
