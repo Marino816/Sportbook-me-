@@ -20,7 +20,7 @@ const goldDim = "#a68a32";
 const border = "#1e293b";
 const textPrimary = "#f0f6fc";
 const textSecondary = "#94a3b8";
-const textMuted = "#64748b";
+const textMuted = "#8b9cb3";
 
 /* ── Shared button styles ── */
 function GoldButton({ href, children, className = "" }: { href: string; children: React.ReactNode; className?: string }) {
@@ -99,7 +99,7 @@ function ParlayCapability({ icon, title, description }: { icon: React.ReactNode;
       </div>
       <div>
         <h4 className="text-sm font-extrabold mb-1" style={{ color: textPrimary }}>{title}</h4>
-        <p className="text-xs leading-relaxed" style={{ color: textMuted }}>{description}</p>
+        <p className="text-[13px] leading-relaxed" style={{ color: textSecondary }}>{description}</p>
       </div>
     </div>
   );
@@ -218,7 +218,7 @@ export default function LandingPage() {
 
   return (
     <SBMEBackground variant="hero" className="min-h-screen">
-    <div style={{ color: textPrimary, fontFamily: "'Inter', sans-serif" }} className="min-h-screen">
+    <div style={{ color: textPrimary, fontFamily: "'Inter', sans-serif" }} className="min-h-screen overflow-x-hidden">
 
       {/* ═══ HEADER ═══ */}
       <header className="sticky top-0 z-50 border-b" style={{ background: "rgba(10,15,36,0.92)", backdropFilter: "blur(16px)", borderColor: border }}>
@@ -286,14 +286,6 @@ export default function LandingPage() {
 
       {/* ═══ HERO ═══ */}
       <Section className="py-16 md:py-24 lg:py-28">
-        {/* Background glow */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ height: "100vh" }}>
-          <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full opacity-10"
-            style={{ background: `radial-gradient(circle, ${gold} 0%, transparent 70%)` }} />
-          <div className="absolute bottom-[-10%] right-[-5%] w-[400px] h-[400px] rounded-full opacity-8"
-            style={{ background: `radial-gradient(circle, ${gold} 0%, transparent 70%)` }} />
-        </div>
-
         <div className="relative grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left */}
           <div>
@@ -382,7 +374,7 @@ export default function LandingPage() {
                 <p className="text-xs font-extrabold leading-snug mb-1" style={{ color: textPrimary }}>
                   One Platform. Your Data.<br /><span style={{ color: gold }}>Smarter Lineups &amp; Sports Analysis.</span>
                 </p>
-                <p className="text-[11px] leading-relaxed" style={{ color: textMuted }}>
+                <p className="text-[13px] leading-relaxed" style={{ color: textSecondary }}>
                   Real-time DFS data, SB ME projections, lineup optimization, simulations, stacks, player research, and sportsbook market analysis — built into one intelligence platform.
                 </p>
               </div>
@@ -445,7 +437,7 @@ export default function LandingPage() {
       </Section>
 
       {/* ═══ FEATURE STRIP ═══ */}
-      <div id="features" style={{ borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, background: cardBg }}>
+      <div id="features" style={{ borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, background: "transparent" }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {[
@@ -460,13 +452,14 @@ export default function LandingPage() {
             ].map((f, i) => {
               const Icon = f.icon;
               return (
-                <div key={i} className="text-center group">
+                <div key={i} className="text-center group rounded-2xl border p-4 sm:p-5"
+                  style={{ background: "rgba(16,22,47,0.82)", borderColor: border }}>
                   <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl mb-3 transition-all duration-200 group-hover:scale-110"
                     style={{ background: `${gold}10`, border: `1px solid ${gold}18` }}>
                     <Icon size={22} style={{ color: gold }} />
                   </div>
                   <h3 className="text-sm font-bold mb-1.5" style={{ color: textPrimary }}>{f.title}</h3>
-                  <p className="text-xs leading-relaxed" style={{ color: textMuted }}>{f.desc}</p>
+                  <p className="text-[13px] leading-relaxed" style={{ color: textSecondary }}>{f.desc}</p>
                 </div>
               );
             })}
@@ -477,7 +470,7 @@ export default function LandingPage() {
       {/* ═══════════════════════════════════════════════════════════ */}
       {/*  PARLAY BUILDER SHOWCASE — MAJOR HOME PAGE FEATURE SECTION  */}
       {/* ═══════════════════════════════════════════════════════════ */}
-      <div id="parlay" style={{ background: navy, borderBottom: `1px solid ${border}` }}>
+      <div id="parlay" style={{ background: "transparent", borderBottom: `1px solid ${border}` }}>
         <Section className="py-20 md:py-24 lg:py-28">
 
           {/* ── Section Header ── */}
@@ -508,7 +501,7 @@ export default function LandingPage() {
                   style={{ background: gold, color: navy }}>
                   <Swords size={16} /> BUILD MY PARLAY <ChevronRight size={16} />
                 </Link>
-                <p className="mt-2 text-[11px]" style={{ color: textMuted }}>
+                <p className="mt-2 text-[13px]" style={{ color: textSecondary }}>
                   Powered by live odds across 55+ supported platforms. Sign up free to build your first parlay.
                 </p>
               </div>
@@ -549,10 +542,10 @@ export default function LandingPage() {
           {/* ── Bookmakers strip ── */}
           <div className="mt-16 pt-10 border-t" style={{ borderColor: border }}>
             <div className="text-center mb-6">
-              <h3 className="text-sm font-bold tracking-widest uppercase" style={{ color: textMuted }}>
+              <h3 className="text-sm font-bold tracking-widest uppercase" style={{ color: textSecondary }}>
                 55+ Supported Sportsbooks & Platforms
               </h3>
-              <p className="mt-1 text-xs" style={{ color: textMuted }}>
+              <p className="mt-1 text-[13px]" style={{ color: textSecondary }}>
                 Live odds comparison across every major operator. Availability varies by sport and event.
               </p>
             </div>
@@ -571,7 +564,7 @@ export default function LandingPage() {
           {/* ── Sports coverage grid ── */}
           <div className="mt-12 pt-10 border-t" style={{ borderColor: border }}>
             <div className="text-center mb-6">
-              <h3 className="text-sm font-bold tracking-widest uppercase" style={{ color: textMuted }}>
+              <h3 className="text-sm font-bold tracking-widest uppercase" style={{ color: textSecondary }}>
                 Supported Sports & Leagues
               </h3>
             </div>
@@ -586,7 +579,7 @@ export default function LandingPage() {
             </div>
             <div className="mt-8 text-center">
               <h4 className="text-sm font-bold tracking-widest uppercase mb-3" style={{ color: gold }}>Soccer</h4>
-              <p className="text-xs mb-4 max-w-xl mx-auto" style={{ color: textMuted }}>
+              <p className="text-[13px] mb-4 max-w-xl mx-auto" style={{ color: textSecondary }}>
                 Soccer is a first-class part of SB ME market intelligence — separate from DFS slate sports.
               </p>
               <div className="flex flex-wrap justify-center gap-2">
@@ -674,7 +667,7 @@ export default function LandingPage() {
       </Section>
 
       {/* ═══ PRICING ═══ */}
-      <div id="pricing" style={{ background: cardBg, borderTop: `1px solid ${border}` }}>
+      <div id="pricing" style={{ background: "transparent", borderTop: `1px solid ${border}` }}>
         <Section className="py-20 md:py-24">
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight" style={{ color: textPrimary }}>
@@ -694,7 +687,7 @@ export default function LandingPage() {
               <div key={i} className={`relative rounded-3xl border p-6 lg:p-8 flex flex-col transition-all duration-300 hover:shadow-xl
                 ${plan.featured ? "scale-[1.03] z-10" : ""}`}
                 style={{
-                  background: plan.featured ? cardElevated : "transparent",
+                  background: plan.featured ? "rgba(16,22,47,0.94)" : "rgba(16,22,47,0.86)",
                   borderColor: plan.featured ? gold : border,
                   borderWidth: plan.featured ? "2px" : "1px",
                 }}>
@@ -709,7 +702,7 @@ export default function LandingPage() {
                   <span className={`text-4xl font-extrabold`} style={{ color: plan.goldPrice ? gold : textPrimary }}>{plan.price}</span>
                   {plan.period && <span className="text-sm" style={{ color: textMuted }}>{plan.period}</span>}
                 </div>
-                <p className="text-xs mb-6" style={{ color: textMuted }}>{plan.price === "Free" ? "No credit card required" : "Cancel anytime"}</p>
+                <p className="text-sm mb-6" style={{ color: textSecondary }}>{plan.price === "Free" ? "No credit card required" : "Cancel anytime"}</p>
                 <ul className="space-y-3 flex-1 mb-8">
                   {plan.features.map((f, j) => (
                     <li key={j} className="flex items-start gap-2.5 text-sm" style={{ color: textSecondary }}>
@@ -737,7 +730,7 @@ export default function LandingPage() {
       <Section id="resources" className="py-20 md:py-24">
         <div className="rounded-3xl border p-10 md:p-14 text-center relative overflow-hidden"
           style={{ background: cardElevated, borderColor: border }}>
-          <div className="absolute top-0 right-0 w-48 h-48 opacity-10 pointer-events-none"
+          <div className="absolute -top-10 -right-10 w-56 h-56 opacity-[0.07] pointer-events-none"
             style={{ background: `radial-gradient(circle, ${gold} 0%, transparent 70%)` }} />
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight mb-4" style={{ color: textPrimary }}>
             Analyze Every Slate with <span style={{ color: gold }}>SB ME Intelligence</span>
@@ -757,7 +750,7 @@ export default function LandingPage() {
       </Section>
 
       {/* ═══ FOOTER ═══ */}
-      <footer id="about" style={{ borderTop: `1px solid ${border}`, background: cardBg }}>
+      <footer id="about" style={{ borderTop: `1px solid ${border}`, background: "rgba(10,15,36,0.78)" }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="grid md:grid-cols-5 gap-8 mb-10">
             {/* Brand */}
@@ -765,7 +758,7 @@ export default function LandingPage() {
               <Link href="/" className="inline-block mb-3">
                 <Image src="/logo.png" alt="SB ME DFS.AI" width={100} height={53} />
               </Link>
-              <p className="text-xs leading-relaxed" style={{ color: textMuted }}>
+              <p className="text-[13px] leading-relaxed" style={{ color: textSecondary }}>
                 AI-powered DFS intelligence platform. Advanced projections, real-time odds, lineup optimization, and AI insights.
               </p>
             </div>
@@ -788,7 +781,7 @@ export default function LandingPage() {
                 <ul className="space-y-2">
                   {(links as [string, string][]).map(([label, href]) => (
                     <li key={label}>
-                      <Link href={href} className="text-sm transition-colors duration-150 hover:text-[#c9a84c]" style={{ color: textMuted }}>{label}</Link>
+                      <Link href={href} className="text-sm transition-colors duration-150 hover:text-[#c9a84c]" style={{ color: textSecondary }}>{label}</Link>
                     </li>
                   ))}
                 </ul>
