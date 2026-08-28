@@ -9,11 +9,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-_JSON = Path(__file__).resolve().parents[2] / "web" / "src" / "lib" / "sbme-55-platforms.json"
+# Backend-owned catalog. Do not read /web at runtime — Railway rootDirectory is backend.
+_JSON = Path(__file__).resolve().parent.parent / "data" / "sbme_55_platforms.json"
 
 
 def load_platform_catalog() -> list[dict]:
-    return json.loads(_JSON.read_text())
+    return json.loads(_JSON.read_text(encoding="utf-8"))
 
 
 def catalog_count() -> int:
