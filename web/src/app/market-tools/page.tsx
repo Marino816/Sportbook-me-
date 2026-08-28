@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { TrendingUp, GitCompare, UserCheck, Calculator, Layers, Building2, Zap } from "lucide-react";
+import { TrendingUp, GitCompare, UserCheck, Calculator, Layers, Building2, Zap, ChevronRight } from "lucide-react";
 
 const TOOLS = [
   {
@@ -46,164 +46,88 @@ const TOOLS = [
     icon: Layers,
     href: "/market-tools/parlay",
   },
-];
+] as const;
+
+function ToolAccent({ id }: { id: (typeof TOOLS)[number]["id"] }) {
+  if (id === "live-odds") {
+    return <span className="sbme-mtool-hud sbme-mtool-hud--live" aria-hidden>LIVE</span>;
+  }
+  if (id === "compare") {
+    return (
+      <span className="sbme-mtool-hud sbme-mtool-hud--compare" aria-hidden>
+        <i /><i /><i />
+      </span>
+    );
+  }
+  if (id === "bookmakers") {
+    return <span className="sbme-mtool-hud sbme-mtool-hud--books" aria-hidden>55</span>;
+  }
+  if (id === "player-props") {
+    return (
+      <span className="sbme-mtool-hud sbme-mtool-hud--props" aria-hidden>
+        <i /><i />
+      </span>
+    );
+  }
+  if (id === "arbitrage") {
+    return <span className="sbme-mtool-hud sbme-mtool-hud--arb" aria-hidden>#</span>;
+  }
+  return (
+    <span className="sbme-mtool-hud sbme-mtool-hud--parlay" aria-hidden>
+      <i /><i /><i />
+    </span>
+  );
+}
 
 export default function MarketToolsHub() {
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "40px 24px" }}>
-      {/* Hero */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-          marginBottom: 36,
-          background: "#0a0f24",
-          borderRadius: 16,
-          border: "1px solid #1e293b",
-          padding: "24px 28px",
-        }}
-      >
-        <div
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: 14,
-            background: "rgba(201,168,76,0.1)",
-            border: "1px solid rgba(201,168,76,0.2)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <TrendingUp size={28} color="#c9a84c" />
-        </div>
+    <div className="sbme-mthub">
+      <header className="sbme-mthub-head">
+        <span className="sbme-mthub-mark">
+          <TrendingUp size={22} />
+        </span>
         <div>
-          <h1
-            style={{
-              fontSize: 28,
-              fontWeight: 900,
-              color: "#c9a84c",
-              margin: 0,
-              lineHeight: 1.2,
-            }}
-          >
-            Market Tools
-          </h1>
-          <p style={{ fontSize: 14, color: "#94a3b8", margin: "4px 0 0" }}>
+          <h1>Market Tools</h1>
+          <p>
             Live odds, bookmakers, parlays, and props — canonical SportsGameOdds data. SB ME does not accept or place wagers.
           </p>
         </div>
-      </div>
+      </header>
 
-      {/* Tool Grid */}
-      <h2
-        style={{
-          fontSize: 13,
-          fontWeight: 700,
-          color: "#64748b",
-          textTransform: "uppercase",
-          letterSpacing: 2,
-          marginBottom: 16,
-        }}
-      >
-        Available Tools
-      </h2>
+      <h2 className="sbme-mthub-kicker">Available Tools</h2>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-          gap: 16,
-          marginBottom: 40,
-        }}
-      >
+      <div className="sbme-mthub-grid">
         {TOOLS.map((tool) => {
           const Icon = tool.icon;
           return (
             <Link
               key={tool.id}
               href={tool.href}
-              style={{
-                background: "#0a0f24",
-                borderRadius: 16,
-                border: "1px solid #1e293b",
-                padding: "24px 20px",
-                textDecoration: "none",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                textAlign: "center",
-                transition: "all 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "#c9a84c";
-                (e.currentTarget as HTMLElement).style.background = "rgba(201,168,76,0.05)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "#1e293b";
-                (e.currentTarget as HTMLElement).style.background = "#0a0f24";
-              }}
+              className={`sbme-mtool sbme-mtool--${tool.id}`}
             >
-              <div
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 16,
-                  background: "rgba(201,168,76,0.1)",
-                  border: "1px solid rgba(201,168,76,0.2)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginBottom: 14,
-                }}
-              >
-                <Icon size={28} color="#c9a84c" />
-              </div>
-              <span
-                style={{
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: "#f0f6fc",
-                  marginBottom: 6,
-                }}
-              >
-                {tool.title}
+              <span className="sbme-mtool-edge" aria-hidden />
+              <span className="sbme-mtool-icon">
+                <Icon size={22} />
               </span>
-              <span style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.5 }}>
-                {tool.subtitle}
-              </span>
+              <ToolAccent id={tool.id} />
+              <span className="sbme-mtool-title">{tool.title}</span>
+              <span className="sbme-mtool-copy">{tool.subtitle}</span>
             </Link>
           );
         })}
       </div>
 
-      {/* Market Intel CTA */}
-      <Link
-        href="/ai"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          background: "#0a0f24",
-          borderRadius: 14,
-          border: "1px solid rgba(201,168,76,0.2)",
-          padding: "20px 24px",
-          textDecoration: "none",
-          transition: "all 0.15s",
-        }}
-      >
-        <Zap size={22} color="#c9a84c" />
-        <div style={{ flex: 1 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#c9a84c" }}>
-            SB ME Intelligence™
-          </span>
-          <p style={{ fontSize: 13, color: "#94a3b8", margin: "2px 0 0" }}>
-            AI-powered market signals with fantasy-to-market edge detection
-          </p>
+      <Link href="/ai" className="sbme-mthub-intel">
+        <span className="sbme-mthub-intel-glow" aria-hidden />
+        <span className="sbme-mthub-intel-line" aria-hidden />
+        <span className="sbme-mthub-intel-icon"><Zap size={18} /></span>
+        <div className="sbme-mthub-intel-copy">
+          <span className="sbme-mthub-intel-title">SB ME Intelligence™</span>
+          <p>AI-powered market signals with fantasy-to-market edge detection</p>
         </div>
-        <span style={{ color: "#c9a84c", fontSize: 18 }}>→</span>
+        <span className="sbme-mthub-intel-go">
+          <ChevronRight size={18} />
+        </span>
       </Link>
     </div>
   );

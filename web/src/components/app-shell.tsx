@@ -7,7 +7,7 @@ export function AppShell({
   atmosphere = "app",
 }: {
   children: React.ReactNode;
-  atmosphere?: "app" | "home";
+  atmosphere?: "app" | "home" | "tools";
 }) {
   return (
     <SBMEBackground variant={atmosphere} className="min-h-screen">

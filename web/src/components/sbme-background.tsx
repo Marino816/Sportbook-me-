@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-export type SBMEBackgroundVariant = "hero" | "app" | "home";
+export type SBMEBackgroundVariant = "hero" | "app" | "home" | "tools";
 
 function FloodBank({ id, bulbs = 6 }: { id: string; bulbs?: number }) {
   const cols = Array.from({ length: bulbs }, (_, i) => i);
@@ -71,7 +71,7 @@ export function SBMEBackground({
   className?: string;
 }) {
   const tone = variant === "hero" ? "hero" : "app";
-  const extra = variant === "home" ? " sbme-bg--home" : "";
+  const extra = variant === "home" ? " sbme-bg--home" : variant === "tools" ? " sbme-bg--tools" : "";
   return (
     <div className={`sbme-bg sbme-bg--${tone}${extra} ${className}`.trim()}>
       <div className="sbme-bg-layer" aria-hidden>
@@ -109,6 +109,8 @@ export function SBMEBackground({
             <div className="sbme-bg-embers sbme-bg-embers--app"><EmberField /></div>
             {variant === "home" && <div className="sbme-bg-grain sbme-bg-grain--home" />}
             {variant === "home" && <div className="sbme-bg-read sbme-bg-read--home" />}
+            {variant === "tools" && <div className="sbme-bg-grain sbme-bg-grain--home" />}
+            {variant === "tools" && <div className="sbme-bg-read sbme-bg-read--home" />}
             <div className="sbme-bg-vignette sbme-bg-vignette--app" />
           </>
         )}
