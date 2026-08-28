@@ -74,6 +74,22 @@ test("bookmakers directory is a catalog page, not a live-odds claim", () => {
   assert.match(bookmakers, /SBME_55_PLATFORMS\.filter/);
 });
 
+test("parlay is an analytical workspace without wager execution", () => {
+  const parlay = readFileSync(join(root, "src/app/market-tools/parlay/page.tsx"), "utf8");
+  assert.match(parlay, /Parlay Intelligence/);
+  assert.match(parlay, /does not accept or place wagers/);
+  assert.doesNotMatch(parlay, /Place Bet/);
+  assert.match(parlay, /sbme_ai_draft/);
+  assert.match(parlay, /router\.push\("\/ai"\)/);
+  assert.match(parlay, /FairOddsMark/);
+  assert.match(parlay, /ConsensusMark/);
+  assert.match(parlay, /removeLeg/);
+  assert.match(parlay, /setLegs\(\[\]\)/);
+  assert.doesNotMatch(parlay, /\?\?-110/);
+  assert.doesNotMatch(parlay, /\?\?-100/);
+  assert.match(parlay, /Select markets to analyze together/);
+});
+
 test("landing preserves prices and is not a sportsbook", () => {
   assert.match(landing, /\$39/);
   assert.match(landing, /\.99\/mo/);
