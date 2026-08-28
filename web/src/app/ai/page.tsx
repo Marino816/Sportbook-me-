@@ -6,6 +6,13 @@ import { useRouter } from "next/navigation";
 import { Send, Loader2 } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api-base-url";
 import { AppShell } from "@/components/app-shell";
+import { VoiceMicButton } from "@/components/voice-mic-button";
+import { useVoiceInput } from "@/hooks/use-voice-input";
+import {
+  VOICE_DENIED_HINT,
+  VOICE_LISTENING_HINT,
+  VOICE_UNSUPPORTED_HINT,
+} from "@/lib/voice-input";
 import {
   EMPTY_AI_CONTEXT,
   formatContextStrip,
@@ -50,6 +57,8 @@ export default function AIPage() {
     { role: "assistant", content: WELCOME },
   ]);
   const [input, setInput] = useState("");
+  const inputRef = useRef(input);
+  inputRef.current = input;
   const [sending, setSending] = useState(false);
   const [context, setContext] = useState<ConversationContext>({ ...EMPTY_AI_CONTEXT });
   const [convId, setConvId] = useState<string | null>(null);
@@ -97,9 +106,27 @@ export default function AIPage() {
     }
   }, []);
 
+  const voice = useVoiceInput({
+    getBaseline: () => inputRef.current,
+    onTranscript: (text) => setInput(text),
+  });
+
+  useEffect(() => {
+    if (!voice.listening) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        voice.cancel();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [voice.listening, voice.cancel]);
+
   const send = async (raw?: string) => {
     const text = (raw ?? input).trim();
     if (!text || sending) return;
+    if (voice.listening) voice.stop();
     setInput("");
     setSending(true);
     const prior = messagesRef.current;
@@ -241,21 +268,46 @@ export default function AIPage() {
       </div>
 
       <div style={{ padding: "12px 24px", borderTop: "1px solid #1e293b" }}>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="Ask about Optimal%, SB OWN%, slates, Parlay Builder..."
+            placeholder="Ask SB ME Intelligence..."
             style={{
               flex: 1, padding: "12px 16px", borderRadius: 12, border: "1px solid #1e293b",
               background: "#0a0f24", color: "#f0f6fc", fontSize: 14, outline: "none",
             }} />
+          <VoiceMicButton
+            listening={voice.listening}
+            status={voice.status}
+            supported={voice.supported !== false}
+            disabled={sending}
+            onToggle={voice.toggle}
+            onCancel={voice.cancel}
+          />
           <button onClick={() => send()} disabled={sending} style={{
             padding: "12px 16px", borderRadius: 12, background: "#c9a84c", color: "#0a0f24",
             border: "none", cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", gap: 6,
+            minHeight: 44,
           }}>
             {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
             Send
           </button>
+        </div>
+        <div className="sbme-voice-status" aria-live="polite">
+          {voice.listening ? (
+            <>
+              <strong>{VOICE_LISTENING_HINT}</strong>
+              <button type="button" className="sbme-voice-cancel" onClick={voice.cancel}>
+                Cancel
+              </button>
+            </>
+          ) : voice.status === "denied" ? (
+            <span>{VOICE_DENIED_HINT}</span>
+          ) : voice.supported === false || voice.status === "unsupported" ? (
+            <span>{VOICE_UNSUPPORTED_HINT}</span>
+          ) : voice.status === "error" ? (
+            <span>Voice input could not start. You can still type.</span>
+          ) : null}
         </div>
       </div>
     </div>

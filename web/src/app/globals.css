@@ -1713,3 +1713,78 @@ body {
   .sbme-mtool { min-height: 0; }
   .sbme-mthub-intel { align-items: flex-start; }
 }
+
+/* SB ME Intelligence voice mic */
+.sbme-voice-mic {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: #c9a84c;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 42%),
+    rgba(10, 15, 36, 0.88);
+  border: 1px solid rgba(201, 168, 76, 0.38);
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.sbme-voice-mic:hover:not(:disabled) {
+  border-color: rgba(201, 168, 76, 0.55);
+  transform: translateY(-1px);
+}
+.sbme-voice-mic:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.7);
+  outline-offset: 2px;
+}
+.sbme-voice-mic:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.sbme-voice-mic--listening {
+  color: #f7fafc;
+  border-color: rgba(201, 168, 76, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.28),
+    0 0 18px rgba(201, 168, 76, 0.28),
+    0 0 22px rgba(59, 130, 246, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  animation: sbme-voice-glow 1.6s ease-in-out infinite;
+}
+.sbme-voice-mic--denied {
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #94a3b8;
+}
+.sbme-voice-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  min-height: 18px;
+  font-size: 12px;
+  color: #b4c0ce;
+}
+.sbme-voice-status strong {
+  color: #c9a84c;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.sbme-voice-cancel {
+  border: 0;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+.sbme-voice-cancel:hover { text-decoration: underline; }
+@keyframes sbme-voice-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.22), 0 0 14px rgba(201, 168, 76, 0.2), 0 0 18px rgba(59, 130, 246, 0.12); }
+  50% { box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.4), 0 0 22px rgba(201, 168, 76, 0.35), 0 0 26px rgba(59, 130, 246, 0.22); }
+}
