@@ -23,6 +23,13 @@ const TOOLS = [
     route: "/(tabs)/market-tools/compare",
   },
   {
+    id: "bookmakers",
+    title: "Bookmakers",
+    subtitle: "Live books + 55-platform catalog",
+    icon: "business" as const,
+    route: "/(tabs)/market-tools/bookmakers",
+  },
+  {
     id: "player-props",
     title: "Player Props",
     subtitle: "Prop bets & DFS projections",

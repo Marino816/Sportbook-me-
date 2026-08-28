@@ -56,7 +56,14 @@ export default function TabLayout() {
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="ai-preferences" options={{ href: null }} />
       <Tabs.Screen name="intelligence" options={{ href: null, title: "Market Intel" }} />
-      <Tabs.Screen name="market-tools" options={{ href: null, title: "Market Tools" }} />
+      <Tabs.Screen
+        name="market-tools"
+        options={{
+          title: "Market Tools",
+          tabBarLabel: "Markets",
+          tabBarIcon: ({ color, size }) => <Ionicons name="trending-up" size={size} color={color} />,
+        }}
+      />
     </Tabs>
   );
 }

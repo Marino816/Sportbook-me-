@@ -4,9 +4,9 @@ import {
   ActivityIndicator, RefreshControl, TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getToken } from "../../../lib/api";
+import { getToken, getApiUrl } from "../../../lib/api";
 
-const API_URL = "https://sportbook-me-production.up.railway.app/api";
+const API_URL = getApiUrl();
 
 type TabKey = "moneyline" | "spread" | "total" | "props";
 

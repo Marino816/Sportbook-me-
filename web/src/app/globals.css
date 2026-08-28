@@ -193,6 +193,58 @@ body {
   50% { opacity: 0.35; }
 }
 
+@keyframes sbme-haze {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.55; }
+}
+
+.sbme-bg {
+  position: relative;
+  isolation: isolate;
+  background: #060b1a;
+}
+.sbme-bg-layer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+.sbme-bg-layer::before {
+  content: "";
+  position: absolute;
+  inset: -20% -10% auto;
+  height: 70%;
+  background:
+    radial-gradient(ellipse 40% 50% at 20% 0%, rgba(96, 165, 250, 0.16), transparent 70%),
+    radial-gradient(ellipse 35% 45% at 80% 5%, rgba(201, 168, 76, 0.12), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 50% -10%, rgba(148, 163, 184, 0.08), transparent 60%);
+  animation: sbme-haze 12s ease-in-out infinite;
+}
+.sbme-bg-layer::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 45%;
+  background:
+    linear-gradient(to top, rgba(6, 11, 26, 0.95), transparent),
+    repeating-linear-gradient(90deg, transparent 0 48px, rgba(148, 163, 184, 0.04) 48px 49px);
+  opacity: 0.7;
+}
+.sbme-bg-beams {
+  position: absolute;
+  inset: 0;
+  background:
+    conic-gradient(from 200deg at 18% -5%, rgba(255, 255, 255, 0.07), transparent 18deg),
+    conic-gradient(from 160deg at 82% -8%, rgba(201, 168, 76, 0.08), transparent 16deg),
+    conic-gradient(from 180deg at 50% -12%, rgba(96, 165, 250, 0.06), transparent 14deg);
+  mix-blend-mode: screen;
+}
+.sbme-bg--hero .sbme-bg-layer { opacity: 1; }
+.sbme-bg--app .sbme-bg-layer { opacity: 0.45; }
+.sbme-bg--app .sbme-bg-beams { opacity: 0.35; }
+.sbme-bg-content { position: relative; z-index: 1; }
+
 .parlay-accent { border-left: 3px solid var(--primary); }
 
 /* Footer X link — gold on hover */

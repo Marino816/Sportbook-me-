@@ -480,25 +480,14 @@ async def parlay_validate(
 async def get_usage(
     user: User = Depends(get_current_user),
 ):
-    """
-    Get SGO API usage statistics and rate limit status.
-
-    Returns:
-      - SGO provider stats (requests, errors, retries)
-      - Cache statistics (hits, misses)
-      - Request history
-    """
+    """Cache stats for authenticated users. Account usage is admin-only."""
     try:
-        from providers.sdk_provider import SdkSgoProvider
-        sgo_usage = await SdkSgoProvider().get_usage()
-
         cache = await _get_market_cache()
         async with cache:
-            cache_usage = await cache.get_usage()
+            pass
 
-        return wrap_data({
+        payload = {
             "provider": "SportsGameOdds",
-            "sgo_usage": sgo_usage if sgo_usage else {"status": "unavailable"},
             "cache_stats": {
                 "requests": cache.stats.requests if cache else 0,
                 "hits": cache.stats.cache_hits if cache else 0,
@@ -509,7 +498,11 @@ async def get_usage(
                     if cache and cache.stats.last_request_at else None
                 ),
             },
-        }, source="sportsgameodds_v2_account_usage")
+        }
+        if getattr(user, "role", "") == "admin":
+            from providers.sdk_provider import SdkSgoProvider
+            payload["sgo_usage"] = await SdkSgoProvider().get_usage()
+        return wrap_data(payload, source="sgo_nested_cache")
     except Exception as e:
         logger.warning(f"Usage stats unavailable: {e}")
         return wrap_data({

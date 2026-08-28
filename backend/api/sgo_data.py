@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from models.domain import User
-from api.auth import get_current_user
+from api.auth import get_current_user, require_admin
 from api.utils import wrap_data
 from providers.event_parser import (
     ParsedEventMarkets,
@@ -473,9 +473,39 @@ async def get_consensus(event_id: str, user: User = Depends(get_current_user)):
     return wrap_data(extract_nested_consensus(evt), source="sgo_nested_cache")
 
 
+@router.get("/platforms")
+async def get_platforms(
+    league: str = Query("MLB"),
+    user: User = Depends(get_current_user),
+):
+    """55-platform catalog vs currently observed nested SGO bookmaker IDs."""
+    from providers.nested_events import load_cached_events
+    from providers.sgo_platforms import classify_observed_books
+    from providers.sgo_rookie import normalize_league_id
+
+    events = load_cached_events(normalize_league_id(league))
+    observed: set[str] = set()
+    for e in events:
+        if not isinstance(e, dict):
+            continue
+        for name in e.get("bookmakers") or []:
+            if name:
+                observed.add(str(name))
+        for m in e.get("markets") or []:
+            if not isinstance(m, dict):
+                continue
+            for b in m.get("books") or []:
+                if isinstance(b, dict) and b.get("bookmaker"):
+                    observed.add(str(b["bookmaker"]))
+    payload = classify_observed_books(observed)
+    payload["league"] = normalize_league_id(league)
+    payload["observed_bookmakers"] = sorted(observed)
+    return wrap_data(payload, source="sgo_nested_cache")
+
+
 @router.get("/usage")
-async def get_usage(user: User = Depends(get_current_user)):
-    """Live GET /v2/account/usage — never returns email, keyID, or customerID."""
+async def get_usage(admin: User = Depends(require_admin)):
+    """Admin-only GET /v2/account/usage — never returns email, keyID, or customerID."""
     try:
         usage = await _canonical_event_provider().get_usage()
     except Exception as exc:

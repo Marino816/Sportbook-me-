@@ -6,8 +6,10 @@ import Image from "next/image";
 import {
   TrendingUp, Activity, Target, Layers, Bot, Sparkles,
   Users, BarChart3, Brain, Menu, X, ChevronRight, Check,
-  ArrowRight, Zap, Star, Swords, Building2, Trophy, Flame, Shield,
+  ArrowRight, Zap, Star, Swords, Building2, Trophy, Flame, Shield, Radio, GitCompare,
 } from "lucide-react";
+import { SBMEBackground } from "@/components/sbme-background";
+import { ROOKIE_LEAGUES, SOCCER_LEAGUE_IDS } from "@/lib/sgo-leagues";
 
 /* ── Brand palette ── */
 const navy = "#0a0f24";
@@ -207,17 +209,16 @@ export default function LandingPage() {
     "Circa", "Hard Rock Bet", "BetOnline", "Polymarket", "Bally Bet",
   ];
 
-  const coveredSports = [
-    { name: "MLB", icon: <Trophy size={18} style={{ color: gold }} />, count: "30 teams" },
-    { name: "NFL", icon: <Swords size={18} style={{ color: gold }} />, count: "32 teams" },
-    { name: "NBA", icon: <Target size={18} style={{ color: gold }} />, count: "30 teams" },
-    { name: "NHL", icon: <Flame size={18} style={{ color: gold }} />, count: "32 teams" },
-    { name: "NCAAF", icon: <Shield size={18} style={{ color: gold }} />, count: "130+ teams" },
-    { name: "NCAAB", icon: <Zap size={18} style={{ color: gold }} />, count: "350+ teams" },
-  ];
+  const coveredSports = ROOKIE_LEAGUES.map((lg) => ({
+    name: lg.label,
+    leagueID: lg.leagueID,
+    sport: lg.sportID,
+  }));
+  const soccerLeagues = ROOKIE_LEAGUES.filter((lg) => SOCCER_LEAGUE_IDS.includes(lg.leagueID as typeof SOCCER_LEAGUE_IDS[number]));
 
   return (
-    <div style={{ background: navy, color: textPrimary, fontFamily: "'Inter', sans-serif" }} className="min-h-screen">
+    <SBMEBackground variant="hero" className="min-h-screen">
+    <div style={{ color: textPrimary, fontFamily: "'Inter', sans-serif" }} className="min-h-screen">
 
       {/* ═══ HEADER ═══ */}
       <header className="sticky top-0 z-50 border-b" style={{ background: "rgba(10,15,36,0.92)", backdropFilter: "blur(16px)", borderColor: border }}>
@@ -299,20 +300,21 @@ export default function LandingPage() {
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold tracking-widest mb-6"
               style={{ borderColor: `${gold}40`, color: gold, background: `${gold}08` }}>
-              <Sparkles size={13} /> AI-POWERED DFS INTELLIGENCE
+              <Sparkles size={13} /> SPORTBOOK ME DFS AI · SB ME
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.1] mb-4" style={{ color: textPrimary }}>
-              Build Smarter.<br />
-              <span style={{ color: gold }}>Analyze Better.</span>
+              DFS Intelligence.<br />
+              Live Markets.<br />
+              <span style={{ color: gold }}>One AI Platform.</span>
             </h1>
 
             <p className="text-lg font-semibold mb-4" style={{ color: gold }}>
-              Powered by SB ME Intelligence.
+              Analytics, DFS optimization, and sports intelligence — not a sportsbook.
             </p>
 
             <p className="text-base max-w-lg mb-8" style={{ color: textSecondary }}>
-              Advanced projections, real-time odds, player props, and AI insights — all in one place.
+              Projections, lineup optimization, live scores, multi-book market data, Fair Odds, Book Consensus, alternate lines, player and team props, and SB ME AI — across 17 supported leagues including soccer.
             </p>
 
             <div className="flex flex-wrap gap-4">
@@ -367,7 +369,7 @@ export default function LandingPage() {
 
               {/* Sports tabs */}
               <div className="flex gap-1 px-4 py-2.5 border-b overflow-x-auto" style={{ borderColor: border }}>
-                {["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB", "GOLF"].map((s, i) => (
+                {["MLB", "NFL", "NBA", "NHL", "EPL", "UCL", "MLS"].map((s, i) => (
                   <span key={s} className="text-[10px] font-bold px-2 py-1 rounded-md shrink-0"
                     style={{ color: i === 0 ? gold : textSecondary, background: i === 0 ? `${gold}12` : "transparent", border: i === 0 ? `1px solid ${gold}25` : "1px solid transparent" }}>
                     {s}
@@ -445,13 +447,16 @@ export default function LandingPage() {
       {/* ═══ FEATURE STRIP ═══ */}
       <div id="features" style={{ borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, background: cardBg }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {[
-              { icon: TrendingUp, title: "AI Projections", desc: "Advanced player projections powered by machine learning and real-time data.", metric: "229", metricLabel: "players projected" },
-              { icon: Activity, title: "Real-Time Odds", desc: "Live lines, market movement, and consensus data across sportsbooks.", metric: "50+", metricLabel: "live events" },
-              { icon: Target, title: "Player Props", desc: "Deep prop analysis with edge detection and fair value comparison.", metric: "15K", metricLabel: "prop markets" },
-              { icon: Layers, title: "Lineup Optimizer", desc: "Build optimized DFS lineups with CP-SAT solver in seconds.", metric: "1-3s", metricLabel: "optimization time" },
-              { icon: Bot, title: "SB ME AI", desc: "Ask anything. Get smarter. AI-powered insights 24/7.", metric: "24/7", metricLabel: "intelligence" },
+              { icon: Layers, title: "DFS Optimization", desc: "Projections, salary pipeline, and CP-SAT lineup optimization for supported DFS slates." },
+              { icon: TrendingUp, title: "Market Intelligence", desc: "Multi-book lines, Fair Odds, and Book Consensus when SportsGameOdds returns them." },
+              { icon: Bot, title: "SB ME AI", desc: "Ask about today's games, markets, props, scores, or DFS slate — from live SB ME data only." },
+              { icon: Radio, title: "Live Scores & Markets", desc: "Upcoming, live, and final events with scores, status, and market freshness." },
+              { icon: Target, title: "Props & Alternate Markets", desc: "Player props, team props, main lines, and alternate lines — never invented when missing." },
+              { icon: GitCompare, title: "Bookmaker Comparison", desc: "Side-by-side prices for books that actually returned a market. Missing books stay empty." },
+              { icon: Swords, title: "Parlay Intelligence", desc: "Plan multi-leg combinations with current lines, Fair Odds, and consensus context. Analytical only — SB ME does not place wagers." },
+              { icon: Trophy, title: "Multi-League Coverage", desc: "17 Rookie leagues including Premier League, Champions League, MLS, La Liga, Bundesliga, Serie A, Ligue 1, and International Soccer." },
             ].map((f, i) => {
               const Icon = f.icon;
               return (
@@ -461,9 +466,7 @@ export default function LandingPage() {
                     <Icon size={22} style={{ color: gold }} />
                   </div>
                   <h3 className="text-sm font-bold mb-1.5" style={{ color: textPrimary }}>{f.title}</h3>
-                  <p className="text-xs leading-relaxed mb-2.5" style={{ color: textMuted }}>{f.desc}</p>
-                  <span className="text-lg font-extrabold" style={{ color: gold }}>{f.metric}</span>
-                  <div className="text-[10px] font-bold tracking-wider uppercase" style={{ color: textMuted }}>{f.metricLabel}</div>
+                  <p className="text-xs leading-relaxed" style={{ color: textMuted }}>{f.desc}</p>
                 </div>
               );
             })}
@@ -487,8 +490,8 @@ export default function LandingPage() {
               The <span style={{ color: gold }}>Parlay Builder</span>
             </h2>
             <p className="text-base max-w-2xl mx-auto" style={{ color: textSecondary }}>
-              Stack moneyline, spreads, totals, and player props across 55+ supported sportsbooks — with live odds
-              comparison, smart leg validation, and SB ME Intelligence&trade; powering every selection.
+              Stack moneyline, spreads, totals, player props, and team props across the SB ME 55-platform catalog — with live odds
+              comparison, smart leg validation, and SB ME Intelligence&trade; on every selection. Analytical planning only: SB ME does not accept or place wagers.
             </p>
           </div>
 
@@ -523,8 +526,8 @@ export default function LandingPage() {
               {/* Capability 2: 6 sports */}
               <ParlayCapability
                 icon={<Trophy size={22} style={{ color: gold }} />}
-                title="6-Sport Coverage"
-                description="Build parlays across MLB, NFL, NBA, NHL, NCAAF, and NCAAB. Live odds, player props, team totals, game totals, spreads, and moneylines are available for in-season sports and active events."
+                title="17-League Coverage"
+                description="Build parlays across all 17 supported Rookie leagues, including MLB, NBA, NFL, NHL, college, WNBA, UFC, and eight soccer competitions (Premier League, Champions League, MLS, La Liga, Bundesliga, Serie A, Ligue 1, International Soccer). Live markets appear only when SportsGameOdds returns them."
               />
 
               {/* Capability 3: Bet types */}
@@ -572,15 +575,27 @@ export default function LandingPage() {
                 Supported Sports & Leagues
               </h3>
             </div>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-3 max-w-3xl mx-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-w-5xl mx-auto">
               {coveredSports.map((sport) => (
-                <div key={sport.name} className="text-center p-4 rounded-2xl border transition-all hover:border-[#c9a84c30]"
+                <div key={sport.leagueID} className="text-center p-4 rounded-2xl border transition-all hover:border-[#c9a84c30]"
                   style={{ background: cardElevated, borderColor: border }}>
-                  <div className="flex justify-center mb-2">{sport.icon}</div>
                   <div className="text-sm font-extrabold" style={{ color: textPrimary }}>{sport.name}</div>
-                  <div className="text-[10px] font-bold" style={{ color: textMuted }}>{sport.count}</div>
+                  <div className="text-[10px] font-bold" style={{ color: textMuted }}>{sport.sport}</div>
                 </div>
               ))}
+            </div>
+            <div className="mt-8 text-center">
+              <h4 className="text-sm font-bold tracking-widest uppercase mb-3" style={{ color: gold }}>Soccer</h4>
+              <p className="text-xs mb-4 max-w-xl mx-auto" style={{ color: textMuted }}>
+                Soccer is a first-class part of SB ME market intelligence — separate from DFS slate sports.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {soccerLeagues.map((lg) => (
+                  <span key={lg.leagueID} className="px-3 py-1.5 rounded-lg text-[11px] font-bold" style={{ background: cardElevated, border: `1px solid ${border}`, color: textSecondary }}>
+                    {lg.label}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         </Section>
@@ -672,9 +687,9 @@ export default function LandingPage() {
 
           <div className="grid md:grid-cols-3 gap-6 lg:gap-8 max-w-4xl mx-auto">
             {([
-              { name: "Starter", price: "Free", features: ["1 daily lineup", "MLB projections", "Real-time odds", "Player props", "AI chat (10 msgs/day)"], cta: "Get Started", href: "/register", featured: false, goldPrice: false, period: null as string | null },
-              { name: "Pro Arena", price: "$39", period: ".99/mo", features: ["10 daily lineups", "All-sport projections", "Live odds & movement", "Player props + edge detection", "AI chat (unlimited)", "Lineup optimizer", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
-              { name: "Elite Stack", price: "$89", period: ".99/mo", features: ["Unlimited lineups", "All-sport projections", "Custom projections", "Full AI intelligence", "Priority support", "Early features", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
+              { name: "Starter", price: "Free", features: ["1 daily lineup", "MLB projections", "Live scores & market data", "Player props", "AI chat (10 msgs/day)"], cta: "Get Started", href: "/register", featured: false, goldPrice: false, period: null as string | null },
+              { name: "Pro Arena", price: "$39", period: ".99/mo", features: ["10 daily lineups", "All-sport DFS projections", "Live odds, Fair Odds & Book Consensus", "Player & team props, alternate lines", "AI chat (unlimited)", "Lineup optimizer", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
+              { name: "Elite Stack", price: "$89", period: ".99/mo", features: ["Unlimited lineups", "All-sport DFS projections", "Custom projections", "Full AI intelligence", "Priority support", "Early features", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
             ] as const).map((plan, i) => (
               <div key={i} className={`relative rounded-3xl border p-6 lg:p-8 flex flex-col transition-all duration-300 hover:shadow-xl
                 ${plan.featured ? "scale-[1.03] z-10" : ""}`}
@@ -836,6 +851,7 @@ export default function LandingPage() {
           <div className="pt-8 border-t flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: border }}>
             <p className="text-xs" style={{ color: textMuted }}>
               &copy; {new Date().getFullYear()} SPORTBOOK ME DFS AI LLC. All rights reserved. SB ME Intelligent AI&trade;.
+              SB ME is sports analytics and DFS intelligence software. We do not accept wagers, hold betting funds, or place bets.
             </p>
             <div className="flex items-center gap-1">
               <Brain size={14} style={{ color: gold }} />
@@ -845,5 +861,6 @@ export default function LandingPage() {
         </div>
       </footer>
     </div>
+    </SBMEBackground>
   );
 }

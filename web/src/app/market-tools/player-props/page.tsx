@@ -6,7 +6,9 @@ import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket } from "@/lib/sbevent";
 import { formatBookmakerName } from "@/lib/bookmakers";
 import { LastFive } from "@/lib/last-five";
-import { MARKET_TOOL_LEAGUES, leagueLabel } from "@/lib/sgo-leagues";
+import { MARKET_TOOL_LEAGUES } from "@/lib/sgo-leagues";
+import { filterMarkets, presentPeriodGroups, type LineMode, type PeriodGroup } from "@/lib/market-view";
+import { LeagueChips, LineModeChips, PeriodChips, LastUpdated, FairOddsMark, ConsensusMark } from "@/components/market-controls";
 
 const LEAGUES = MARKET_TOOL_LEAGUES;
 type League = (typeof LEAGUES)[number];
@@ -59,7 +61,7 @@ interface PlayerPoolEntry {
  * player id. Team/opponent are resolved from the event's player→team map
  * (SGO stat_entity_id is the PLAYER id, not the team id).
  */
-function buildPlayerPool(events: SBEvent[]): PlayerPoolEntry[] {
+function buildPlayerPool(events: SBEvent[], kind: "player_prop" | "team_prop"): PlayerPoolEntry[] {
   const pool = new Map<string, PlayerPoolEntry>();
 
   for (const event of events) {
@@ -70,8 +72,10 @@ function buildPlayerPool(events: SBEvent[]): PlayerPoolEntry[] {
     }
 
     for (const market of event.markets ?? []) {
-      if (market.bet_type !== "player_prop") continue;
-      const pid = market.player_id || market.player_name;
+      if (market.bet_type !== kind) continue;
+      const pid = kind === "team_prop"
+        ? (market.stat_entity_id || market.player_name || market.market_name)
+        : (market.player_id || market.player_name);
       if (!pid) continue;
 
       const key = market.player_id || `name:${market.player_name}`;
@@ -82,7 +86,7 @@ function buildPlayerPool(events: SBEvent[]): PlayerPoolEntry[] {
         const opponentAbbr = isHome ? event.away_team.abbreviation : event.home_team.abbreviation;
         pool.set(key, {
           playerId: market.player_id || market.player_name || "unknown",
-          playerName: market.player_name || "Unknown",
+          playerName: market.player_name || (kind === "team_prop" ? (market.market_name || "Team") : "Unknown"),
           teamAbbr,
           opponentAbbr,
           game: `${event.away_team.abbreviation || "AWY"} @ ${event.home_team.abbreviation || "HOM"}`,
@@ -111,6 +115,7 @@ interface MarketBookRow {
   isBestUnder: boolean;
   fairOdds: number | null;
   consensus: number | null;
+  consensusLine: number | null;
 }
 
 /** Flatten a player's prop markets into (prop, bookmaker) rows with fair data. */
@@ -163,14 +168,15 @@ function buildMarketRows(entry: PlayerPoolEntry): MarketBookRow[] {
     for (const [bookmaker, bl] of sorted) {
       rows.push({
         propType: label,
-        line: bl.line ?? fairOverUnder,
+        line: bl.line,
         overPrice: bl.over,
         underPrice: bl.under,
         bookmaker,
         isBestOver: bl.over != null && bl.over === bestOver,
         isBestUnder: bl.under != null && bl.under === bestUnder,
         fairOdds,
-        consensus: fairOverUnder,
+        consensus: first?.book_odds ?? null,
+        consensusLine: first?.book_over_under ?? null,
       });
     }
   }
@@ -197,11 +203,17 @@ export default function PlayerPropsPage() {
   const [teamFilter, setTeamFilter] = useState<string>("");
   const [propTypeFilter, setPropTypeFilter] = useState<string>("");
   const [bookmakerFilter, setBookmakerFilter] = useState<string>("");
+  const [propKind, setPropKind] = useState<"player_prop" | "team_prop">("player_prop");
+  const [lineMode, setLineMode] = useState<LineMode>("main");
+  const [period, setPeriod] = useState<PeriodGroup | "all">("full");
 
-  const { events, loading, error } = useEvents(activeLeague);
+  const { events, loading, error, lastFetch } = useEvents(activeLeague);
 
-  // Full deduplicated player pool (ALL GAMES by default)
-  const pool = useMemo(() => buildPlayerPool(events), [events]);
+  const pool = useMemo(() => buildPlayerPool(events, propKind).map((entry) => ({
+    ...entry,
+    markets: filterMarkets(entry.markets, { lineMode, period }),
+    marketCount: filterMarkets(entry.markets, { lineMode, period }).length,
+  })).filter((e) => e.marketCount > 0), [events, propKind, lineMode, period]);
 
   // Game filter: null = ALL GAMES
   const filteredEvents = useMemo(() => {
@@ -272,21 +284,28 @@ export default function PlayerPropsPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 28, background: "#0a0f24", borderRadius: 14, border: "1px solid #1e293b", padding: "20px 24px" }}>
         <UserCheck size={26} color="#c9a84c" />
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, color: "#c9a84c", margin: 0 }}>Player Props</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 900, color: "#c9a84c", margin: 0 }}>{propKind === "team_prop" ? "Team Props" : "Player Props"}</h1>
           <p style={{ fontSize: 13, color: "#94a3b8", margin: "2px 0 0" }}>
-            Prop bets across sportsbooks — SportsGameOdds
+            {propKind === "team_prop" ? "Team prop markets from SportsGameOdds. Empty when SGO returned none." : "Player prop markets from SportsGameOdds."}
           </p>
         </div>
+        <LastUpdated fetchedAt={lastFetch ?? undefined} />
       </div>
 
-      {/* League tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {LEAGUES.map((lg) => (
-          <button key={lg} onClick={() => { setActiveLeague(lg); resetFilters(); }}
-            style={{ padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24", border: activeLeague === lg ? "1px solid #c9a84c" : "1px solid #1e293b", color: activeLeague === lg ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>
-            {leagueLabel(lg)}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+        <LeagueChips value={activeLeague} onChange={(id) => { setActiveLeague(id as League); resetFilters(); }} />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => { setPropKind("player_prop"); setSelectedPlayerId(null); }}
+            style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", background: propKind === "player_prop" ? "rgba(201,168,76,0.12)" : "#0a0f24", border: propKind === "player_prop" ? "1px solid #c9a84c" : "1px solid #1e293b", color: propKind === "player_prop" ? "#c9a84c" : "#94a3b8" }}>
+            Player Props
           </button>
-        ))}
+          <button type="button" onClick={() => { setPropKind("team_prop"); setSelectedPlayerId(null); }}
+            style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: "pointer", background: propKind === "team_prop" ? "rgba(201,168,76,0.12)" : "#0a0f24", border: propKind === "team_prop" ? "1px solid #c9a84c" : "1px solid #1e293b", color: propKind === "team_prop" ? "#c9a84c" : "#94a3b8" }}>
+            Team Props
+          </button>
+        </div>
+        <LineModeChips value={lineMode} onChange={setLineMode} />
+        <PeriodChips value={period} options={presentPeriodGroups(events.flatMap((e) => e.markets || []))} onChange={setPeriod} />
       </div>
 
       {loading && <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>Loading events...</div>}
@@ -402,8 +421,8 @@ export default function PlayerPropsPage() {
                           <td style={{ ...tdStyle, textAlign: "center", color: "#c9a84c", fontWeight: 700, fontSize: 11 }}>
                             {r.overPrice != null || r.underPrice != null ? `O ${fmtOdds(r.overPrice)} · U ${fmtOdds(r.underPrice)}` : "—"}
                           </td>
-                          <td style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>{fmtOdds(r.fairOdds)}</td>
-                          <td style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>{r.consensus ?? "—"}</td>
+                          <td style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>{r.fairOdds == null ? "Fair unavailable" : fmtOdds(r.fairOdds)}</td>
+                          <td style={{ ...tdStyle, textAlign: "center", color: "#94a3b8" }}>{r.consensus == null ? "Consensus unavailable" : fmtOdds(r.consensus)}</td>
                         </tr>
                       ))}
                     </tbody>

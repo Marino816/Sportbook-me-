@@ -26,6 +26,7 @@ import {
   fetchPlanDistribution,
   fetchSystemStatus,
   triggerManualSync,
+  fetchAdminSgoUsage,
   type SystemStatus,
   type ApiResponse
 } from '@/lib/api';
@@ -39,24 +40,27 @@ export default function AdminDashboard() {
   const [health, setHealth] = React.useState<SystemStatus[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [sgoUsage, setSgoUsage] = React.useState<any>(null);
   const [syncing, setSyncing] = React.useState(false);
 
   const loadData = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, t, e, d, h] = await Promise.all([
+      const [s, t, e, d, h, u] = await Promise.all([
         fetchAdminSummary(),
         fetchRevenueTrends(),
         fetchAdminEvents(),
         fetchPlanDistribution(),
-        fetchSystemStatus()
+        fetchSystemStatus(),
+        fetchAdminSgoUsage().catch(() => ({ data: null })),
       ]);
       setSummary(s.data);
       setTrends(t.data);
       setEvents(e.data);
       setDist(d.data);
       setHealth(h.data);
+      setSgoUsage(u?.data ?? null);
     } catch (err: any) {
       setError(err.message || "Failed to initialize diagnostic protocol.");
     } finally {
@@ -315,6 +319,32 @@ export default function AdminDashboard() {
                    </div>
                  ))}
                </div>
+            </div>
+
+            <div className="bg-[#171920] border border-[#272A35] rounded-2xl p-8 relative overflow-hidden">
+               <h2 className="text-xl font-bold mb-6">SportsGameOdds Rookie</h2>
+               {(() => {
+                 const usage = sgoUsage?.usage || sgoUsage || {};
+                 const used = usage.used ?? usage.rate_limits?.["current-entities"];
+                 const limit = usage.monthly_limit ?? usage.rate_limits?.["objects-per-month"] ?? 100000;
+                 const remaining = usage.remaining;
+                 const pct = usage.percent_used;
+                 const secretKeys = JSON.stringify(usage);
+                 const leaked = /keyID|customerID|api[_-]?key|email/i.test(secretKeys) && /"(keyID|customerID|email|apiKey)"/i.test(secretKeys);
+                 return (
+                   <div className="space-y-4">
+                     <DiagRow label="Plan" val={usage.tier || "Rookie"} />
+                     <DiagRow label="Status" val={usage.is_active === false ? "Inactive" : usage.available === false ? "Unavailable" : "Active"} color="primary" />
+                     <DiagRow label="Monthly entities used" val={used != null ? String(used) : "Unavailable"} />
+                     <DiagRow label="Monthly entity limit" val={limit != null ? String(limit) : "100000"} />
+                     <DiagRow label="Remaining" val={remaining != null ? String(remaining) : "Unavailable"} />
+                     <DiagRow label="Percent used" val={pct != null ? `${pct}%` : "Unavailable"} />
+                     <DiagRow label="Cache TTL" val={sgoUsage?.cache_ttl_seconds ? `${sgoUsage.cache_ttl_seconds}s` : "Unavailable"} />
+                     {leaked ? <p className="text-xs text-red-400">Usage payload contained unexpected identity fields and was hidden.</p> : null}
+                     <p className="text-[10px] text-[#A1A1A1] uppercase tracking-wider">Admin only. API key, keyID, customerID, and email are never displayed.</p>
+                   </div>
+                 );
+               })()}
             </div>
 
             {/* Diagnostics Card */}

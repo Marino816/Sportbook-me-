@@ -6,6 +6,10 @@ import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { formatBookmakerName, buildBookmakerUniverse } from "@/lib/bookmakers";
 import { MARKET_TOOL_LEAGUES, leagueLabel } from "@/lib/sgo-leagues";
+import { filterMarkets, type LineMode } from "@/lib/market-view";
+import { LineModeChips, FairOddsMark, ConsensusMark } from "@/components/market-controls";
+import { gameState } from "@/lib/live-scores";
+import { useRouter } from "next/navigation";
 
 const LEAGUES = MARKET_TOOL_LEAGUES;
 type League = typeof LEAGUES[number];
@@ -15,6 +19,7 @@ const INITIAL_VISIBLE_BOOKS = 12;  // number of sportsbook tiles shown before "S
 interface Leg {
   id: string; eventName: string; market: string; selection: string;
   odds: number; bookmaker: string;
+  fairOdds?: number | null; consensus?: number | null; period?: string; isFinal?: boolean;
 }
 
 const EDT = "America/New_York";
@@ -78,7 +83,7 @@ function SelectorBtn({label,odds,selected,disabled,onClick}:{label:string,odds:s
 
 function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
   betType:string;markets:SBMarket[];event:SBEvent;bookmaker:string;
-  onAdd:(market:string,selection:string,odds:number)=>void;propFilter:string;legs:Leg[];
+  onAdd:(market:string,selection:string,odds:number,meta?:{fairOdds?:number|null;consensus?:number|null;period?:string})=>void;propFilter:string;legs:Leg[];
 }) {
   if(!markets.length) return <p style={{color:C.subtle,fontSize:11,textAlign:"center",padding:10}}>No {betType} markets.</p>;
 
@@ -94,8 +99,8 @@ function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
     const hmAdded=isLegAdded(legs,evName,"Moneyline",hmName);
     return (
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        <SelectorBtn label={awName} odds={fmtOdds(ab?.moneyline)} selected={awAdded} disabled={!ab} onClick={()=>{if(ab)onAdd("Moneyline",awName,ab.moneyline??-110);}}/>
-        <SelectorBtn label={hmName} odds={fmtOdds(hb?.moneyline)} selected={hmAdded} disabled={!hb} onClick={()=>{if(hb)onAdd("Moneyline",hmName,hb.moneyline??-110);}}/>
+        <SelectorBtn label={awName} odds={fmtOdds(ab?.moneyline)} selected={awAdded} disabled={!ab} onClick={()=>{if(ab)onAdd("Moneyline",awName,ab.moneyline??-110,{fairOdds:away?.fair_odds,consensus:away?.book_odds,period:away?.period_id});}}/>
+        <SelectorBtn label={hmName} odds={fmtOdds(hb?.moneyline)} selected={hmAdded} disabled={!hb} onClick={()=>{if(hb)onAdd("Moneyline",hmName,hb.moneyline??-110,{fairOdds:home?.fair_odds,consensus:home?.book_odds,period:home?.period_id});}}/>
       </div>
     );
   }
@@ -112,8 +117,8 @@ function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
     const hmSel=hmName+" "+fmtSpread(hb?.spread);
     return (
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        <SelectorBtn label={awSel} odds={fmtOdds(ab?.moneyline)} selected={isLegAdded(legs,evName,"Spread",awSel)} disabled={!ab} onClick={()=>{if(ab)onAdd("Spread",awSel,ab.moneyline??-110);}}/>
-        <SelectorBtn label={hmSel} odds={fmtOdds(hb?.moneyline)} selected={isLegAdded(legs,evName,"Spread",hmSel)} disabled={!hb} onClick={()=>{if(hb)onAdd("Spread",hmSel,hb.moneyline??-110);}}/>
+        <SelectorBtn label={awSel} odds={fmtOdds(ab?.moneyline)} selected={isLegAdded(legs,evName,"Spread",awSel)} disabled={!ab} onClick={()=>{if(ab)onAdd("Spread",awSel,ab.moneyline??-110,{fairOdds:away?.fair_odds,consensus:away?.book_odds,period:away?.period_id});}}/>
+        <SelectorBtn label={hmSel} odds={fmtOdds(hb?.moneyline)} selected={isLegAdded(legs,evName,"Spread",hmSel)} disabled={!hb} onClick={()=>{if(hb)onAdd("Spread",hmSel,hb.moneyline??-110,{fairOdds:home?.fair_odds,consensus:home?.book_odds,period:home?.period_id});}}/>
       </div>
     );
   }
@@ -131,8 +136,8 @@ function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
     const unSel="Under "+(line??"?");
     return (
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-        <SelectorBtn label={ovSel} odds={fmtOdds(ob?.moneyline)} selected={isLegAdded(legs,evName,"Total",ovSel)} disabled={!ob} onClick={()=>{if(ob)onAdd("Total",ovSel,ob.moneyline??-110);}}/>
-        <SelectorBtn label={unSel} odds={fmtOdds(ub?.moneyline)} selected={isLegAdded(legs,evName,"Total",unSel)} disabled={!ub} onClick={()=>{if(ub)onAdd("Total",unSel,ub.moneyline??-110);}}/>
+        <SelectorBtn label={ovSel} odds={fmtOdds(ob?.moneyline)} selected={isLegAdded(legs,evName,"Total",ovSel)} disabled={!ob} onClick={()=>{if(ob)onAdd("Total",ovSel,ob.moneyline??-110,{fairOdds:over?.fair_odds,consensus:over?.book_odds,period:over?.period_id});}}/>
+        <SelectorBtn label={unSel} odds={fmtOdds(ub?.moneyline)} selected={isLegAdded(legs,evName,"Total",unSel)} disabled={!ub} onClick={()=>{if(ub)onAdd("Total",unSel,ub.moneyline??-110,{fairOdds:under?.fair_odds,consensus:under?.book_odds,period:under?.period_id});}}/>
       </div>
     );
   }
@@ -152,7 +157,7 @@ function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
         const added=isLegAdded(legs,evName,m.market_name||betType,sel);
         return (
           <SelectorBtn key={i} label={sel||"?"} odds={fmtOdds(bk.moneyline)} selected={added}
-            onClick={()=>onAdd(m.market_name||betType,sel,bk.moneyline??-100)}/>
+            onClick={()=>onAdd(m.market_name||betType,sel,bk.moneyline??-100,{fairOdds:m.fair_odds,consensus:m.book_odds,period:m.period_id})}/>
         );
       })}
       {filtered.length===0&&<p style={{color:C.subtle,fontSize:11,textAlign:"center",padding:6}}>No matching props</p>}
@@ -162,6 +167,7 @@ function MarketLegs({betType,markets,event,bookmaker,onAdd,propFilter,legs}:{
 
 
 export default function ParlayBuilderPage() {
+  const router = useRouter();
   const [activeLeague,setActiveLeague]=useState<League>("MLB");
   const [legs,setLegs]=useState<Leg[]>([]);
   const [stake,setStake]=useState("10");
@@ -172,7 +178,8 @@ export default function ParlayBuilderPage() {
   const [propFilter,setPropFilter]=useState("");
   const [selectedDateIdx,setSelectedDateIdx]=useState(0);
   const [showAllBooks,setShowAllBooks]=useState(false);
-  const [pendingBook,setPendingBook]=useState<string|null>(null);  // target book when confirmation dialog is open
+  const [pendingBook,setPendingBook]=useState<string|null>(null);
+  const [lineMode,setLineMode]=useState<LineMode>("main");
 
   const { events:rawEvents, loading } = useEvents(activeLeague);
   const events = useMemo(()=>{
@@ -208,19 +215,18 @@ export default function ParlayBuilderPage() {
   const expandedMarkets = useMemo(()=>{
     if(!selectedGame)return {};
     const groups:Record<string,SBMarket[]>={};
-    for(const m of selectedGame.markets||[]){const k=m.bet_type;if(!groups[k])groups[k]=[];groups[k].push(m);}
+    for(const m of filterMarkets(selectedGame.markets||[], { lineMode, period: "all" })){const k=m.bet_type;if(!groups[k])groups[k]=[];groups[k].push(m);}
     return groups;
-  },[selectedGame]);
+  },[selectedGame, lineMode]);
 
-  const addLeg = useCallback((event:SBEvent,market:string,selection:string,odds:number)=>{
+  const addLeg = useCallback((event:SBEvent,market:string,selection:string,odds:number,meta?:{fairOdds?:number|null;consensus?:number|null;period?:string})=>{
     const evName = event.away_team?.abbreviation+" @ "+event.home_team?.abbreviation;
-    // Prevent identical duplicate legs
+    if(gameState(event)==="FINAL")return;
     const dup = legs.find(l=>l.eventName===evName&&l.market===market&&l.selection===selection);
     if(dup)return;
-    // Prevent conflicting sides (both sides of same market in same game)
     const conf = legs.find(l=>l.eventName===evName&&l.market===market&&l.selection!==selection);
     if(conf && (market==="Moneyline"||market.includes("Spread")||market.includes("Total")))return;
-    setLegs(prev=>[...prev,{id:Date.now()+"-"+Math.random().toString(36).slice(2,6),eventName:evName,market,selection,odds,bookmaker:selectedBook}]);
+    setLegs(prev=>[...prev,{id:Date.now()+"-"+Math.random().toString(36).slice(2,6),eventName:evName,market,selection,odds,bookmaker:selectedBook,fairOdds:meta?.fairOdds??null,consensus:meta?.consensus??null,period:meta?.period,isFinal:false}]);
   },[selectedBook,legs]);
 
   const removeLeg = useCallback((id:string)=>setLegs(prev=>prev.filter(l=>l.id!==id)),[]);
@@ -289,7 +295,7 @@ export default function ParlayBuilderPage() {
           <Layers size={22} color={C.gold}/>
           <h1 style={{fontSize:18,fontWeight:800,margin:0}}>Parlay Builder</h1>
         </div>
-        <span style={{fontSize:11,color:C.subtle}}>{availableBooks.length} sportsbooks available</span>
+        <span style={{fontSize:11,color:C.subtle}}>Analytical planning only · SB ME does not place wagers · {availableBooks.length} sportsbooks with current data</span>
       </div>
 
       {/* SPORTSBOOK TILE GRID */}
@@ -338,7 +344,9 @@ export default function ParlayBuilderPage() {
         </div>
       )}
 
-      {/* LEAGUE TABS */}
+      <div style={{marginBottom:8}}>
+        <LineModeChips value={lineMode} onChange={setLineMode} />
+      </div>
       <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>
         {LEAGUES.map(lg=>(
           <button key={lg} onClick={()=>goLeague(lg)}
@@ -350,7 +358,7 @@ export default function ParlayBuilderPage() {
       </div>
 
       {/* THREE-PANEL */}
-      <div style={{display:"grid",gridTemplateColumns:"260px 280px 1fr",gap:10,flex:1,minHeight:0}}>
+      <div style={{display:"grid",gridTemplateColumns:"minmax(220px,260px) minmax(220px,280px) minmax(280px,1fr)",gap:10,flex:1,minHeight:0,overflowX:"auto"}}>
 
         {/* LEFT: My Parlay */}
         <div style={{background:C.card,borderRadius:14,border:"1px solid rgba(201,168,76,0.15)",padding:14,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -363,7 +371,8 @@ export default function ParlayBuilderPage() {
           <div style={{flex:1,overflowY:"auto",minHeight:0}}>
             {legs.length===0?<p style={{color:C.subtle,fontSize:11,textAlign:"center",padding:20}}>Pick a sportsbook, then select games to add legs.</p>
             :legs.map(l=>(<div key={l.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(30,41,59,0.5)",fontSize:11}}>
-              <div style={{minWidth:0}}><div style={{fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.eventName}</div><div style={{color:C.subtle,fontSize:9}}>{l.market} — {l.selection} @ {fmtOdds(l.odds)}</div></div>
+              <div style={{minWidth:0}}><div style={{fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.eventName}</div><div style={{color:C.subtle,fontSize:9}}>{l.market} — {l.selection} @ {fmtOdds(l.odds)} · {formatBookmakerName(l.bookmaker)}</div>
+                <div style={{display:"flex",gap:8,marginTop:2}}><FairOddsMark value={l.fairOdds??null}/><ConsensusMark value={l.consensus??null}/></div></div>
               <button onClick={()=>removeLeg(l.id)} style={{background:"none",border:"none",cursor:"pointer",flexShrink:0}}><X size={14} color="#ef4444"/></button>
             </div>))}
           </div>
@@ -374,6 +383,19 @@ export default function ParlayBuilderPage() {
             placeholder="Stake" style={{width:"100%",padding:"6px 10px",borderRadius:8,background:"#1a1f33",border:"1px solid "+C.border,color:C.text,fontSize:12,fontWeight:600,outline:"none",boxSizing:"border-box"}}/>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginTop:6}}><span style={{color:C.subtle}}>Payout</span><span style={{fontWeight:800,color:C.gold}}>${result.payout.toFixed(2)}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}><span style={{color:C.subtle}}>Profit</span><span style={{fontWeight:800,color:C.gold}}>${result.profit.toFixed(2)}</span></div>
+            <button type="button" onClick={()=>{
+              const draft = [
+                "Analyze this analytical parlay using only cached SportsGameOdds data.",
+                "Do not invent bookmaker prices, lines, market availability, or sportsbook-specific parlay eligibility.",
+                "If a field is missing, say it is unavailable.",
+                "Bookmaker: "+(selectedBook||"unspecified"),
+                ...legs.map((l,i)=>`Leg ${i+1}: ${l.eventName} | ${l.market} | ${l.selection} | Book price ${fmtOdds(l.odds)} | Fair ${l.fairOdds??"unavailable"} | Consensus ${l.consensus??"unavailable"}`),
+              ].join("\n");
+              try { sessionStorage.setItem("sbme_ai_draft", draft); } catch { /* ignore */ }
+              router.push("/ai");
+            }} style={{marginTop:8,width:"100%",padding:"8px 10px",borderRadius:8,fontSize:11,fontWeight:800,background:"rgba(201,168,76,0.12)",border:"1px solid "+C.gold,color:C.gold,cursor:"pointer"}}>
+              Ask SB ME AI
+            </button>
           </div>)}
         </div>
 
@@ -408,12 +430,14 @@ export default function ParlayBuilderPage() {
                   :selectedDateGames.length===0?<p style={{color:C.subtle,fontSize:11,textAlign:"center",padding:20}}>No {activeLeague} games on this date.</p>
                   :selectedDateGames.map(ev=>{
                     const sel = selectedGameId===ev.id;
+                    const final = gameState(ev)==="FINAL";
+                    const live = gameState(ev)==="LIVE";
                     return (<button key={ev.id} onClick={()=>setSelectedGameId(ev.id)} style={{
                       display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"7px 10px",borderRadius:8,marginBottom:2,fontSize:12,fontWeight:600,
                       background:sel?"rgba(201,168,76,0.08)":"rgba(255,255,255,0.01)",border:sel?"1px solid rgba(201,168,76,0.3)":"1px solid transparent",color:sel?C.gold:C.text,cursor:"pointer",textAlign:"left"
                     }}>
                       <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>{ev.away_team?.abbreviation||"AWY"} @ {ev.home_team?.abbreviation||"HOM"}</span>
-                      <span style={{fontSize:9,color:C.subtle,flexShrink:0,marginLeft:4}}>{timeEDT(ev.start_time)}</span>
+                      <span style={{fontSize:9,color:live?"#ef4444":C.subtle,flexShrink:0,marginLeft:4}}>{final?"FINAL":live?"LIVE":timeEDT(ev.start_time)}</span>
                     </button>);
                   })}
                   </div>
@@ -429,6 +453,7 @@ export default function ParlayBuilderPage() {
             <>
               <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:2}}>{selectedGame.away_team?.abbreviation||"AWY"} @ {selectedGame.home_team?.abbreviation||"HOM"}</div>
               <div style={{fontSize:9,color:C.subtle,marginBottom:10}}>{formatBookmakerName(selectedBook)}</div>
+              {gameState(selectedGame)==="FINAL" && <div style={{fontSize:11,color:"#f59e0b",marginBottom:10}}>Finalized event — not a current bettable market. Selections cannot be added.</div>}
               <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>
                 {BET_TYPES.map(bt=>{
                   const count=(expandedMarkets[bt]||[]).length;
@@ -437,10 +462,10 @@ export default function ParlayBuilderPage() {
                     background:selectedBetType===bt?"rgba(201,168,76,0.1)":C.card,
                     border:selectedBetType===bt?"1px solid "+C.gold:"1px solid "+C.border,
                     color:selectedBetType===bt?C.gold:C.muted,cursor:"pointer"
-                  }}>{bt==="moneyline"?"ML":bt==="spread"?"Spread":bt==="total"?"Total":bt==="player_prop"?"Props":"Other"} {count>0?count:""}</button>);
+                  }}>{bt==="moneyline"?"ML":bt==="spread"?"Spread":bt==="total"?"Total":bt==="player_prop"?"Player Props":bt==="team_prop"?"Team Props":"Other"} {count>0?count:""}</button>);
                 })}
               </div>
-              {(selectedBetType==="player_prop"||selectedBetType==="other")&&(
+              {(selectedBetType==="player_prop"||selectedBetType==="team_prop"||selectedBetType==="other")&&(
                 <div style={{marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
                   <SearchIcon size={12} color={C.subtle}/>
                   <input type="text" value={propFilter} onChange={e=>setPropFilter(e.target.value)} placeholder="Filter by player or market..." style={{
@@ -450,7 +475,7 @@ export default function ParlayBuilderPage() {
                 </div>
               )}
               <MarketLegs betType={selectedBetType} markets={expandedMarkets[selectedBetType]||[]} event={selectedGame} bookmaker={selectedBook}
-                onAdd={(market,selection,odds)=>addLeg(selectedGame,market,selection,odds)} propFilter={propFilter} legs={legs}/>
+                onAdd={(market,selection,odds,meta)=>addLeg(selectedGame,market,selection,odds,meta)} propFilter={propFilter} legs={legs}/>
             </>
           )}
         </div>

@@ -1,29 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import {
-  TrendingUp, GitCompare, UserCheck, Calculator, Layers, Zap,
-} from "lucide-react";
+import { TrendingUp, GitCompare, UserCheck, Calculator, Layers, Building2, Zap } from "lucide-react";
 
 const TOOLS = [
   {
     id: "live-odds",
     title: "Live Odds",
-    subtitle: "Real-time odds & line movements from SportsGameOdds",
+    subtitle: "Scores, main/alt lines, Fair Odds & consensus from SportsGameOdds",
     icon: TrendingUp,
     href: "/market-tools/live-odds",
   },
   {
     id: "compare",
     title: "Compare Odds",
-    subtitle: "Best price across all bookmakers — side by side",
+    subtitle: "Side-by-side prices for books that returned a market",
     icon: GitCompare,
     href: "/market-tools/compare",
   },
   {
+    id: "bookmakers",
+    title: "Bookmakers",
+    subtitle: "Live SGO books plus the SB ME 55-platform catalog",
+    icon: Building2,
+    href: "/market-tools/bookmakers",
+  },
+  {
     id: "player-props",
-    title: "Player Props",
-    subtitle: "Prop bets connected to DFS projections & market consensus",
+    title: "Player & Team Props",
+    subtitle: "Player props and team props with main/alt lines",
     icon: UserCheck,
     href: "/market-tools/player-props",
   },
@@ -37,7 +42,7 @@ const TOOLS = [
   {
     id: "parlay",
     title: "Parlay Builder",
-    subtitle: "Build multi-leg parlays with live pricing & SGP detection",
+    subtitle: "Analytical multi-leg planning — SB ME does not place wagers",
     icon: Layers,
     href: "/market-tools/parlay",
   },
@@ -87,7 +92,7 @@ export default function MarketToolsHub() {
             Market Tools
           </h1>
           <p style={{ fontSize: 14, color: "#94a3b8", margin: "4px 0 0" }}>
-            Live odds, arbitrage, parlays & more — powered by SportsGameOdds
+            Live odds, bookmakers, parlays, and props — canonical SportsGameOdds data. SB ME does not accept or place wagers.
           </p>
         </div>
       </div>

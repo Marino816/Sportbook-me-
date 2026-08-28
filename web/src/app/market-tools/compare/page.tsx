@@ -5,7 +5,10 @@ import { GitCompare, Trophy, Search } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { formatBookmakerName } from "@/lib/bookmakers";
-import { MARKET_TOOL_LEAGUES, leagueLabel } from "@/lib/sgo-leagues";
+import { MARKET_TOOL_LEAGUES } from "@/lib/sgo-leagues";
+import { filterEventsByStatus, filterMarkets, presentPeriodGroups, type LineMode, type PeriodGroup } from "@/lib/market-view";
+import { LeagueChips, StatusChips, LineModeChips, PeriodChips, LastUpdated, FairOddsMark, ConsensusMark } from "@/components/market-controls";
+import { gameState, type GameState } from "@/lib/live-scores";
 
 const LEAGUES = MARKET_TOOL_LEAGUES;
 type League = (typeof LEAGUES)[number];
@@ -65,8 +68,8 @@ function buildCompareRows(event: SBEvent | undefined, tab: MarketTab): CompareRo
       awayMarket = marketMap.get("spread::away");
       break;
     case "total":
-      overMarket = marketMap.get("over_under::over");
-      underMarket = marketMap.get("over_under::under");
+      overMarket = marketMap.get("over_under::over") ?? marketMap.get("total::over");
+      underMarket = marketMap.get("over_under::under") ?? marketMap.get("total::under");
       break;
   }
 
@@ -112,13 +115,17 @@ export default function CompareOddsPage() {
   const [search, setSearch] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<MarketTab>("moneyline");
+  const [status, setStatus] = useState<GameState | "ALL">("ALL");
+  const [lineMode, setLineMode] = useState<LineMode>("main");
+  const [period, setPeriod] = useState<PeriodGroup | "all">("full");
 
-  const { events, loading, error } = useEvents(activeLeague);
+  const { events, loading, error, lastFetch } = useEvents(activeLeague);
 
-  const selectedEvent = useMemo(
-    () => events.find((e) => e.id === selectedEventId) ?? null,
-    [events, selectedEventId]
-  );
+  const selectedEvent = useMemo(() => {
+    const raw = events.find((e) => e.id === selectedEventId) ?? null;
+    if (!raw) return null;
+    return { ...raw, markets: filterMarkets(raw.markets, { lineMode, period }) };
+  }, [events, selectedEventId, lineMode, period]);
 
   const rows = useMemo(
     () => buildCompareRows(selectedEvent ?? undefined, activeTab),
@@ -154,16 +161,21 @@ export default function CompareOddsPage() {
   }, [rows, activeTab]);
 
   const filteredEvents = useMemo(() => {
-    if (!search) return events;
+    const byStatus = filterEventsByStatus(events, status);
+    if (!search) return byStatus;
     const q = search.toLowerCase();
-    return events.filter((e) => {
+    return byStatus.filter((e) => {
       const hn = e.home_team.name.toLowerCase();
       const an = e.away_team.name.toLowerCase();
       const ha = e.home_team.abbreviation.toLowerCase();
       const aa = e.away_team.abbreviation.toLowerCase();
       return hn.includes(q) || an.includes(q) || ha.includes(q) || aa.includes(q);
     });
-  }, [events, search]);
+  }, [events, search, status]);
+
+  const periodOptions = useMemo(() => presentPeriodGroups(selectedEvent?.markets ?? events.flatMap((e) => e.markets || [])), [selectedEvent, events]);
+  const compareFair = selectedEvent?.markets.find((m) => m.bet_type === (activeTab === "total" ? "total" : activeTab) || m.bet_type === "over_under")?.fair_odds ?? null;
+  const compareConsensus = selectedEvent?.markets.find((m) => m.bet_type === (activeTab === "total" ? "total" : activeTab) || m.bet_type === "over_under")?.book_odds ?? null;
 
   // Column labels based on market type
   const homeLabel =
@@ -196,42 +208,17 @@ export default function CompareOddsPage() {
             Compare Odds
           </h1>
           <p style={{ fontSize: 13, color: "#94a3b8", margin: "2px 0 0" }}>
-            Best price highlighted across all bookmakers — SportsGameOdds
+            Side-by-side prices for bookmakers that returned this market. Missing books are not filled in.
           </p>
         </div>
+        <LastUpdated fetchedAt={lastFetch ?? undefined} />
       </div>
 
-      {/* League tabs */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 16,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        {LEAGUES.map((lg) => (
-          <button
-            key={lg}
-            onClick={() => {
-              setActiveLeague(lg);
-              setSelectedEventId(null);
-            }}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 10,
-              fontSize: 12,
-              fontWeight: 700,
-              background: activeLeague === lg ? "rgba(201,168,76,0.1)" : "#0a0f24",
-              border: activeLeague === lg ? "1px solid #c9a84c" : "1px solid #1e293b",
-              color: activeLeague === lg ? "#c9a84c" : "#94a3b8",
-              cursor: "pointer",
-            }}
-          >
-            {leagueLabel(lg)}
-          </button>
-        ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+        <LeagueChips value={activeLeague} onChange={(id) => { setActiveLeague(id as League); setSelectedEventId(null); }} />
+        <StatusChips value={status} onChange={setStatus} />
+        <LineModeChips value={lineMode} onChange={setLineMode} />
+        {periodOptions.length > 0 && <PeriodChips value={period} options={periodOptions} onChange={setPeriod} />}
       </div>
 
       {loading && (
@@ -330,6 +317,17 @@ export default function CompareOddsPage() {
               {t.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {selectedEvent && (
+        <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+          {gameState(selectedEvent) === "FINAL" && (
+            <span style={{ fontSize: 12, color: "#f59e0b" }}>Finalized event — not a current bettable market.</span>
+          )}
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>Bookmaker Price vs Fair vs Consensus</span>
+          <FairOddsMark value={compareFair} />
+          <ConsensusMark value={compareConsensus} />
         </div>
       )}
 

@@ -7,6 +7,7 @@ import { fetchDataHubSlate, fetchDFSSlates, runSims, type CanonicalPlayer, type 
 import { useWorkspace } from "@/lib/workspace-context";
 import { PlayerAvatar, TeamLogo } from "@/lib/assets";
 import { LastFive } from "@/lib/last-five";
+import { AppShell } from "@/components/app-shell";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"];
 const PLATFORMS = ["draftkings", "fanduel"];
@@ -119,12 +120,13 @@ export default function DataHubPage() {
   const fmt = (v: number | null | undefined, digits = 1) => (v == null ? "N/A" : v.toFixed(digits));
 
   return (
-    <div style={{ background: navy, color: textPrimary, minHeight: "100vh" }}>
+    <AppShell>
+    <div style={{ color: textPrimary, minHeight: "100vh" }}>
       {/* Header */}
       <div style={{ padding: "16px 24px", borderBottom: `1px solid ${border}`, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
         <Database size={20} style={{ color: gold }} />
         <h1 style={{ fontSize: 20, fontWeight: 900, color: gold, margin: 0 }}>DATA HUB</h1>
-        <span style={{ color: textMuted, fontSize: 12 }}>· Canonical SB DFS Player Model</span>
+        <span style={{ color: textMuted, fontSize: 12 }}>· Canonical SB DFS Player Model · DFS sports only (not soccer / full SGO catalog)</span>
         <div style={{ flex: 1 }} />
         <Select label="Sport" value={ws.sport} options={SPORTS} onChange={ws.setSport} />
         <Select label="Platform" value={ws.platform} options={PLATFORMS} onChange={ws.setPlatform} format={(v) => (v === "draftkings" ? "DraftKings" : "FanDuel")} />
@@ -253,6 +255,7 @@ export default function DataHubPage() {
         </div>
       )}
     </div>
+    </AppShell>
   );
 }
 

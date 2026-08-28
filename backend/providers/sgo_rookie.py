@@ -179,12 +179,27 @@ def parse_account_usage(raw: Any) -> dict:
         rate = _as_dict(rate)
     if not isinstance(rate, dict):
         rate = {}
+    used = rate.get("current-entities") or rate.get("current_entities")
+    monthly_limit = rate.get("objects-per-month") or rate.get("objects_per_month")
+    remaining = None
+    pct = None
+    try:
+        if used is not None and monthly_limit:
+            remaining = max(0, int(monthly_limit) - int(used))
+            pct = round(100.0 * int(used) / int(monthly_limit), 2) if int(monthly_limit) else None
+    except (TypeError, ValueError):
+        remaining = None
+        pct = None
     return {
         "available": True,
         "success": payload.get("success", True),
         "tier": data.get("tier"),
         "is_active": data.get("isActive", data.get("is_active")),
         "rate_limits": rate,
+        "monthly_limit": monthly_limit,
+        "used": used,
+        "remaining": remaining,
+        "percent_used": pct,
         "source": "sportsgameodds_v2_account_usage",
     }
 

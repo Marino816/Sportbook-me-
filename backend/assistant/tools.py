@@ -348,7 +348,7 @@ async def get_sgo_current_events(
         "sport": _league(sport),
         "count": len(rows),
         "events": rows,
-        "note": None if rows else "No cached SportsGameOdds events. Market Tools refresh fills this cache.",
+        "note": None if rows else "No cached SportsGameOdds events for this league. Say the data is unavailable. Do not invent games, scores, or lines.",
     }
 
 
@@ -420,7 +420,11 @@ async def get_sgo_current_odds(
     return {
         "available": bool(games),
         "source": "sgo_nested_cache",
-        "note": "Bookmaker prices, fairOdds, bookOdds consensus, and team props from nested event.markets.",
+        "note": (
+            "Bookmaker prices, fairOdds, bookOdds consensus, and team props from nested event.markets."
+            if games
+            else "Current market data is not in the SportsGameOdds cache. Say it is unavailable. Do not substitute general knowledge for current odds, Fair Odds, consensus, or bookmaker availability."
+        ),
         "games": games,
     }
 
@@ -611,7 +615,7 @@ TOOLS = [
     _fn_schema(
         "get_sgo_current_events",
         "List current SportsGameOdds events from SB ME's nested event cache (start time, teams, status). Cache-only; does not call SportsGameOdds directly.",
-        {"sport": {"type": "string", "description": "League/sport, e.g. MLB."}},
+        {"sport": {"type": "string", "description": "League ID, e.g. MLB, EPL, UEFA_CHAMPIONS_LEAGUE, UCL."}},
         [],
     ),
     _fn_schema(

@@ -1,9 +1,10 @@
 "use client";
 
 import { useAuth } from "@/lib/auth";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Send, Loader2 } from "lucide-react";
 import { getApiBaseUrl } from "@/lib/api-base-url";
+import { AppShell } from "@/components/app-shell";
 
 const API_BASE = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
@@ -14,7 +15,7 @@ interface ChatMessage {
 }
 
 const WELCOME =
-  "Welcome to SB ME AI. I can explain SB ME features and metrics, guide you around the product, and pull current slate data (salaries, SB Projection, Value, SB OWN%, Leverage, Optimal%) from live SB ME data. How can I help?";
+  "Welcome to SB ME AI. I can help with DFS slate metrics and SportsGameOdds market intelligence from SB ME's live cache: live/upcoming/final games, scores, current lines, Fair Odds, Book Consensus, player and team props, alternate lines, period markets, and soccer (EPL, Champions League, and the other supported leagues). If something is not in the cache, I will say it is unavailable — I will not invent odds or bookmaker availability.";
 
 export default function AIPage() {
   const { user } = useAuth();
@@ -26,6 +27,18 @@ export default function AIPage() {
   const chatEnd = useRef<HTMLDivElement>(null);
 
   const scrollToEnd = () => chatEnd.current?.scrollIntoView({ behavior: "smooth" });
+
+  useEffect(() => {
+    try {
+      const draft = sessionStorage.getItem("sbme_ai_draft");
+      if (draft) {
+        sessionStorage.removeItem("sbme_ai_draft");
+        setInput(draft);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const send = async () => {
     const text = input.trim();
@@ -77,7 +90,8 @@ export default function AIPage() {
   }
 
   return (
-    <div style={{ background: "#0a0f24", height: "calc(100vh - 64px)", display: "flex", flexDirection: "column", color: "#f0f6fc" }}>
+    <AppShell>
+    <div style={{ height: "calc(100vh - 64px)", display: "flex", flexDirection: "column", color: "#f0f6fc" }}>
       <div style={{ padding: "20px 24px", borderBottom: "1px solid #1e293b" }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: "#c9a84c", fontStyle: "italic", margin: 0 }}>SB ME AI</h1>
         <p style={{ color: "#64748b", fontSize: 13, margin: "4px 0 0" }}>
@@ -126,5 +140,6 @@ export default function AIPage() {
         </div>
       </div>
     </div>
+    </AppShell>
   );
 }

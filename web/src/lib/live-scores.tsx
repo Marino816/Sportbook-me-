@@ -15,8 +15,8 @@ import { TeamLogo } from "./assets";
  */
 
 const API_BASE = getApiBaseUrl(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_API_URL : undefined);
-const LIVE_INTERVAL_MS = 30_000;   // active games
-const IDLE_INTERVAL_MS = 300_000;  // no live games
+const LIVE_INTERVAL_MS = 90_000;
+const IDLE_INTERVAL_MS = 180_000;
 
 const cache: Record<string, { events: SBEvent[]; lastFetch: number; hasLive: boolean }> = {};
 const inflight: Record<string, Promise<SBEvent[]> | undefined> = {};
@@ -45,6 +45,7 @@ export interface LiveScoresResult {
   loading: boolean;
   error: string | null;
   hasLive: boolean;
+  lastFetch: number | null;
   refresh: () => void;
 }
 
@@ -118,6 +119,7 @@ export function useLiveScores(league: string): LiveScoresResult {
     loading,
     error,
     hasLive: events.some((e) => e.status === "LIVE"),
+    lastFetch: cache[league]?.lastFetch ?? null,
     refresh,
   };
 }

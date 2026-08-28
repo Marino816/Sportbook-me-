@@ -133,6 +133,10 @@ export async function fetchAdminSummary(): Promise<ApiResponse<AdminSummary>> {
   return apiFetch<AdminSummary>(`/admin/summary`);
 }
 
+export async function fetchAdminSgoUsage(): Promise<ApiResponse<any>> {
+  return apiFetch<any>(`/admin/sgo-usage`);
+}
+
 export async function fetchRevenueTrends(): Promise<ApiResponse<number[]>> {
   return apiFetch<number[]>(`/admin/revenue-trends`);
 }

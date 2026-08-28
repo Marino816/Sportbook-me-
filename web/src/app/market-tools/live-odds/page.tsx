@@ -2,19 +2,15 @@
 
 import { useState, useMemo } from "react";
 import { TrendingUp, AlertTriangle, Search } from "lucide-react";
-import { useLiveScores, ScoreBadge, GameStatusBadge } from "@/lib/live-scores";
+import { useLiveScores, ScoreBadge, GameStatusBadge, gameState, type GameState } from "@/lib/live-scores";
 import { BookmakerLogo } from "@/lib/assets";
 import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { ROOKIE_LEAGUES } from "@/lib/sgo-leagues";
+import { filterEventsByStatus, filterMarkets, presentPeriodGroups, type LineMode, type PeriodGroup } from "@/lib/market-view";
+import { LeagueChips, StatusChips, LineModeChips, PeriodChips, LastUpdated, FairOddsMark, ConsensusMark } from "@/components/market-controls";
 
 const LEAGUES = ROOKIE_LEAGUES;
 type League = (typeof LEAGUES)[number]["leagueID"];
-
-const FULL_GAME = new Set(["", "game", "ft", "full", "regulation"]);
-
-function isFullGame(market: SBMarket): boolean {
-  return FULL_GAME.has((market.period_id || "").toLowerCase());
-}
 
 function fmtOdds(v: number | null | undefined): string {
   if (v == null) return "—";
@@ -24,11 +20,6 @@ function fmtOdds(v: number | null | undefined): string {
 function fmtSpread(v: number | null | undefined): string {
   if (v == null) return "—";
   return v > 0 ? `+${v}` : `${v}`;
-}
-
-function isLive(status: string): boolean {
-  const s = status?.toUpperCase() || "";
-  return s === "LIVE" || s === "IN_PLAY" || s === "INPLAY";
 }
 
 function formatTime(iso: string | null): string {
@@ -59,9 +50,8 @@ interface MergedBookRow {
 
 /** Build per-bookmaker rows by merging across all market types for a single event. */
 function buildBookmakerRows(markets: SBMarket[]): MergedBookRow[] {
-  const fullGame = markets.filter(isFullGame);
   const marketMap = new Map<string, SBMarket>();
-  for (const m of fullGame) {
+  for (const m of markets) {
     const key = `${m.bet_type}::${m.side}`;
     if (!marketMap.has(key) || m.is_main_line) marketMap.set(key, m);
   }
@@ -108,24 +98,34 @@ export default function LiveOddsPage() {
   const [activeLeague, setActiveLeague] = useState<League>("MLB");
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [status, setStatus] = useState<GameState | "ALL">("ALL");
+  const [lineMode, setLineMode] = useState<LineMode>("main");
+  const [period, setPeriod] = useState<PeriodGroup | "all">("full");
 
-  const { events, loading, error } = useLiveScores(activeLeague);
+  const { events, loading, error, lastFetch } = useLiveScores(activeLeague);
 
   const toggleExpand = (eventId: string) => {
     setExpanded((prev) => ({ ...prev, [eventId]: !prev[eventId] }));
   };
 
   const filtered = useMemo(() => {
-    if (!search) return events;
+    const byStatus = filterEventsByStatus(events, status);
+    if (!search) return byStatus;
     const q = search.toLowerCase();
-    return events.filter((e) => {
+    return byStatus.filter((e) => {
       const hn = e.home_team.name.toLowerCase();
       const an = e.away_team.name.toLowerCase();
       const ha = e.home_team.abbreviation.toLowerCase();
       const aa = e.away_team.abbreviation.toLowerCase();
       return hn.includes(q) || an.includes(q) || ha.includes(q) || aa.includes(q);
     });
-  }, [events, search]);
+  }, [events, search, status]);
+
+  const periodOptions = useMemo(() => {
+    const all: SBMarket[] = [];
+    for (const e of filtered) all.push(...(e.markets || []));
+    return presentPeriodGroups(all);
+  }, [filtered]);
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
@@ -148,40 +148,20 @@ export default function LiveOddsPage() {
             Live Odds
           </h1>
           <p style={{ fontSize: 13, color: "#94a3b8", margin: "2px 0 0" }}>
-            Real-time odds, spreads, and totals — SportsGameOdds
+            Odds, spreads, and totals from SportsGameOdds. Finalized events are scores/results, not current markets.
           </p>
         </div>
+        <LastUpdated fetchedAt={lastFetch ?? undefined} />
       </div>
 
-      {/* League tabs + search */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 20,
-          flexWrap: "wrap",
-        }}
-      >
-        {LEAGUES.map((lg) => (
-          <button
-            key={lg.leagueID}
-            onClick={() => setActiveLeague(lg.leagueID)}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 10,
-              fontSize: 12,
-              fontWeight: 700,
-              background: activeLeague === lg.leagueID ? "rgba(201,168,76,0.1)" : "#0a0f24",
-              border: activeLeague === lg.leagueID ? "1px solid #c9a84c" : "1px solid #1e293b",
-              color: activeLeague === lg.leagueID ? "#c9a84c" : "#94a3b8",
-              cursor: "pointer",
-            }}
-          >
-            {lg.label}
-          </button>
-        ))}
-        <div style={{ position: "relative", marginLeft: "auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+        <LeagueChips value={activeLeague} onChange={(id) => setActiveLeague(id as League)} />
+        <StatusChips value={status} onChange={setStatus} />
+        <LineModeChips value={lineMode} onChange={setLineMode} />
+        {periodOptions.length > 0 && (
+          <PeriodChips value={period} options={periodOptions} onChange={setPeriod} />
+        )}
+        <div style={{ position: "relative", marginLeft: "auto", width: "100%", maxWidth: 240 }}>
           <Search
             size={14}
             style={{
@@ -223,9 +203,11 @@ export default function LiveOddsPage() {
       {/* Event cards */}
       <div style={{ display: "grid", gap: 12 }}>
         {filtered.map((evt) => {
-          const live = isLive(evt.status);
+          const live = gameState(evt) === "LIVE";
+          const final = gameState(evt) === "FINAL";
           const isExpanded = expanded[evt.id];
-          const rows = buildBookmakerRows(evt.markets);
+          const rows = buildBookmakerRows(filterMarkets(evt.markets, { lineMode, period }));
+          const mlHome = filterMarkets(evt.markets, { lineMode, period, betTypes: ["moneyline"] }).find((m) => m.side === "home");
 
           // Compute best values across all bookmakers
           let bestAwayML = -Infinity;
@@ -285,6 +267,22 @@ export default function LiveOddsPage() {
                       ● LIVE
                     </span>
                   )}
+                  {final && (
+                    <span
+                      style={{
+                        padding: "3px 8px",
+                        borderRadius: 6,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        background: "rgba(100,116,139,0.2)",
+                        color: "#94a3b8",
+                        textTransform: "uppercase",
+                        flexShrink: 0,
+                      }}
+                    >
+                      FINAL
+                    </span>
+                  )}
                   <div>
                     <div style={{ fontSize: 15, fontWeight: 700 }}>
                       {evt.away_team.abbreviation || evt.away_team.name} @{" "}
@@ -312,6 +310,16 @@ export default function LiveOddsPage() {
               {/* Expanded odds panel */}
               {isExpanded && (
                 <div style={{ borderTop: "1px solid #1e293b", padding: "16px 20px" }}>
+                  {final && (
+                    <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 10 }}>
+                      Finalized event — shown for scores and results, not as a current bettable market.
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, color: "#94a3b8" }}>Bookmaker Price is the sportsbook line.</span>
+                    <FairOddsMark value={mlHome?.fair_odds ?? null} />
+                    <ConsensusMark value={mlHome?.book_odds ?? null} />
+                  </div>
                   {rows.length > 0 ? (
                     <div style={{ overflowX: "auto" }}>
                       <div

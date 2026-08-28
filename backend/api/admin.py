@@ -279,3 +279,32 @@ async def optimal_sim_queue(
             "error": str(e),
             "note": "pool build or snapshot store failed"
         }, source="admin")
+
+
+@router.get("/sgo-usage")
+async def admin_sgo_usage(
+    _: User = _admin,
+):
+    """Admin-only SportsGameOdds Rookie usage. Never includes secrets."""
+    from providers.sdk_provider import SdkSgoProvider
+    from providers.sgo_rookie import NESTED_EVENT_TTL_SECONDS
+    from providers.nested_events import load_cached_events
+    from providers.sgo_rookie import ROOKIE_LEAGUE_IDS
+
+    try:
+        usage = await SdkSgoProvider().get_usage()
+    except Exception as exc:
+        usage = {"available": False, "tier": None, "reason": type(exc).__name__}
+
+    cached_leagues = []
+    for lid in ROOKIE_LEAGUE_IDS:
+        events = load_cached_events(lid)
+        if events:
+            cached_leagues.append({"league": lid, "events": len(events)})
+
+    return wrap_data({
+        "usage": usage,
+        "cache_ttl_seconds": NESTED_EVENT_TTL_SECONDS,
+        "cached_leagues": cached_leagues,
+        "note": "Sanitized /v2/account/usage. API key, keyID, customerID, and email are never returned.",
+    }, source="sportsgameodds_v2_account_usage")

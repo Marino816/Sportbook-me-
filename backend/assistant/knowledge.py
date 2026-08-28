@@ -233,7 +233,7 @@ PRODUCT_KNOWLEDGE = [
     },
     {
         "id": "sgo_research",
-        "keywords": ["odds", "moneyline", "spread", "total", "implied", "last 5", "last-n", "game status", "score", "fair odds", "sportsbook", "environment"],
+        "keywords": ["odds", "moneyline", "spread", "total", "implied", "last 5", "last-n", "game status", "score", "fair odds", "sportsbook", "environment", "epl", "champions league", "soccer", "parlay", "team prop", "alternate"],
         "title": "SportsGameOdds research (cached)",
         "content": (
             "SB ME AI can read SportsGameOdds research from SB ME's nested event "
@@ -246,7 +246,13 @@ PRODUCT_KNOWLEDGE = [
             "not fantasy-point projections. Tools do not call SportsGameOdds "
             "directly except Last-N, which uses finalized /v2/events with "
             "expandResults=true after player-ID reconciliation. Coverage includes "
-            "all 17 Rookie leagues (including 8 soccer leagues)."
+            "all 17 Rookie leagues (including 8 soccer leagues: EPL, UEFA Champions "
+            "League / UCL, MLS, La Liga, Bundesliga, Serie A, Ligue 1, International "
+            "Soccer). Fair Odds are shown only when fairOdds exists. Book Consensus "
+            "is bookOdds, never a substituted fair-total. If requested market data "
+            "is not in the nested cache, say it is unavailable. Never invent odds, "
+            "bookmaker availability, Fair Odds, consensus, props, scores, or "
+            "sportsbook parlay eligibility."
         ),
     },
 ]

@@ -5,9 +5,9 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { getToken } from "../../../lib/api";
+import { getToken, getApiUrl } from "../../../lib/api";
 
-const API_URL = "https://sportbook-me-production.up.railway.app/api";
+const API_URL = getApiUrl();
 
 interface Game {
   game_id: string;
