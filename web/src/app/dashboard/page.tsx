@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useAuth } from "@/lib/auth";
 import {
   Flame, MessageCircle, List, Activity, ChevronRight, Sparkles, BarChart3, Upload, Swords, Building2, Database, UserCheck,
 } from "lucide-react";
@@ -23,8 +22,6 @@ const QUICK = [
   { icon: MessageCircle, label: "SB ME AI", href: "/ai" },
   { icon: List, label: "Lineups", href: "/lineups" },
 ];
-
-const C = { card: "#0a0f24", border: "#1e293b", text: "#f0f6fc", muted: "#94a3b8", subtle: "#64748b", gold: "#c9a84c" };
 
 function fmtOdds(v: number | null | undefined) {
   if (v == null) return "\u2014";
@@ -70,11 +67,11 @@ function GameStrip({ event }: { event: SBEvent }) {
   const hasTeam = (event.markets || []).some((m) => m.bet_type === "team_prop");
   const hasAlt = (event.markets || []).some((m) => m.is_main_line === false);
   return (
-    <div className={`sbme-evt${live ? " is-live" : ""}`}>
-      <div className="sbme-evt-main">
-        <span className="sbme-evt-status">
-          {live ? "LIVE" : final ? "FINAL" : t || "UPCOMING"}
-        </span>
+    <div className={`sbme-evt${live ? " is-live" : ""}${final ? " is-final" : ""}`}>
+      <div className="sbme-evt-when">
+        {live ? "LIVE" : final ? "FINAL" : t || "UPCOMING"}
+      </div>
+      <div className="sbme-evt-match">
         <span className="sbme-evt-teams">
           {event.away_team?.abbreviation || "AWY"} @ {event.home_team?.abbreviation || "HOM"}
         </span>
@@ -88,7 +85,7 @@ function GameStrip({ event }: { event: SBEvent }) {
         {event.bookmakers?.length > 0 && <span className="sbme-tag">{event.bookmakers.length} books</span>}
         {hasProps && <span className="sbme-tag is-gold">Player props</span>}
         {hasTeam && <span className="sbme-tag is-blue">Team props</span>}
-        {hasAlt && <span className="sbme-tag">Alts</span>}
+        {hasAlt && <span className="sbme-tag">Alt lines</span>}
         {ml?.fair_odds != null && <FairOddsMark value={ml.fair_odds} />}
         {ml?.book_odds != null && <ConsensusMark value={ml.book_odds} />}
       </div>
@@ -108,17 +105,15 @@ interface PropItem {
 function PropRow({ p }: { p: PropItem }) {
   return (
     <div className="sbme-prop">
-      <div style={{ minWidth: 0 }}>
+      <div className="sbme-prop-copy">
         <div className="sbme-prop-name">{p.player}</div>
         <div className="sbme-prop-sub">
           {p.kind === "team" ? "Team" : "Player"} {"\u00b7"} {p.market} {"\u00b7"} {p.matchup}
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: C.gold }}>{p.line ?? "\u2014"}</span>
-        <span style={{ fontSize: 12, fontWeight: 600, color: C.muted, minWidth: 48, textAlign: "right" }}>{fmtOdds(p.odds)}</span>
-        <span style={{ fontSize: 9, color: "#8b9cb3", minWidth: 60, textAlign: "right" }}>{p.book}</span>
-      </div>
+      <span className="sbme-prop-book">{p.book}</span>
+      <span className="sbme-prop-line">{p.line ?? "\u2014"}</span>
+      <span className="sbme-prop-odds">{fmtOdds(p.odds)}</span>
     </div>
   );
 }
@@ -126,15 +121,14 @@ function PropRow({ p }: { p: PropItem }) {
 function MLRow({ book, home, away }: { book: string; home: number | null; away: number | null }) {
   return (
     <div className="sbme-ml">
-      <span style={{ fontSize: 10, color: "#8b9cb3" }}>{book}</span>
-      <span style={{ fontSize: 12, fontWeight: home != null ? 700 : 400, color: home != null ? C.text : C.muted, textAlign: "center" }}>{fmtOdds(home)}</span>
-      <span style={{ fontSize: 12, fontWeight: away != null ? 700 : 400, color: away != null ? C.text : C.muted, textAlign: "center" }}>{fmtOdds(away)}</span>
+      <span className="sbme-ml-book">{book}</span>
+      <span className={`sbme-ml-price${home != null ? " is-on" : ""}`}>{fmtOdds(home)}</span>
+      <span className={`sbme-ml-price${away != null ? " is-on" : ""}`}>{fmtOdds(away)}</span>
     </div>
   );
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
   const [activeLeague, setActiveLeague] = useState("MLB");
   const [status, setStatus] = useState<GameState | "ALL">("ALL");
   const { events: rawEvents, loading, error, lastFetch } = useLiveScores(activeLeague);
@@ -240,10 +234,10 @@ export default function DashboardPage() {
   const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: EDT });
 
   return (
-    <AppShell>
+    <AppShell atmosphere="home">
       <div className="sbme-home">
         <div className="sbme-home-head">
-          <div>
+          <div className="sbme-home-brand">
             <p className="sbme-home-kicker">Current sports intelligence</p>
             <h1>SB ME DFS AI</h1>
             <p className="sbme-home-sub">Sports intelligence dashboard</p>
@@ -251,17 +245,19 @@ export default function DashboardPage() {
               {dateStr} {"\u00b7"} <LastUpdated fetchedAt={lastFetch ?? undefined} />
             </p>
           </div>
-          {user && <span className="sbme-home-plan">{user.plan || "Free"} Plan</span>}
+          <div className="sbme-home-head-tools">
+            <StatusChips value={status} onChange={setStatus} />
+          </div>
         </div>
 
-        <div className="sbme-home-controls">
-          <StatusChips value={status} onChange={setStatus} />
-        </div>
-        <div style={{ marginBottom: 14 }}>
+        <div className="sbme-home-leagues">
           <LeagueChips value={activeLeague} onChange={setActiveLeague} grouped />
         </div>
 
         <Link href="/ai" className="sbme-ai">
+          <span className="sbme-ai-glow" aria-hidden />
+          <span className="sbme-ai-bracket sbme-ai-bracket--tl" aria-hidden />
+          <span className="sbme-ai-bracket sbme-ai-bracket--br" aria-hidden />
           <span className="sbme-ai-icon"><Sparkles size={18} /></span>
           <div>
             <div className="sbme-ai-title">Ask SB ME AI</div>
@@ -321,13 +317,13 @@ export default function DashboardPage() {
             <div className="sbme-panel-h">
               <h2>Shortcuts</h2>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="sbme-shortcut-col">
               <Link href="/market-tools/compare" className="sbme-shortcut">Odds Comparison</Link>
               <Link href="/market-tools/bookmakers" className="sbme-shortcut">Bookmakers</Link>
               <Link href="/data-hub" className="sbme-shortcut">Data Hub (DFS slates)</Link>
               <div className="sbme-note">
-                <div style={{ fontSize: 10, color: "#8b9cb3", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>Top DFS Values</div>
-                <div style={{ fontSize: 11, color: C.muted }}>Open Data Hub and upload a slate. Soccer and other SGO leagues are not DFS sports.</div>
+                <div className="sbme-note-kicker">Top DFS Values</div>
+                <div className="sbme-note-copy">Open Data Hub and upload a slate. Soccer and other SGO leagues are not DFS sports.</div>
               </div>
             </div>
           </div>
@@ -341,18 +337,18 @@ export default function DashboardPage() {
             </div>
             {mlBooks.entries.length > 0 ? (
               <div>
-                <div style={{ fontSize: 10, color: "#8b9cb3", marginBottom: 6, fontWeight: 600 }}>{mlBooks.teams || activeLeague + " Moneyline"}</div>
-                <div className="sbme-ml" style={{ borderBottom: "1px solid rgba(201,168,76,0.25)", marginBottom: 4 }}>
-                  <span style={{ fontSize: 9, color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>Book</span>
-                  <span style={{ fontSize: 9, color: C.gold, fontWeight: 700, textAlign: "center" }}>Home</span>
-                  <span style={{ fontSize: 9, color: C.gold, fontWeight: 700, textAlign: "center" }}>Away</span>
+                <div className="sbme-odds-label">{mlBooks.teams || activeLeague + " Moneyline"}</div>
+                <div className="sbme-ml sbme-ml-head">
+                  <span>Book</span>
+                  <span>Home</span>
+                  <span>Away</span>
                 </div>
                 {mlBooks.entries.slice(0, 6).map(([bk, v], i) => (
                   <MLRow key={i} book={bk} home={v.home} away={v.away} />
                 ))}
               </div>
             ) : (
-              <div className="sbme-empty">
+              <div className="sbme-empty is-compact">
                 <p>No odds available for {activeLeague}</p>
               </div>
             )}
@@ -364,13 +360,19 @@ export default function DashboardPage() {
               <Link href="/market-tools/player-props" className="sbme-panel-link">View All {"\u2192"}</Link>
             </div>
             {allProps.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="sbme-prop-list">
+                <div className="sbme-prop sbme-prop-head">
+                  <span>Selection</span>
+                  <span>Book</span>
+                  <span>Line</span>
+                  <span>Price</span>
+                </div>
                 {allProps.map((p, i) => (
                   <PropRow key={i} p={p} />
                 ))}
               </div>
             ) : (
-              <div className="sbme-empty">
+              <div className="sbme-empty is-compact">
                 <p>No props available for {activeLeague}</p>
               </div>
             )}
@@ -381,9 +383,9 @@ export default function DashboardPage() {
               <h3>DFS Data Hub</h3>
               <Link href="/data-hub" className="sbme-panel-link">Open {"\u2192"}</Link>
             </div>
-            <div style={{ textAlign: "center", padding: "18px 12px" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#8b9cb3", marginBottom: 4 }}>DFS slates stay on Data Hub</div>
-              <div style={{ fontSize: 11, color: C.muted, marginBottom: 14 }}>MLB, NFL, NBA, NHL, NCAAF, NCAAB only. Soccer and other SGO leagues are market intelligence, not DFS slates.</div>
+            <div className="sbme-hub">
+              <div className="sbme-hub-title">DFS slates stay on Data Hub</div>
+              <div className="sbme-hub-copy">MLB, NFL, NBA, NHL, NCAAF, NCAAB only. Soccer and other SGO leagues are market intelligence, not DFS slates.</div>
               <Link href="/data-hub" className="sbme-cta">
                 <Upload size={13} /> Open Data Hub
               </Link>

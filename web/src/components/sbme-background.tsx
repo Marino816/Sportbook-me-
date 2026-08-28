@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-export type SBMEBackgroundVariant = "hero" | "app";
+export type SBMEBackgroundVariant = "hero" | "app" | "home";
 
 function FloodBank({ id, bulbs = 6 }: { id: string; bulbs?: number }) {
   const cols = Array.from({ length: bulbs }, (_, i) => i);
@@ -70,8 +70,10 @@ export function SBMEBackground({
   children?: ReactNode;
   className?: string;
 }) {
+  const tone = variant === "hero" ? "hero" : "app";
+  const extra = variant === "home" ? " sbme-bg--home" : "";
   return (
-    <div className={`sbme-bg sbme-bg--${variant} ${className}`.trim()}>
+    <div className={`sbme-bg sbme-bg--${tone}${extra} ${className}`.trim()}>
       <div className="sbme-bg-layer" aria-hidden>
         {variant === "hero" ? (
           <>
@@ -101,10 +103,12 @@ export function SBMEBackground({
           <>
             <div className="sbme-bg-plate sbme-bg-plate--app" />
             <div className="sbme-bg-haze sbme-bg-haze--app" />
-            <div className="sbme-bg-bank sbme-bg-bank--app-tl"><FloodBank id="app-tl" bulbs={4} /></div>
-            <div className="sbme-bg-bank sbme-bg-bank--app-tr"><FloodBank id="app-tr" bulbs={5} /></div>
+            <div className="sbme-bg-bank sbme-bg-bank--app-tl"><FloodBank id={`${variant}-tl`} bulbs={4} /></div>
+            <div className="sbme-bg-bank sbme-bg-bank--app-tr"><FloodBank id={`${variant}-tr`} bulbs={5} /></div>
             <div className="sbme-bg-rays sbme-bg-rays--app" />
             <div className="sbme-bg-embers sbme-bg-embers--app"><EmberField /></div>
+            {variant === "home" && <div className="sbme-bg-grain sbme-bg-grain--home" />}
+            {variant === "home" && <div className="sbme-bg-read sbme-bg-read--home" />}
             <div className="sbme-bg-vignette sbme-bg-vignette--app" />
           </>
         )}

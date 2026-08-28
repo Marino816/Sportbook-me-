@@ -66,7 +66,10 @@ function TopNavInner() {
         <div style={{ flexShrink: 0 }}>
           {isAuthenticated && user ? (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 13, color: "#c9a84c", fontWeight: 600 }}>{user.email}</span>
+              <div className="sbme-nav-account">
+                <span className="sbme-nav-email">{user.email}</span>
+                <span className="sbme-nav-plan">{user.plan || "Free"} Plan</span>
+              </div>
               <button onClick={() => { logout(); router.push("/login"); }}
                 style={{
                   background: "transparent", border: "1px solid #1e293b", borderRadius: 10,

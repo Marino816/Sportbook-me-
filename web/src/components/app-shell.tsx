@@ -2,9 +2,15 @@
 
 import { SBMEBackground } from "./sbme-background";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  atmosphere = "app",
+}: {
+  children: React.ReactNode;
+  atmosphere?: "app" | "home";
+}) {
   return (
-    <SBMEBackground variant="app" className="min-h-screen">
+    <SBMEBackground variant={atmosphere} className="min-h-screen">
       {children}
     </SBMEBackground>
   );
