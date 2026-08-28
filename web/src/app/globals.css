@@ -197,6 +197,11 @@ body {
   50% { opacity: 0.55; }
 }
 
+@keyframes sbme-atmosphere {
+  0%, 100% { opacity: 0.78; }
+  50% { opacity: 0.95; }
+}
+
 @keyframes sbme-flood {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.07); }
@@ -249,141 +254,211 @@ body {
 .sbme-bg--app .sbme-bg-beams { opacity: 0.35; }
 .sbme-bg-content { position: relative; z-index: 1; }
 
-/* Hero stadium atmosphere — perimeter lights, center stays dark. App variant unchanged. */
+/* Landing cinematic stadium — photoreal plate + rigs. App variant unchanged. */
 .sbme-bg--hero {
-  background: #04070f;
+  background: #000000;
   overflow-x: hidden;
 }
 .sbme-bg--hero .sbme-bg-layer::before,
 .sbme-bg--hero .sbme-bg-layer::after {
   display: none;
 }
-.sbme-bg--hero .sbme-bg-bowl {
+.sbme-bg--hero .sbme-bg-plate {
   position: absolute;
-  inset: 0;
-  opacity: 0.55;
-  background:
-    repeating-radial-gradient(ellipse 58% 210% at -16% 42%, transparent 0 18px, rgba(148, 163, 184, 0.08) 18px 19px),
-    repeating-radial-gradient(ellipse 58% 210% at 116% 42%, transparent 0 18px, rgba(148, 163, 184, 0.08) 18px 19px);
-  -webkit-mask-image: linear-gradient(to right, #000 0%, transparent 22%, transparent 78%, #000 100%);
-  mask-image: linear-gradient(to right, #000 0%, transparent 22%, transparent 78%, #000 100%);
-}
-.sbme-bg--hero .sbme-bg-bowl::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(rgba(226, 232, 240, 0.14) 1px, transparent 1px);
-  background-size: 52px 52px;
-  opacity: 0.22;
-  -webkit-mask-image: linear-gradient(to right, #000 0%, transparent 18%, transparent 82%, #000 100%);
-  mask-image: linear-gradient(to right, #000 0%, transparent 18%, transparent 82%, #000 100%);
-}
-.sbme-bg--hero .sbme-bg-structure {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 95% 150% at -28% 42%, transparent 38%, rgba(8, 12, 28, 0.72) 40%, rgba(30, 41, 59, 0.22) 52%, transparent 64%),
-    radial-gradient(ellipse 95% 150% at 128% 42%, transparent 38%, rgba(8, 12, 28, 0.72) 40%, rgba(30, 41, 59, 0.22) 52%, transparent 64%),
-    linear-gradient(to right, rgba(4, 7, 15, 0.55) 0%, transparent 16%, transparent 84%, rgba(4, 7, 15, 0.55) 100%);
-}
-.sbme-bg--hero .sbme-bg-flood {
-  position: absolute;
-  width: min(58vw, 760px);
-  height: min(58vw, 760px);
-  border-radius: 50%;
-  filter: blur(72px);
+  left: 0;
+  right: 0;
+  background-image: url("/stadium-night.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
   pointer-events: none;
-  transform-origin: center;
-  animation: sbme-flood 16s ease-in-out infinite;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%);
 }
-.sbme-bg--hero .sbme-bg-flood--tl {
-  top: -16%;
-  left: -20%;
-  background: radial-gradient(circle, rgba(186, 210, 255, 0.42) 0%, rgba(37, 99, 175, 0.16) 38%, transparent 70%);
+.sbme-bg--hero .sbme-bg-plate--hero {
+  top: 0;
+  height: 22%;
+  min-height: 100vh;
+  background-position: 78% 12%;
+  opacity: 0.95;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
 }
-.sbme-bg--hero .sbme-bg-flood--tr {
-  top: -18%;
-  right: -20%;
-  background: radial-gradient(circle, rgba(201, 168, 76, 0.28) 0%, rgba(96, 165, 250, 0.2) 36%, transparent 70%);
-  animation-delay: -4s;
-}
-.sbme-bg--hero .sbme-bg-flood--ml {
-  top: 36%;
-  left: -24%;
-  width: min(42vw, 520px);
-  height: min(42vw, 520px);
-  opacity: 0.55;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.22) 0%, transparent 68%);
-  animation-delay: -7s;
-}
-.sbme-bg--hero .sbme-bg-flood--mr {
-  top: 40%;
-  right: -22%;
-  width: min(40vw, 500px);
-  height: min(40vw, 500px);
-  opacity: 0.45;
-  background: radial-gradient(circle, rgba(201, 168, 76, 0.14) 0%, rgba(59, 130, 246, 0.12) 42%, transparent 70%);
-  animation-delay: -9s;
-}
-.sbme-bg--hero .sbme-bg-flood--bl {
-  top: 72%;
-  left: -18%;
-  width: min(46vw, 560px);
-  height: min(46vw, 560px);
-  opacity: 0.5;
-  background: radial-gradient(circle, rgba(147, 197, 253, 0.2) 0%, transparent 68%);
-  animation-delay: -2s;
-}
-.sbme-bg--hero .sbme-bg-flood--br {
-  top: 78%;
-  right: -16%;
-  width: min(44vw, 540px);
-  height: min(44vw, 540px);
+.sbme-bg--hero .sbme-bg-plate--features {
+  top: 16%;
+  height: 18%;
+  background-position: 22% 78%;
   opacity: 0.42;
-  background: radial-gradient(circle, rgba(201, 168, 76, 0.16) 0%, rgba(30, 64, 175, 0.1) 40%, transparent 70%);
-  animation-delay: -11s;
+  filter: brightness(0.45) saturate(0.75);
 }
-.sbme-bg--hero .sbme-bg-beams {
+.sbme-bg--hero .sbme-bg-plate--parlay {
+  top: 30%;
+  height: 22%;
+  background-position: 88% 36%;
+  opacity: 0.62;
+  filter: brightness(0.7) saturate(0.9);
+  transform: scaleX(-1);
+}
+.sbme-bg--hero .sbme-bg-plate--leagues {
+  top: 48%;
+  height: 16%;
+  background-position: 48% 88%;
+  opacity: 0.5;
+  filter: brightness(0.38) contrast(1.15) saturate(0.65);
+}
+.sbme-bg--hero .sbme-bg-plate--intel {
+  top: 60%;
+  height: 16%;
+  background-position: 72% 28%;
+  opacity: 0.55;
+  filter: brightness(0.62) saturate(1.05) hue-rotate(-8deg);
+}
+.sbme-bg--hero .sbme-bg-plate--pricing {
+  top: 72%;
+  height: 16%;
+  background-position: 40% 60%;
+  opacity: 0.28;
+  filter: brightness(0.32) saturate(0.55);
+}
+.sbme-bg--hero .sbme-bg-plate--cta {
+  top: 84%;
+  height: 18%;
+  background-position: 82% 8%;
+  opacity: 0.78;
+  filter: brightness(0.82);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 100%);
+}
+
+.sbme-bg--hero .sbme-bg-haze {
+  position: absolute;
   inset: 0;
   background:
-    linear-gradient(122deg, rgba(191, 219, 254, 0.11) 0%, transparent 28%),
-    linear-gradient(238deg, rgba(201, 168, 76, 0.08) 0%, transparent 26%),
-    linear-gradient(108deg, transparent 62%, rgba(96, 165, 250, 0.06) 100%);
-  filter: blur(32px);
+    radial-gradient(ellipse 70% 42% at 72% 10%, rgba(210, 222, 242, 0.28), transparent 58%),
+    radial-gradient(ellipse 90% 38% at 58% 22%, rgba(140, 162, 196, 0.2), transparent 62%),
+    radial-gradient(ellipse 80% 36% at 40% 38%, rgba(92, 112, 142, 0.16), transparent 58%),
+    radial-gradient(ellipse 95% 40% at 50% 70%, rgba(118, 140, 172, 0.18), transparent 60%),
+    radial-gradient(ellipse 70% 32% at 78% 88%, rgba(186, 204, 230, 0.22), transparent 55%);
+  filter: blur(18px);
   mix-blend-mode: screen;
-  opacity: 0.85;
+  animation: sbme-atmosphere 18s ease-in-out infinite;
 }
+
+.sbme-bg--hero .sbme-bg-bank {
+  position: absolute;
+  width: min(30vw, 360px);
+  line-height: 0;
+  mix-blend-mode: screen;
+  filter: blur(0.3px);
+  opacity: 0.92;
+}
+.sbme-bg--hero .sbme-bg-bank-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.sbme-bg--hero .sbme-bg-bank--tr { top: 1.2%; right: -1.5%; width: min(32vw, 400px); opacity: 0.38; }
+.sbme-bg--hero .sbme-bg-bank--tl { top: 0.6%; left: -3.5%; width: min(20vw, 240px); opacity: 0.48; }
+.sbme-bg--hero .sbme-bg-bank--ml { top: 38%; left: -4%; width: min(22vw, 260px); opacity: 0.55; }
+.sbme-bg--hero .sbme-bg-bank--mr { top: 41%; right: -3%; width: min(26vw, 300px); opacity: 0.7; }
+.sbme-bg--hero .sbme-bg-bank--cta-l { top: 87%; left: -3%; width: min(22vw, 250px); opacity: 0.5; }
+.sbme-bg--hero .sbme-bg-bank--cta-r { top: 85.5%; right: -2%; width: min(30vw, 360px); opacity: 0.88; }
+
+.sbme-bg--hero .sbme-bg-rays {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(122deg, transparent 42%, rgba(255, 255, 255, 0.16) 52%, transparent 62%),
+    linear-gradient(132deg, transparent 48%, rgba(226, 236, 255, 0.1) 58%, transparent 68%),
+    linear-gradient(108deg, transparent 8%, rgba(255, 255, 255, 0.08) 16%, transparent 26%),
+    linear-gradient(248deg, transparent 36%, rgba(201, 168, 76, 0.07) 46%, transparent 56%);
+  filter: blur(22px);
+  mix-blend-mode: screen;
+  opacity: 0.75;
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, transparent 30%, #000 58%, #000 100%);
+  mask-image: linear-gradient(to right, transparent 0%, transparent 30%, #000 58%, #000 100%);
+}
+
+.sbme-bg--hero .sbme-bg-embers {
+  position: absolute;
+  width: min(48vw, 640px);
+  height: min(70vh, 720px);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  filter: blur(0.6px);
+}
+.sbme-bg--hero .sbme-bg-ember-svg { width: 100%; height: 100%; display: block; }
+.sbme-bg--hero .sbme-bg-embers--hero { top: 4%; right: 2%; opacity: 0.7; }
+.sbme-bg--hero .sbme-bg-embers--parlay { top: 36%; right: 4%; height: min(50vh, 520px); opacity: 0.45; }
+.sbme-bg--hero .sbme-bg-embers--cta { top: 84%; right: 6%; height: min(40vh, 420px); opacity: 0.55; }
+
+.sbme-bg--hero .sbme-bg-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  mix-blend-mode: overlay;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.22) 0.6px, transparent 0.7px);
+  background-size: 3px 3px;
+}
+
+.sbme-bg--hero .sbme-bg-read {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(58%, 720px);
+  height: 100vh;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.78) 0%,
+    rgba(0, 0, 0, 0.52) 46%,
+    rgba(0, 0, 0, 0.18) 78%,
+    transparent 100%
+  );
+}
+
 .sbme-bg--hero .sbme-bg-vignette {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to right, transparent 0%, rgba(4, 7, 15, 0.55) 18%, rgba(4, 7, 15, 0.88) 50%, rgba(4, 7, 15, 0.55) 82%, transparent 100%),
-    radial-gradient(ellipse 72% 70% at 50% 28%, rgba(4, 7, 15, 0.5) 0%, rgba(4, 7, 15, 0.2) 48%, transparent 74%);
+    radial-gradient(ellipse 92% 78% at 58% 18%, transparent 18%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0.78) 100%),
+    linear-gradient(to right, rgba(0, 0, 0, 0.35) 0%, transparent 16%, transparent 84%, rgba(0, 0, 0, 0.5) 100%);
+  pointer-events: none;
 }
 
 @media (max-width: 1024px) {
-  .sbme-bg--hero .sbme-bg-flood--tl { left: -28%; top: -14%; }
-  .sbme-bg--hero .sbme-bg-flood--tr { right: -28%; top: -16%; }
-  .sbme-bg--hero .sbme-bg-flood--ml { left: -32%; }
-  .sbme-bg--hero .sbme-bg-flood--mr { right: -30%; }
+  .sbme-bg--hero .sbme-bg-bank--tr { right: -8%; top: 0.4%; }
+  .sbme-bg--hero .sbme-bg-bank--tl { left: -10%; }
+  .sbme-bg--hero .sbme-bg-bank--ml,
+  .sbme-bg--hero .sbme-bg-bank--mr { opacity: 0.38; }
+  .sbme-bg--hero .sbme-bg-plate--hero { background-position: 70% 8%; }
+  .sbme-bg--hero .sbme-bg-read { width: 72%; }
 }
 
 @media (max-width: 768px) {
-  .sbme-bg--hero .sbme-bg-bowl { opacity: 0.28; }
-  .sbme-bg--hero .sbme-bg-structure { opacity: 0.7; }
-  .sbme-bg--hero .sbme-bg-flood {
-    width: min(88vw, 420px);
-    height: min(70vw, 380px);
-    filter: blur(56px);
-    opacity: 0.42;
+  .sbme-bg--hero .sbme-bg-plate--hero { opacity: 0.82; background-position: 62% 0%; }
+  .sbme-bg--hero .sbme-bg-plate--features,
+  .sbme-bg--hero .sbme-bg-plate--parlay,
+  .sbme-bg--hero .sbme-bg-plate--leagues,
+  .sbme-bg--hero .sbme-bg-plate--intel { opacity: 0.32; }
+  .sbme-bg--hero .sbme-bg-plate--pricing { opacity: 0.18; }
+  .sbme-bg--hero .sbme-bg-plate--cta { opacity: 0.55; }
+  .sbme-bg--hero .sbme-bg-bank--tl,
+  .sbme-bg--hero .sbme-bg-bank--ml,
+  .sbme-bg--hero .sbme-bg-bank--cta-l { display: none; }
+  .sbme-bg--hero .sbme-bg-bank--tr { width: min(58vw, 280px); right: -6%; top: 0; }
+  .sbme-bg--hero .sbme-bg-bank--mr,
+  .sbme-bg--hero .sbme-bg-bank--cta-r { width: min(42vw, 220px); opacity: 0.45; }
+  .sbme-bg--hero .sbme-bg-embers--parlay { display: none; }
+  .sbme-bg--hero .sbme-bg-embers--hero { width: 70vw; opacity: 0.4; }
+  .sbme-bg--hero .sbme-bg-haze { opacity: 0.55; animation: none; }
+  .sbme-bg--hero .sbme-bg-rays { opacity: 0.45; }
+  .sbme-bg--hero .sbme-bg-read {
+    width: 100%;
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.55) 0%,
+      rgba(0, 0, 0, 0.28) 42%,
+      transparent 100%
+    );
   }
-  .sbme-bg--hero .sbme-bg-flood--ml,
-  .sbme-bg--hero .sbme-bg-flood--mr { opacity: 0.28; }
-  .sbme-bg--hero .sbme-bg-beams { opacity: 0.5; filter: blur(24px); }
   .sbme-bg--hero .sbme-bg-vignette {
     background:
-      linear-gradient(to right, rgba(4, 7, 15, 0.35) 0%, rgba(4, 7, 15, 0.82) 50%, rgba(4, 7, 15, 0.35) 100%),
-      radial-gradient(ellipse 90% 60% at 50% 18%, rgba(4, 7, 15, 0.45) 0%, transparent 70%);
+      radial-gradient(ellipse 100% 70% at 50% 8%, transparent 10%, rgba(0, 0, 0, 0.45) 70%, #000 100%);
   }
 }
 
