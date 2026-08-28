@@ -11,6 +11,7 @@ from difflib import SequenceMatcher
 from typing import Optional
 
 from dfs.models import DFSContestPlayer
+from dfs.team_normalize import normalize_team_abbr, teams_equivalent
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ TEAM_NAME_MAP = {
     "COL": "rockies", "DET": "tigers", "HOU": "astros", "KC": "royals",
     "LAA": "angels", "LAD": "dodgers", "MIA": "marlins", "MIL": "brewers",
     "MIN": "twins", "NYM": "mets", "NYY": "yankees", "OAK": "athletics",
+    "ATH": "athletics", "CWS": "white sox",
     "PHI": "phillies", "PIT": "pirates", "SD": "padres", "SF": "giants",
     "SEA": "mariners", "STL": "cardinals", "TB": "rays", "TEX": "rangers",
     "TOR": "blue jays", "WSH": "nationals",
@@ -41,8 +43,17 @@ TEAM_NAME_MAP = {
 
 
 def _normalize_name(name: str) -> str:
-    """Normalize player name for comparison."""
-    return " ".join(name.lower().strip().split())
+    """Normalize player name for comparison (case, whitespace, accents)."""
+    import unicodedata
+    import re
+    folded = unicodedata.normalize("NFD", name or "")
+    folded = "".join(ch for ch in folded if unicodedata.category(ch) != "Mn")
+    return " ".join(folded.lower().strip().split())
+
+
+def _looks_like_team_abbr(value: str) -> bool:
+    raw = (value or "").strip()
+    return 2 <= len(raw) <= 3 and raw.isalpha()
 
 
 def _name_similarity(a: str, b: str) -> float:
@@ -67,20 +78,22 @@ def reconcile_player(
     Never returns a low-confidence match. Caller must handle None.
     """
     dfs_name = _normalize_name(dfs_player.player_name)
-    dfs_team = dfs_player.team.upper().strip()
+    dfs_team = normalize_team_abbr(dfs_player.team)
 
     best_id = None
     best_score = 0.0
 
     for sgo in sgo_players:
         sgo_name = _normalize_name(sgo.get("name", "") or sgo.get("playerName", ""))
-        sgo_team = (sgo.get("teamAbbrev") or sgo.get("team") or "").upper().strip()
+        sgo_team_raw = (sgo.get("teamAbbrev") or sgo.get("team") or "").strip()
+        sgo_team = normalize_team_abbr(sgo_team_raw) if _looks_like_team_abbr(sgo_team_raw) else ""
 
-        # Team must match (or SGO team field unknown)
-        team_match = not sgo_team or not dfs_team or sgo_team == dfs_team
-        if not team_match:
+        # Team must match when both sides have a real abbreviation.
+        # Non-abbr values (SGO teamIDs) are treated as unknown, not as a mismatch.
+        if sgo_team and dfs_team and not teams_equivalent(sgo_team, dfs_team):
             team_keywords = TEAM_NAME_MAP.get(dfs_team, dfs_team.lower())
-            if team_keywords not in (sgo.get("teamName", "") or "").lower():
+            team_name = (sgo.get("teamName", "") or "").lower()
+            if team_keywords not in team_name:
                 continue
 
         # Exact name match
@@ -134,3 +147,100 @@ def reconcile_all(
             stats["unmatched"] += 1
 
     return stats
+
+
+def apply_mapping_to_row(dbp, sgo_id: str | None, confidence: float) -> str:
+    """Write mapping onto a DFSPlayer ORM row. Never force uncertain matches."""
+    if sgo_id and confidence >= 0.95:
+        dbp.mapping_status = "MATCHED"
+        dbp.sbme_player_id = sgo_id
+        dbp.mapping_confidence = confidence
+        return "MATCHED"
+    if sgo_id and confidence >= 0.85:
+        dbp.mapping_status = "REVIEW_REQUIRED"
+        dbp.sbme_player_id = sgo_id
+        dbp.mapping_confidence = confidence
+        return "REVIEW_REQUIRED"
+    dbp.mapping_status = "UNMATCHED"
+    dbp.sbme_player_id = None
+    dbp.mapping_confidence = 0.0
+    return "UNMATCHED"
+
+
+def merge_reconciliation_report(existing, stats: dict) -> dict:
+    """Merge mapping stats into slate.reconciliation_report without dropping BC metadata."""
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    merged.update(stats)
+    return merged
+
+
+async def load_sgo_player_dicts(sport: str) -> list[dict]:
+    """Best-effort SGO player list for reconciliation (name + team abbreviation)."""
+    players: list[dict] = []
+    try:
+        from providers.sdk_provider import SdkSgoProvider
+        events = await SdkSgoProvider().get_sb_events(sport)
+        for evt in events or []:
+            home = getattr(evt, "home_team", None)
+            away = getattr(evt, "away_team", None)
+            home_id = getattr(home, "team_id", "") or ""
+            away_id = getattr(away, "team_id", "") or ""
+            home_abbr = normalize_team_abbr(getattr(home, "abbreviation", "") or "")
+            away_abbr = normalize_team_abbr(getattr(away, "abbreviation", "") or "")
+            for sp in getattr(evt, "players", None) or []:
+                pid = getattr(sp, "player_id", None) or getattr(sp, "id", None)
+                name = getattr(sp, "name", "") or ""
+                if not pid or not name:
+                    continue
+                team_id = getattr(sp, "team_id", "") or ""
+                if team_id and away_id and team_id.upper() == str(away_id).upper():
+                    team = away_abbr
+                else:
+                    team = home_abbr
+                players.append({
+                    "id": str(pid),
+                    "playerID": str(pid),
+                    "name": name,
+                    "team": team,
+                    "teamAbbrev": team,
+                    "position": getattr(sp, "position", "") or "",
+                })
+    except Exception as e:
+        logger.warning("SGO player load for reconciliation failed: %s", e)
+    seen = set()
+    unique = []
+    for p in players:
+        if p["playerID"] not in seen:
+            seen.add(p["playerID"])
+            unique.append(p)
+    return unique
+
+
+def reconcile_db_players(db_players, sgo_players: list[dict]) -> dict:
+    """Apply reconcile_player to ORM DFSPlayer rows. Returns mapping stats."""
+    matched = review = unmatched = 0
+    for dbp in db_players:
+        dp = DFSContestPlayer(
+            platform="",
+            player_id=dbp.provider_player_id or "",
+            player_name=dbp.player_name or "",
+            team=dbp.team or "",
+            opponent=dbp.opponent or "",
+            position=dbp.position or "",
+            salary=dbp.salary or 0,
+        )
+        sgo_id = reconcile_player(dp, sgo_players)
+        status = apply_mapping_to_row(dbp, sgo_id, dp.sbme_confidence)
+        if status == "MATCHED":
+            matched += 1
+        elif status == "REVIEW_REQUIRED":
+            review += 1
+        else:
+            unmatched += 1
+    return {
+        "matched": matched,
+        "review": review,
+        "unmatched": unmatched,
+        "total": len(db_players),
+        "sgo_pool_size": len(sgo_players),
+    }

@@ -21,8 +21,19 @@ def test_hitter_bc_fallback_applied_when_sgo_unavailable():
     assert count_projected_players(out) == 1
 
 
-def test_pitcher_without_bc_fppg_not_counted_even_with_sgo_fp():
+def test_pitcher_without_bc_fppg_not_counted_when_bc_covers_slate():
     pool = [
+        {
+            "id": "p_start",
+            "name": "Starter",
+            "position": "P",
+            "roster_position": "P",
+            "projected_fp": 18.0,
+            "projection_source": "SGO_FANTASY_MARKET",
+            "fppg": 17.0,
+            "team": "NYY",
+            "salary": 9000,
+        },
         {
             "id": "p1",
             "name": "Reliever",
@@ -31,11 +42,13 @@ def test_pitcher_without_bc_fppg_not_counted_even_with_sgo_fp():
             "projected_fp": 12.0,
             "projection_source": "SGO_FANTASY_MARKET",
             "fppg": None,
-        }
+            "team": "NYY",
+            "salary": 3500,
+        },
     ]
     out = apply_bc_proj_fallback(pool)
-    assert out[0]["projected_fp"] == 12.0
-    assert count_projected_players(out) == 0
+    assert out[1]["projected_fp"] == 12.0
+    assert count_projected_players(out) == 1
 
 
 def test_pitcher_bc_fallback_when_starter_fppg_present():

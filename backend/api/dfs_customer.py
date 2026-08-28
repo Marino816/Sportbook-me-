@@ -76,6 +76,8 @@ async def get_slate(
 
     result = await db.execute(select(PlayerDB).where(PlayerDB.slate_id == slate_id))
     players = result.scalars().all()
+    report = slate.reconciliation_report if isinstance(slate.reconciliation_report, dict) else {}
+    bc_meta = report.get("bc_player_meta") if isinstance(report.get("bc_player_meta"), dict) else {}
 
     return wrap_data({
         "id": slate.id,
@@ -94,7 +96,10 @@ async def get_slate(
             "eligible_positions": p.eligible_positions,
             "salary": p.salary,
             "fppg": p.fppg,
+            "bc_value": (bc_meta.get(p.provider_player_id) or {}).get("value") if bc_meta else None,
+            "bc_beta_proj": (bc_meta.get(p.provider_player_id) or {}).get("beta_proj") if bc_meta else None,
             "game_info": p.game_info,
             "mapping_status": p.mapping_status,
+            "sbme_player_id": p.sbme_player_id,
         } for p in players],
     })

@@ -6,12 +6,13 @@ and manual (20/day) budgets against the 150/day SB ME ceiling.  Atomic
 INCR reservation prevents over-spend across concurrent workers.
 Per-endpoint SETNX locks prevent duplicate concurrent syncs.
 
-Scheduler host: Railway Cron (recommended) — wakes every 10 min.
-Tick frequency ≠ provider frequency: scheduler_tick() checks each
-endpoint's due time; a wake-up may result in 0–8 provider calls.
+Scheduler host: in-process FastAPI lifespan loop when BCDFS_SCHEDULER_ENABLED
+is true (tick interval BCDFS_TICK_INTERVAL, default 600s). Railway Cron is
+an optional alternative. Tick frequency ≠ provider frequency: scheduler_tick()
+checks each endpoint's due time; a wake-up may result in 0–8 provider calls.
 
 DOES NOT:
-  - Copy BC projections into projected_fp
+  - Copy BC projections into projected_fp (fppg + bc_player_meta only)
   - Replace the manual CSV importer
   - Expose BCDFS_API_KEY or raw BC JSON
 """
@@ -408,6 +409,8 @@ async def _sync_one_endpoint(
 
     try:
         # ── Atomic budget reservation ──
+        reserved = False
+        consumed_provider_request = False
         if not _try_reserve_budget(budget_type, budget_limit):
             status.last_error = f"DAILY_BUDGET_EXHAUSTED ({budget_type})"
             status.last_error_time = now
@@ -415,10 +418,12 @@ async def _sync_one_endpoint(
             if budget_type == "auto":
                 pass  # don't flip to ERROR on budget exhaustion — retry tomorrow
             return report
+        reserved = True
 
         # ── Fetch + parse + sync ──
         try:
             data = fetch_bc_endpoint(status.sport, status.platform)
+            consumed_provider_request = True
             parse_result = parse_bc_response(data, status.sport, status.platform)
             report = await sync_bc_to_db(db, parse_result, auto_publish=True)
 
@@ -437,6 +442,7 @@ async def _sync_one_endpoint(
             _clear_suspension(status.sport, status.platform)
 
         except BcAuthError as e:
+            consumed_provider_request = True
             # 401/403 — suspend automated syncs permanently
             status.state = EndpointState.SUSPENDED
             status.last_error = f"Auth ({e.status})"
@@ -448,6 +454,7 @@ async def _sync_one_endpoint(
                 _set_suspended(status.sport, status.platform)  # persistent across restarts
 
         except BcRateLimitError as e:
+            consumed_provider_request = True
             status.state = EndpointState.ERROR
             status.last_error = "429 provider rate limit"
             status.last_error_time = now
@@ -456,7 +463,9 @@ async def _sync_one_endpoint(
             report.errors.append("Provider 429")
 
         except BcApiError as e:
-            # 5xx / network — don't flip active endpoints to error
+            # HTTP responses reached Blue Collar (count against budget).
+            # status 0 = local/network failure before a countable HTTP response.
+            consumed_provider_request = bool(getattr(e, "status", 0))
             if status.state not in (EndpointState.OFFSZN, EndpointState.SUSPENDED, EndpointState.POST_LOCK):
                 status.state = EndpointState.ERROR
             status.last_error = str(e)[:200]
@@ -467,6 +476,9 @@ async def _sync_one_endpoint(
             report.errors.append(str(e))
 
         except Exception as e:
+            # Unknown failure after reservation: keep the budget slot so retries
+            # cannot exceed Blue Collar's actual daily cap.
+            consumed_provider_request = True
             if status.state not in (EndpointState.OFFSZN, EndpointState.SUSPENDED, EndpointState.POST_LOCK):
                 status.state = EndpointState.ERROR
             status.last_error = str(e)[:200]
@@ -477,6 +489,8 @@ async def _sync_one_endpoint(
             report.errors.append(str(e))
 
     finally:
+        if reserved and not consumed_provider_request:
+            _release_budget(budget_type)
         _release_sync_lock(status.sport, status.platform)
 
     status.next_poll = now + timedelta(seconds=status.interval_seconds())

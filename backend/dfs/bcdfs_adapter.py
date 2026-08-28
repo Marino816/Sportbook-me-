@@ -7,13 +7,13 @@ Blue Collar API endpoints, parses players into canonical DFSContestPlayer
 models, and syncs to the DFSSlate / DFSPlayer persistence layer.
 
 Phase 1 responsibilities: slate discovery, platform player IDs, salaries,
-position eligibility, teams, opponents.  Does NOT replace SB ME's
-projection engine.  BC projections are stored as optional provider
-metadata only and have zero path to the customer-facing projected_fp.
+position eligibility, teams, opponents.  BC projections are stored as
+optional provider metadata (fppg + reconciliation_report.bc_player_meta)
+and are never copied into customer-facing projected_fp by this module.
 
 Rate limit: 200 req / day (documented).  Internal request accounting
-prevents exceeding the cap.  Scheduler-ready but scheduling is NOT
-activated here — requires separate approval.
+prevents exceeding the cap.  Automated scheduling is activated separately
+via BCDFS_SCHEDULER_ENABLED on the API process (see main.py / bcdfs_scheduler).
 
 Licensing boundary: raw Blue Collar JSON never leaves this module.
 BCDFS_API_KEY is never logged, printed, or returned to any caller.
@@ -33,6 +33,7 @@ from datetime import datetime, timezone, timedelta, date
 from typing import Optional
 
 from dfs.models import DFSContestPlayer, DFSSlate as CanonicalSlate
+from dfs.team_normalize import TEAM_ABBR_ALIASES, normalize_team_abbr
 
 logger = logging.getLogger(__name__)
 
@@ -62,17 +63,8 @@ SUPPORTED_PLATFORMS = {"draftkings", "fanduel"}
 DAILY_LIMIT = 200
 SAFE_LIMIT = 190
 
-# Team abbreviation normalisation.  Blue Collar uses the DraftKings
-# convention.  The only known mismatch vs SGO is ATH→OAK (Athletics).
-# Add more as discovered across sports.
-TEAM_NORMALIZE: dict[str, str] = {
-    "ATH": "OAK",   # Blue Collar "ATH" → canonical "OAK"
-    "AZ":  "ARI",   # safety — should already be ARI
-    "WSH": "WSH",   # OK as-is
-    "CWS": "CWS",   # OK
-    "LAA": "LAA",   # OK
-    "CHC": "CHC",   # OK
-}
+# Team abbreviation normalisation lives in dfs.team_normalize (ATH/OAK, CHW/CWS).
+TEAM_NORMALIZE = dict(TEAM_ABBR_ALIASES)
 
 # BC date format is "MM_DD_YY" (underscores).
 BC_DATE_FMT = "%m_%d_%y"
@@ -122,7 +114,7 @@ class BcRateLimiter:
 
 def normalize_team(abbr: str) -> str:
     """Map Blue Collar team abbreviation to SB ME canonical form."""
-    return TEAM_NORMALIZE.get(abbr.upper().strip(), abbr.upper().strip())
+    return normalize_team_abbr(abbr)
 
 
 def split_eligible_positions(position: str) -> list[str]:
@@ -318,9 +310,9 @@ def parse_bc_response(
     Each player: {"name", "salary", "projection", "value", "beta_proj",
     "site_id", "position", "team", "opponent"}
 
-    RAW BC PROJECTION/VALUE/BETA_PROJ ARE INTENTIONALLY DROPPED HERE.
-    They are stored only via the optional bc_metadata path (see
-    sync function).  This parser produces clean salary/roster data.
+    RAW BC PROJECTION is copied to fppg (optional fallback input).
+    value and beta_proj are carried on DFSContestPlayer and persisted in
+    slate.reconciliation_report['bc_player_meta'] — not projected_fp.
     """
     result = BcParseResult(sport=sport, platform=platform)
     plat_lower = platform.lower()
@@ -404,6 +396,8 @@ def parse_bc_response(
                 eligible_positions=eligible_positions,
                 salary=salary_int,
                 fppg=round(bc_projection, 1) if bc_projection > 0 else None,
+                bc_value=round(bc_value, 2) if bc_value else None,
+                bc_beta_proj=round(bc_beta, 1) if bc_beta else None,
                 data_source="blue_collar",
                 ingested_at=datetime.now(timezone.utc),
                 game_info=f"{team}@{opponent} {date_str}" if team and opponent else date_str,
@@ -460,9 +454,9 @@ async def sync_bc_to_db(
     updates existing records rather than duplicating.  Identity is external_slate_id
     (the deterministic bc_slate_key hash).
 
-    BC projection, value, and beta_proj are stored in a JSON metadata
-    column (reconciliation_report) for internal research only — they
-    have zero path to the customer-facing projected_fp field.
+    BC projection is stored on DFSPlayer.fppg.  BC value and beta_proj are
+    stored in slate.reconciliation_report['bc_player_meta'] (JSON) so no
+    destructive schema change is required.  They never write projected_fp.
 
     auto_publish=True: all CURRENT slates are auto-published (same
     behaviour as the CSV import gate).
@@ -525,10 +519,17 @@ async def sync_bc_to_db(
         )
         existing_players = {p.provider_player_id: p for p in existing_result.scalars().all()}
         incoming_ids = set()
+        bc_player_meta: dict[str, dict] = {}
 
         for cp in players:
             incoming_ids.add(cp.player_id)
             existing = existing_players.get(cp.player_id)
+            if cp.player_id:
+                bc_player_meta[cp.player_id] = {
+                    "projection": cp.fppg,
+                    "value": cp.bc_value,
+                    "beta_proj": cp.bc_beta_proj,
+                }
 
             if existing:
                 # Check for changes
@@ -592,6 +593,32 @@ async def sync_bc_to_db(
 
         # Update slate counts
         db_slate.player_count = len(incoming_ids)
+
+        report_base = dict(db_slate.reconciliation_report or {})
+        prev_meta = dict(report_base.get("bc_player_meta") or {})
+        prev_meta.update(bc_player_meta)
+        report_base["bc_player_meta"] = prev_meta
+        db_slate.reconciliation_report = report_base
+
+        # Reconcile to SGO/internal IDs when a player pool is available.
+        try:
+            from dfs.reconciliation import load_sgo_player_dicts, reconcile_db_players, merge_reconciliation_report
+            sgo_players = await load_sgo_player_dicts(parse_result.sport)
+            if sgo_players:
+                await db.flush()
+                mapped = await db.execute(
+                    select(DBPlayer).where(DBPlayer.slate_id == db_slate.id)
+                )
+                db_rows = mapped.scalars().all()
+                stats = reconcile_db_players(db_rows, sgo_players)
+                db_slate.matched_count = stats["matched"]
+                db_slate.review_count = stats["review"]
+                db_slate.unmatched_count = stats["unmatched"]
+                db_slate.reconciliation_report = merge_reconciliation_report(
+                    db_slate.reconciliation_report, stats
+                )
+        except Exception as rec_err:
+            logger.warning("BC player reconciliation skipped: %s", rec_err)
 
     await db.commit()
     logger.info(

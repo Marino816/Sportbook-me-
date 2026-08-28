@@ -31,6 +31,8 @@ class DFSContestPlayer:
     # DFS
     salary: int = 0
     fppg: Optional[float] = None                # DK FPPG from Blue Collar DFS
+    bc_value: Optional[float] = None            # BC value metric (not SB value)
+    bc_beta_proj: Optional[float] = None        # BC beta_proj (research metadata)
     game_info: str = ""                          # "TEAM @ TEAM MM/DD HH:MM ET"
 
     # SB ME internal

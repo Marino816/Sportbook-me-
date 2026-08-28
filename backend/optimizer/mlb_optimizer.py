@@ -131,17 +131,15 @@ class MLBOptimizer:
     def _build_maps(self):
         """Build position eligibility and index lookups.
 
-        PITCHER ELIGIBILITY POLICY:
-        - BC projection>0 is the starter signal. BC projects exactly 1 pitcher
-          per team per game. Pitchers without BC projection are NOT starters and
-          are excluded regardless of SGO fantasyScore status.
-        - SGO fantasyScore is a universal betting market (18+ pitchers per game
-          get it), NOT a starter signal. It is NOT used for eligibility gates.
-        - If a pitcher has BC projection but no SGO projection → BC_PROJ_FALLBACK.
-        - If a pitcher has neither BC projection nor SGO projection → excluded.
+        PITCHER ELIGIBILITY POLICY (projection.native.resolve_eligible_pitcher_ids):
+        - When BC covers the slate (any pitcher fppg>0), BC is the starter gate.
+        - When BC is unavailable, fall back to SP vs RP labels, then PROP_BASED
+          outing props, then highest-salary pitcher per team. SGO fantasyScore
+          alone is never treated as proof a pitcher is starting.
 
         TEAM-IDENTITY QUARANTINE: a player whose DFS team differs from the team
-        assigned by SGO for the same name is excluded and reported.
+        assigned by SGO for the same name is excluded and reported. ATH/OAK and
+        CHW/CWS are treated as the same club.
         """
         self.players = []  # eligible player dicts
         self.pos_mask = {}  # player_idx -> normalized slot
@@ -164,6 +162,9 @@ class MLBOptimizer:
         # Resolve by name (NFD-normalised).
         import unicodedata as _ucd
         import re as _re
+        from dfs.team_normalize import teams_equivalent
+        from projection.native import apply_projection_policy
+
         def _norm(n):
             return _re.sub(r'[^a-z0-9]', '', _ucd.normalize('NFD', (n or '').lower()))
         sgo_team_by_name: dict[str, str] = {}
@@ -171,10 +172,12 @@ class MLBOptimizer:
             sgo_t = p.get("sgo_team")
             if sgo_t:
                 sgo_team_by_name[_norm(p.get("name", ""))] = sgo_t.upper()
+        quarantined_ids: set[str] = set()
         for p in self.pool:
             dfs_t = (p.get("team") or "").upper()
             sgo_t = sgo_team_by_name.get(_norm(p.get("name", "")))
-            if sgo_t and dfs_t and dfs_t != sgo_t:
+            if sgo_t and dfs_t and not teams_equivalent(dfs_t, sgo_t):
+                quarantined_ids.add(str(p.get("id", "")))
                 self.quarantined.append({
                     "name": p.get("name", ""),
                     "dfs_team": dfs_t,
@@ -184,37 +187,25 @@ class MLBOptimizer:
                 })
                 continue  # exclude from solver pool
 
-        for p in self.pool:
+        policy_pool = apply_projection_policy(self.pool)
+        for p in policy_pool:
             if _excluded(p):
+                continue
+            if str(p.get("id", "")) in quarantined_ids:
                 continue
             if (p.get("salary", 0) or 0) <= 0:
                 continue
             pos = _normalize_mlb_pos(p.get("roster_position") or p.get("position") or "", self.platform)
             fp = p.get("projected_fp", 0) or 0
-            fppg = p.get("fppg")
 
-            # ── Projection fallback policy ──
             if pos == "P":
-                # PITCHER STARTER GATE: BC projection>0 required.
-                # BC projects exactly 1 pitcher per team per game.
-                # SGO fantasyScore is a universal betting market, not a starter signal.
-                if fppg is None or fppg <= 0:
-                    continue  # no BC projection → not a starter
+                if not p.get("mlb_pitcher_eligible", False):
+                    continue
                 if fp <= 0:
-                    p = dict(p)
-                    p["projected_fp"] = round(float(fppg), 1)
-                    p["projection_source"] = "BC_PROJ_FALLBACK"
-                    p["fppg_was_fallback"] = True
+                    continue
             else:
-                # Hitters: SGO_FANTASY_MARKET or BC_PROJ_FALLBACK
                 if fp <= 0:
-                    if fppg is not None and fppg > 0:
-                        p = dict(p)
-                        p["projected_fp"] = round(float(fppg), 1)
-                        p["projection_source"] = "BC_PROJ_FALLBACK"
-                        p["fppg_was_fallback"] = True
-                    else:
-                        continue
+                    continue
 
             idx = len(self.players)
             self.players.append(p)

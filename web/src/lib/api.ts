@@ -301,8 +301,11 @@ export interface DFSSlatePlayer {
   eligible_positions: string[];
   salary: number;
   fppg: number | null;
+  bc_value?: number | null;
+  bc_beta_proj?: number | null;
   game_info: string | null;
   mapping_status: string;
+  sbme_player_id?: string | null;
 }
 
 export interface DFSSlateDetail {

@@ -104,9 +104,13 @@ def parse_draftkings_csv(csv_content: str, slate_name: str = "DK Main") -> tuple
         name, pid = _parse_dk_id(name_id)
         # Handle multi-position: "2B/3B" → ["2B", "3B"]
         pos_parts = [p.strip() for p in pos_raw.split("/")]
-        primary_pos = DK_POSITION_MAP.get(pos_parts[0], pos_parts[0])
+        raw_tokens = [p.strip().upper() for p in pos_parts if p.strip()]
+        primary_pos = DK_POSITION_MAP.get(raw_tokens[0], raw_tokens[0]) if raw_tokens else ""
         positions_seen.add(primary_pos)
-        eligible = list({DK_POSITION_MAP.get(p, p) for p in pos_parts})
+        positions_seen.update(raw_tokens)
+        mapped = [DK_POSITION_MAP.get(p, p) for p in raw_tokens] or [primary_pos]
+        # Keep original SP/RP tokens so starter eligibility survives P slot mapping.
+        eligible = list(dict.fromkeys(raw_tokens + mapped))
         team_abbrev, opponent, game_start = _parse_game_info(game_info)
 
         if game_start and start_time is None:
@@ -123,7 +127,7 @@ def parse_draftkings_csv(csv_content: str, slate_name: str = "DK Main") -> tuple
             team=team or team_abbrev,
             opponent=opponent,
             position=primary_pos,
-            eligible_positions=eligible if len(eligible) > 1 else [primary_pos],
+            eligible_positions=eligible if eligible else [primary_pos],
             salary=salary,
             game_info=game_info,
             data_source="native",
@@ -184,8 +188,11 @@ def parse_fanduel_csv(csv_content: str, slate_name: str = "FD Main") -> tuple[DF
         except ValueError:
             salary = 0
 
-        pos = DK_POSITION_MAP.get(pos_raw, pos_raw)
+        pos_raw_u = pos_raw.upper().strip()
+        pos = DK_POSITION_MAP.get(pos_raw_u, pos_raw_u)
         positions_seen.add(pos)
+        positions_seen.add(pos_raw_u)
+        eligible_fd = list(dict.fromkeys([t for t in [pos_raw_u, pos] if t]))
 
         # Extract team/opponent/start_time from the game field
         # (FD "Game" field is typically "TEAM@OPP MM/DD/YYYY HH:MM PM ET").
@@ -204,7 +211,7 @@ def parse_fanduel_csv(csv_content: str, slate_name: str = "FD Main") -> tuple[DF
             team=team,
             opponent=opponent,
             position=pos,
-            eligible_positions=[pos],
+            eligible_positions=eligible_fd or [pos],
             salary=salary,
             game_info=game,
             data_source="native",

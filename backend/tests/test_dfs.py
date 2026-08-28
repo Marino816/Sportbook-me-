@@ -50,7 +50,8 @@ class TestDKParser:
         assert p.player_name == "Tarik Skubal"
         assert p.player_id == "12345"
         assert p.salary == 10500
-        assert p.position == "P"  # SP → P normalization
+        assert p.position == "P"  # SP → P slot mapping
+        assert "SP" in p.eligible_positions
         assert p.team == "DET"
         assert p.opponent == "CLE"
 
@@ -291,10 +292,13 @@ class TestOptimizerFreshnessGate:
         # _SLATE_POOL IDs are "1"–"16".  Give 14 players enough props
         # to meet the MIN_PROJECTED=10 threshold.
         for pid, name, team, sal, pos in _SLATE_POOL:
-            if pos != "P":
-                mock_sgo[pid] = {"props": {"hits": 1.0, "homeRuns": 0.1, "rbi": 0.5}}
+            if pos == "P":
+                mock_sgo[pid] = {
+                    "fantasyScore": 18.0,
+                    "props": {"pitchingStrikeouts": 5.0, "pitchingOuts": 18.0},
+                }
             else:
-                mock_sgo[pid] = {"props": {"pitchingStrikeouts": 5.0, "pitchingOuts": 18.0}}
+                mock_sgo[pid] = {"fantasyScore": 8.5}
 
         with patch("projection.sgo_intelligence.build_sgo_intelligence", return_value=mock_sgo) as mock_sgo_fn:
             # Make the mock awaitable

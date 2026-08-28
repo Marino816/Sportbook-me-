@@ -11,8 +11,7 @@ from api.auth import get_current_user, require_admin
 from models.domain import User
 from dfs.db import DFSSlate as SlateDB, DFSPlayer as PlayerDB
 from dfs.parsers import parse_draftkings_csv, parse_fanduel_csv
-from dfs.reconciliation import reconcile_player
-from dfs.models import DFSContestPlayer
+from dfs.reconciliation import reconcile_db_players, merge_reconciliation_report
 from dfs.import_service import import_slate_file, ImportResult
 from api.utils import wrap_data
 
@@ -149,45 +148,17 @@ async def upload_slate(
     reconciliation = None
     try:
         sgo_players = await _fetch_sgo_players(slate_obj.sport)
-        matched, review, unmatched = 0, 0, 0
-        for p in players:
-            dp = DFSContestPlayer(
-                platform=platform, player_id=p.player_id,
-                player_name=p.player_name, team=p.team, opponent=p.opponent,
-                position=p.position, salary=p.salary, game_info=p.game_info,
-            )
-            sgo_id = reconcile_player(dp, sgo_players)
-            # Update the DB row
-            player_result = await db.execute(
-                select(PlayerDB).where(PlayerDB.slate_id == db_slate.id,
-                                       PlayerDB.provider_player_id == p.player_id)
-            )
-            dbp = player_result.scalars().first()
-            if dbp:
-                if sgo_id and dp.sbme_confidence >= 0.95:
-                    dbp.mapping_status = "MATCHED"
-                    dbp.sbme_player_id = sgo_id
-                    dbp.mapping_confidence = dp.sbme_confidence
-                    matched += 1
-                elif sgo_id and dp.sbme_confidence >= 0.85:
-                    dbp.mapping_status = "REVIEW_REQUIRED"
-                    dbp.sbme_player_id = sgo_id
-                    dbp.mapping_confidence = dp.sbme_confidence
-                    review += 1
-                else:
-                    dbp.mapping_status = "UNMATCHED"
-                    unmatched += 1
-
-        # Never downgrade PUBLISHED status during reconciliation
+        result = await db.execute(select(PlayerDB).where(PlayerDB.slate_id == db_slate.id))
+        db_players = result.scalars().all()
+        stats = reconcile_db_players(db_players, sgo_players)
         if db_slate.status != "PUBLISHED":
-            db_slate.status = "REVIEW" if review > 0 else "DRAFT"
-        db_slate.matched_count = matched
-        db_slate.review_count = review
-        db_slate.unmatched_count = unmatched
-        db_slate.reconciliation_report = {
-            "matched": matched, "review": review, "unmatched": unmatched,
-            "total": len(players), "sgo_pool_size": len(sgo_players),
-        }
+            db_slate.status = "REVIEW" if stats["review"] > 0 else "DRAFT"
+        db_slate.matched_count = stats["matched"]
+        db_slate.review_count = stats["review"]
+        db_slate.unmatched_count = stats["unmatched"]
+        db_slate.reconciliation_report = merge_reconciliation_report(
+            db_slate.reconciliation_report, stats
+        )
         await db.commit()
         await db.refresh(db_slate)
         reconciliation = dict(db_slate.reconciliation_report)
@@ -222,39 +193,16 @@ async def reconcile_slate(
     sgo_players = await _fetch_sgo_players(slate.sport)
     logger.info(f"Reconcile: {len(db_players)} DK vs {len(sgo_players)} SGO")
 
-    matched, review, unmatched = 0, 0, 0
-    for dbp in db_players:
-        dp = DFSContestPlayer(
-            platform=slate.platform, player_id=dbp.provider_player_id,
-            player_name=dbp.player_name, team=dbp.team, opponent=dbp.opponent or "",
-            position=dbp.position, salary=dbp.salary, game_info=dbp.game_info or "",
-        )
-        sgo_id = reconcile_player(dp, sgo_players)
-        if sgo_id and dp.sbme_confidence >= 0.95:
-            dbp.mapping_status = "MATCHED"
-            dbp.sbme_player_id = sgo_id
-            dbp.mapping_confidence = dp.sbme_confidence
-            matched += 1
-        elif sgo_id and dp.sbme_confidence >= 0.85:
-            dbp.mapping_status = "REVIEW_REQUIRED"
-            dbp.sbme_player_id = sgo_id
-            dbp.mapping_confidence = dp.sbme_confidence
-            review += 1
-        else:
-            dbp.mapping_status = "UNMATCHED"
-            unmatched += 1
-
-    slate.matched_count = matched
-    slate.review_count = review
-    slate.unmatched_count = unmatched
+    stats = reconcile_db_players(db_players, sgo_players)
+    slate.matched_count = stats["matched"]
+    slate.review_count = stats["review"]
+    slate.unmatched_count = stats["unmatched"]
     # Never downgrade PUBLISHED during reconciliation
     if slate.status != "PUBLISHED":
-        slate.status = "REVIEW" if review > 0 else "DRAFT"
-    slate.reconciliation_report = {
-        "matched": matched, "review": review, "unmatched": unmatched,
-        "total": len(db_players),
-        "sgo_pool_size": len(sgo_players),
-    }
+        slate.status = "REVIEW" if stats["review"] > 0 else "DRAFT"
+    slate.reconciliation_report = merge_reconciliation_report(
+        slate.reconciliation_report, stats
+    )
     await db.commit()
     return wrap_data(slate.reconciliation_report)
 

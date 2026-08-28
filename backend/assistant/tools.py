@@ -97,39 +97,76 @@ async def get_slate_players(
     max_salary: Optional[int] = None,
     min_salary: Optional[int] = None,
 ) -> dict:
-    """Return a slate's player pool (identity, salary, position, team, opponent)."""
+    """Return a slate's player pool with the same effective SB projection
+    policy used by the optimizer (canonical pool)."""
+    from dfs.canonical import build_canonical_pool
+    from dfs.team_normalize import normalize_team_abbr, teams_equivalent
+
     slate = await _get_published_slate(db, slate_id)
     if not slate:
         return {"error": f"Slate {slate_id} not found or not published"}
 
-    q = select(DFSPlayer).where(DFSPlayer.slate_id == slate_id)
-    if position:
-        q = q.where(DFSPlayer.position == position.upper())
-    if team:
-        q = q.where(DFSPlayer.team == team.upper())
-    if max_salary is not None:
-        q = q.where(DFSPlayer.salary <= max_salary)
-    if min_salary is not None:
-        q = q.where(DFSPlayer.salary >= min_salary)
-    q = q.order_by(DFSPlayer.salary.desc()).limit(MAX_PLAYERS)
+    pool, metadata = await build_canonical_pool(db, slate_id, platform=platform, with_ownership=False)
+    if not pool:
+        # Tiny/unpublished-shape slates still return identity + fppg via the same policy.
+        q = select(DFSPlayer).where(DFSPlayer.slate_id == slate_id)
+        r = await db.execute(q)
+        rows = r.scalars().all()
+        if not rows:
+            return {"error": metadata.get("error", f"Slate {slate_id} not found or not published")}
+        from projection.native import apply_projection_policy
+        pool = apply_projection_policy([{
+            "id": p.sbme_player_id or p.provider_player_id,
+            "name": p.player_name,
+            "position": p.position,
+            "roster_position": p.position,
+            "eligible_positions": p.eligible_positions or [p.position],
+            "team": p.team,
+            "opponent": p.opponent,
+            "salary": p.salary,
+            "fppg": p.fppg,
+            "projected_fp": 0.0,
+            "projection_source": "UNAVAILABLE",
+        } for p in rows])
 
-    r = await db.execute(q)
-    players = r.scalars().all()
+    want_pos = position.upper() if position else None
+    want_team = normalize_team_abbr(team) if team else None
+    filtered = []
+    for p in pool:
+        pos = (p.get("roster_position") or p.get("position") or "").upper()
+        elig = [str(x).upper() for x in (p.get("eligible_positions") or [])]
+        pteam = normalize_team_abbr(p.get("team"))
+        salary = int(p.get("salary") or 0)
+        if want_pos and pos != want_pos and want_pos not in elig:
+            continue
+        if want_team and not teams_equivalent(pteam, want_team):
+            continue
+        if max_salary is not None and salary > max_salary:
+            continue
+        if min_salary is not None and salary < min_salary:
+            continue
+        filtered.append(p)
+        if len(filtered) >= MAX_PLAYERS:
+            break
 
     return {
         "slate_id": slate_id,
         "platform": slate.platform,
         "sport": slate.sport,
         "slate_name": slate.slate_name,
-        "count": len(players),
-        "players": [{
-            "player_id": p.sbme_player_id or p.provider_player_id,
-            "name": p.player_name,
-            "position": p.position,
-            "team": p.team,
-            "opponent": p.opponent,
-            "salary": p.salary,
-        } for p in players],
+        "count": len(filtered),
+        "players": _clean([{
+            "player_id": p.get("id"),
+            "name": p.get("name"),
+            "position": p.get("roster_position") or p.get("position"),
+            "team": p.get("team"),
+            "opponent": p.get("opponent"),
+            "salary": p.get("salary"),
+            "projected_fp": p.get("projected_fp"),
+            "projection_source": p.get("projection_source"),
+            "mlb_pitcher_eligible": p.get("mlb_pitcher_eligible"),
+            "fppg": p.get("fppg"),
+        } for p in filtered]),
     }
 
 
@@ -169,6 +206,8 @@ async def get_player_sb_metrics(
         "salary": p.get("salary"),
         "projected_fp": p.get("projected_fp"),
         "value": p.get("value"),
+        "bc_value": p.get("bc_value"),
+        "bc_beta_proj": p.get("bc_beta_proj"),
         "sbme_ownership_pct": p.get("sbme_ownership_pct"),
         "leverage": p.get("leverage"),
         "ceiling": p.get("ceiling"),

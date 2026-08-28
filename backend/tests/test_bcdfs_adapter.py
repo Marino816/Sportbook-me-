@@ -36,6 +36,10 @@ class TestNormalizeTeam:
         assert normalize_team("ATH") == "OAK"
         assert normalize_team("ath") == "OAK"
 
+    def test_chw_to_cws(self):
+        assert normalize_team("CHW") == "CWS"
+        assert normalize_team("chw") == "CWS"
+
     def test_passthrough(self):
         assert normalize_team("SEA") == "SEA"
         assert normalize_team("PHI") == "PHI"
@@ -273,16 +277,16 @@ class TestParseBcResponse:
         result2 = parse_bc_response(MLB_DK_SAMPLE, "MLB", "draftkings")
         assert result1.slates[0].slate_id == result2.slates[0].slate_id
 
-    def test_bc_projection_not_on_player(self):
-        """BC projection/value/beta_proj must not leak into DFSContestPlayer fields."""
+    def test_bc_value_and_beta_preserved_on_player(self):
+        """value/beta_proj persist on the contest player for slate metadata sync."""
         result = parse_bc_response(MLB_DK_SAMPLE, "MLB", "draftkings")
         main_players = result.players_by_slate[result.slates[0].slate_id]
         wheeler = [p for p in main_players if p.player_name == "Zack Wheeler"][0]
-        # DFSContestPlayer has no projection/value fields — confirm it parses cleanly
         assert wheeler.salary == 10800
-        # No bc_projection field exists on the model
-        assert not hasattr(wheeler, "bc_projection")
-        assert not hasattr(wheeler, "bc_value")
+        assert wheeler.fppg == 20.3
+        assert wheeler.bc_value == 1.9
+        assert wheeler.bc_beta_proj is None  # sample beta_proj is 0.0
+        assert not hasattr(wheeler, "projected_fp")
 
     def test_zero_salary_player_still_included(self):
         """Zero-salary players should still parse (they exist in BC data)."""

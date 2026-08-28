@@ -78,6 +78,8 @@ class NativeProjection:
     team: str = ""
     opponent: Optional[str] = None
     fppg: Optional[float] = None  # DK FPPG from Blue Collar DFS
+    eligible_positions: list[str] = field(default_factory=list)
+    mapping_status: Optional[str] = None
     base_projection: float = 0.0
     projection_source: str = "UNAVAILABLE"  # SGO_FANTASY_MARKET | PROP_BASED | HYBRID | UNAVAILABLE
     projection_confidence: float = 0.0
@@ -121,6 +123,8 @@ def compute_projections(
             team=p.get("team") or "",
             opponent=p.get("opponent"),
             fppg=p.get("fppg"),
+            eligible_positions=list(p.get("eligible_positions") or []),
+            mapping_status=p.get("mapping_status"),
         )
 
         # Check SGO intelligence enrichment
@@ -161,30 +165,111 @@ def _is_pitcher_pos(pos: str) -> bool:
     return "P" in p or "SP" in p or "RP" in p
 
 
+def _player_id(p: dict) -> str:
+    return str(p.get("id") or p.get("player_id") or "")
+
+
+def pitcher_position_tokens(p: dict) -> set[str]:
+    """Roster tokens used for SP/RP vs P starter classification."""
+    pos = str(p.get("roster_position") or p.get("position") or "").upper()
+    tokens = {pos} if pos else set()
+    for x in p.get("eligible_positions") or []:
+        t = str(x).upper().strip()
+        if t:
+            tokens.add(t)
+    return tokens
+
+
+def is_pitcher_player(p: dict) -> bool:
+    return any(_is_pitcher_pos(t) for t in pitcher_position_tokens(p)) or _is_pitcher_pos(
+        str(p.get("roster_position") or p.get("position") or "")
+    )
+
+
+def _is_rp_only(p: dict) -> bool:
+    tokens = pitcher_position_tokens(p)
+    return "RP" in tokens and "SP" not in tokens
+
+
+def _is_sp_labeled(p: dict) -> bool:
+    return "SP" in pitcher_position_tokens(p)
+
+
+def has_bc_pitcher_coverage(pool: list[dict]) -> bool:
+    """True when Blue Collar supplied at least one pitcher projection (fppg>0)."""
+    for p in pool:
+        if not is_pitcher_player(p):
+            continue
+        fppg = p.get("fppg")
+        if fppg is not None and float(fppg) > 0:
+            return True
+    return False
+
+
+def resolve_eligible_pitcher_ids(pool: list[dict]) -> set[str]:
+    """MLB pitcher starter eligibility — shared by optimizer, hub, sims, AI.
+
+    Precedence:
+      1. If the slate has BC pitcher coverage (any fppg>0): BC fppg>0 is the
+         exclusive starter signal. Relievers without BC proj are excluded.
+         SGO fantasyScore alone is never a starter proof.
+      2. Else (BC unavailable / CSV-only):
+         a. If SP vs RP labels exist on the slate, SP is eligible and RP-only
+            is excluded (DK/FD roster-position signal already in the CSV).
+         b. Else pitchers with PROP_BASED outing props (IP/K/ER) and fp>0.
+         c. Else the highest-salary pitcher per team (operational stand-in
+            for BC's one-starter-per-team rule using salary already on the
+            slate). SGO fantasyScore is still not used as a starter gate.
+    """
+    from dfs.team_normalize import normalize_team_abbr
+
+    pitchers = [p for p in pool if is_pitcher_player(p)]
+    if not pitchers:
+        return set()
+
+    if has_bc_pitcher_coverage(pool):
+        return {
+            _player_id(p)
+            for p in pitchers
+            if p.get("fppg") is not None and float(p.get("fppg") or 0) > 0
+        }
+
+    has_split = any(_is_sp_labeled(p) or _is_rp_only(p) for p in pitchers)
+    if has_split:
+        return {_player_id(p) for p in pitchers if not _is_rp_only(p)}
+
+    prop_ids = {
+        _player_id(p)
+        for p in pitchers
+        if (p.get("projection_source") == "PROP_BASED" and float(p.get("projected_fp") or 0) > 0)
+    }
+    if prop_ids:
+        return prop_ids
+
+    best_by_team: dict[str, tuple[str, int]] = {}
+    for p in pitchers:
+        team = normalize_team_abbr(p.get("team") or "") or "_none"
+        sal = int(p.get("salary") or 0)
+        pid = _player_id(p)
+        prev = best_by_team.get(team)
+        if prev is None or sal > prev[1]:
+            best_by_team[team] = (pid, sal)
+    return {pid for pid, sal in best_by_team.values() if pid and sal > 0}
+
+
 def apply_bc_proj_fallback(pool: list[dict]) -> list[dict]:
     """Apply Blue Collar fppg when SGO produced no usable fantasy-point value.
 
-    Policy matches MLBOptimizer so MIN_PROJECTED counts players the solver
-    will actually use:
-      - Pitchers: BC fppg>0 is the starter gate; missing fppg stays unusable
+    Value policy (not eligibility):
       - Hitters: fppg>0 becomes BC_PROJ_FALLBACK when projected_fp<=0
+      - Pitchers: same, when BC fppg>0 (does not promote relievers by itself)
     """
     out: list[dict] = []
     for raw in pool:
         p = dict(raw)
-        pos = str(p.get("roster_position") or p.get("position") or "")
         fp = float(p.get("projected_fp") or 0)
         fppg = p.get("fppg")
-        if _is_pitcher_pos(pos):
-            if fppg is None or float(fppg) <= 0:
-                out.append(p)
-                continue
-            if fp <= 0:
-                p["projected_fp"] = round(float(fppg), 1)
-                p["projection_source"] = "BC_PROJ_FALLBACK"
-                p["projection_confidence"] = 0.4
-                p["fppg_was_fallback"] = True
-        elif fp <= 0 and fppg is not None and float(fppg) > 0:
+        if fp <= 0 and fppg is not None and float(fppg) > 0:
             p["projected_fp"] = round(float(fppg), 1)
             p["projection_source"] = "BC_PROJ_FALLBACK"
             p["projection_confidence"] = 0.4
@@ -193,18 +278,28 @@ def apply_bc_proj_fallback(pool: list[dict]) -> list[dict]:
     return out
 
 
+def apply_projection_policy(pool: list[dict]) -> list[dict]:
+    """Canonical post-SGO policy used by /optimize, Data Hub, Sims, Stacks, AI."""
+    out = apply_bc_proj_fallback(pool)
+    eligible = resolve_eligible_pitcher_ids(out)
+    for p in out:
+        if is_pitcher_player(p):
+            p["mlb_pitcher_eligible"] = _player_id(p) in eligible
+        else:
+            p["mlb_pitcher_eligible"] = True
+    return out
+
+
 def count_projected_players(pool: list[dict]) -> int:
     """Count players with a usable projection under solver eligibility rules."""
+    eligible = resolve_eligible_pitcher_ids(pool)
     n = 0
     for p in pool:
         fp = float(p.get("projected_fp") or 0)
         if fp <= 0:
             continue
-        pos = str(p.get("roster_position") or p.get("position") or "")
-        if _is_pitcher_pos(pos):
-            fppg = p.get("fppg")
-            if fppg is None or float(fppg) <= 0:
-                continue
+        if is_pitcher_player(p) and _player_id(p) not in eligible:
+            continue
         n += 1
     return n
 
@@ -221,10 +316,12 @@ def projections_to_pool(projections: list[NativeProjection]) -> list[dict]:
         "name": p.player_name,
         "position": p.position,
         "roster_position": p.position,
+        "eligible_positions": list(p.eligible_positions or []),
         "salary": p.salary,
         "fppg": p.fppg,
         "team": p.team,
         "opponent": p.opponent,
+        "mapping_status": p.mapping_status,
         "projected_fp": p.base_projection,
         "projection_source": p.projection_source,
         "projection_confidence": p.projection_confidence,

@@ -26,7 +26,7 @@ from sqlalchemy import select
 
 from models.domain import User  # noqa: F401 (type ref)
 from dfs.db import DFSSlate, DFSPlayer
-from projection.native import compute_projections, projections_to_pool
+from projection.native import compute_projections, projections_to_pool, apply_projection_policy
 from projection.sgo_intelligence import build_sgo_intelligence
 from dfs.ownership import compute_ownership_and_leverage
 
@@ -81,8 +81,16 @@ async def build_canonical_pool(
     players_result = await db.execute(select(DFSPlayer).where(DFSPlayer.slate_id == slate.id))
     native_players = players_result.scalars().all()
 
+    bc_meta = {}
+    report = slate.reconciliation_report if isinstance(slate.reconciliation_report, dict) else {}
+    raw_meta = report.get("bc_player_meta") if report else None
+    if isinstance(raw_meta, dict):
+        bc_meta = raw_meta
+
     projections_list = []
     for np in native_players:
+        provider_id = np.provider_player_id or ""
+        player_bc = bc_meta.get(provider_id) or bc_meta.get(str(provider_id)) or {}
         projections_list.append({
             "id": np.sbme_player_id or np.provider_player_id,
             "name": np.player_name,
@@ -94,6 +102,8 @@ async def build_canonical_pool(
             "projected_fp": 0.0,
             "opponent": np.opponent or "",
             "mapping_status": np.mapping_status,
+            "bc_value": (player_bc.get("value") if isinstance(player_bc, dict) else None),
+            "bc_beta_proj": (player_bc.get("beta_proj") if isinstance(player_bc, dict) else None),
         })
 
     if len(projections_list) < 10:
@@ -106,14 +116,24 @@ async def build_canonical_pool(
     try:
         sgo_intel = await build_sgo_intelligence(sport, projections_list, event_date=slate_date)
         projs = compute_projections(sport, projections_list, sgo_intelligence=sgo_intel)
-        projected_count = sum(1 for p in projs if p.projection_source != "UNAVAILABLE")
-        pool = projections_to_pool(projs)
+        pool = apply_projection_policy(projections_to_pool(projs))
+        from projection.native import count_projected_players
+        projected_count = count_projected_players(pool)
         logger.info(f"Canonical pool: {projected_count}/{len(pool)} projected (slate date {slate_date})")
     except Exception as e:
         logger.warning(f"Projection engine unavailable in canonical pool: {e}")
-        pool = projections_to_pool(
+        pool = apply_projection_policy(projections_to_pool(
             compute_projections(sport, projections_list, sgo_intelligence={})
-        )
+        ))
+
+    by_id = {str(p.get("id")): p for p in projections_list}
+    for pl in pool:
+        src = by_id.get(str(pl.get("id")))
+        if src:
+            if pl.get("bc_value") is None:
+                pl["bc_value"] = src.get("bc_value")
+            if pl.get("bc_beta_proj") is None:
+                pl["bc_beta_proj"] = src.get("bc_beta_proj")
 
     # Unprojected players keep projected_fp = 0.0 — no fabricated 0.01 fallback.
     # The router-level >=10-projected gate is the sole projection-sufficiency check.
@@ -122,7 +142,7 @@ async def build_canonical_pool(
     # If the solver cannot construct valid rosters from the real-projection pool,
     # it returns empty — an honest signal, not a fabricated-workaround signal.
 
-    # Value = projection / (salary / 1000)
+    # Value = SB projection / (salary / 1000). Distinct from Blue Collar "value".
     for pl in pool:
         sal = float(pl.get("salary") or 0)
         fp = float(pl.get("projected_fp") or 0)
@@ -146,7 +166,7 @@ async def build_canonical_pool(
         "start_time": slate.start_time.isoformat() if slate.start_time else None,
         "player_count": len(pool),
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "projection_source": "SGO_FANTASY_MARKET | PROP_BASED | UNAVAILABLE",
+        "projection_source": "SGO_FANTASY_MARKET | PROP_BASED | BC_PROJ_FALLBACK | UNAVAILABLE",
         "ownership": ownership_meta,
     }
 

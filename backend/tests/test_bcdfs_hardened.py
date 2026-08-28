@@ -173,7 +173,24 @@ class TestErrors:
         assert status.slate_count == 3
 
     @pytest.mark.asyncio
-    async def test_api_key_not_in_errors(self, mock_redis, monkeypatch):
+    async def test_network_error_releases_budget(self, mock_redis, monkeypatch):
+        from dfs.bcdfs_scheduler import _sync_one_endpoint, BcApiError, _today_key, _get_counter
+        status = EndpointStatus(sport="MLB", platform="draftkings")
+        def fake_fetch(*a, **kw):
+            raise BcApiError(0, "Network error: timed out")
+        monkeypatch.setattr("dfs.bcdfs_scheduler.fetch_bc_endpoint", fake_fetch)
+        await _sync_one_endpoint(MagicMock(), status, budget_type="auto")
+        assert _get_counter(_today_key("budget:auto")) == 0
+
+    @pytest.mark.asyncio
+    async def test_http_5xx_keeps_budget(self, mock_redis, monkeypatch):
+        from dfs.bcdfs_scheduler import _sync_one_endpoint, BcApiError, _today_key, _get_counter
+        status = EndpointStatus(sport="MLB", platform="draftkings")
+        def fake_fetch(*a, **kw):
+            raise BcApiError(500, "err")
+        monkeypatch.setattr("dfs.bcdfs_scheduler.fetch_bc_endpoint", fake_fetch)
+        await _sync_one_endpoint(MagicMock(), status, budget_type="auto")
+        assert _get_counter(_today_key("budget:auto")) == 1
         from dfs.bcdfs_scheduler import _sync_one_endpoint, BcApiError
         status = EndpointStatus(sport="MLB", platform="draftkings")
         def fake_fetch(*a, **kw): raise BcApiError(500, "err")
