@@ -189,6 +189,86 @@ function ParlayDemoCard() {
   );
 }
 
+function IntelligenceDemoCard() {
+  const sports = ["MLB", "NFL", "NBA", "NHL", "EPL", "UCL", "MLS"];
+  const rows = [
+    { n: "C. Sale", p: "P", sal: "$9,600", proj: 36.5, fppg: 38.0, ceil: 52.0, own: "18.4%", lev: 2.1 },
+    { n: "L. Gilbert", p: "P", sal: "$9,800", proj: 34.5, fppg: 35.2, ceil: 48.0, own: "14.2%", lev: 1.6 },
+    { n: "F. Freeman", p: "1B", sal: "$5,400", proj: 16.8, fppg: 31.1, ceil: 28.0, own: "22.7%", lev: -0.8 },
+    { n: "T. Stephenson", p: "C", sal: "$3,600", proj: 13.7, fppg: 38.1, ceil: 24.0, own: "8.1%", lev: 3.4 },
+    { n: "C. Seager", p: "SS", sal: "$4,600", proj: 11.8, fppg: 25.7, ceil: 20.0, own: "12.3%", lev: 1.1 },
+  ];
+
+  return (
+    <div className="sbme-intel">
+      <div className="sbme-intel-glow" />
+      <div className="sbme-intel-shell">
+        <div className="sbme-intel-cut" />
+        <div className="sbme-intel-bracket sbme-intel-bracket--tl" />
+        <div className="sbme-intel-bracket sbme-intel-bracket--br" />
+        <div className="sbme-intel-grid" />
+
+        <div className="sbme-intel-header">
+          <div className="sbme-intel-brand">
+            <div className="live-dot" />
+            <span>SB ME INTELLIGENCE&trade;</span>
+            <div className="sbme-intel-dots" aria-hidden>
+              <i /><i /><i />
+            </div>
+          </div>
+          <span className="sbme-intel-badge">INTERFACE DEMO</span>
+        </div>
+
+        <div className="sbme-intel-tabs scroll-hide">
+          {sports.map((s, i) => (
+            <span key={s} className={`sbme-intel-tab${i === 0 ? " is-on" : ""}`}>{s}</span>
+          ))}
+        </div>
+
+        <div className="sbme-intel-intro">
+          <h3>
+            One Platform. Your Data.<br />
+            <span style={{ color: gold }}>Smarter Lineups &amp; Sports Analysis.</span>
+          </h3>
+          <p>
+            Real-time DFS data, SB ME projections, lineup optimization, simulations, stacks, player research, and sportsbook market analysis — built into one intelligence platform.
+          </p>
+        </div>
+
+        <div className="sbme-intel-panel">
+          <div className="sbme-intel-panel-label">DFS Optimizer Preview</div>
+          <div className="sbme-intel-table">
+            <div className="sbme-intel-row sbme-intel-row--head">
+              {["PLAYER", "SALARY", "SB PROJ.", "FPPG", "CEILING", "OWN%", "LEV."].map((h) => (
+                <span key={h}>{h}</span>
+              ))}
+            </div>
+            {rows.map((r, i) => (
+              <div key={r.n} className={`sbme-intel-row sbme-intel-row--data${i === 0 ? " is-lead" : ""}`}>
+                <span><span className="sbme-intel-pos">{r.p}</span>{r.n}</span>
+                <span className="sbme-intel-gold">{r.sal}</span>
+                <span className="sbme-intel-gold">{r.proj}</span>
+                <span>{r.fppg}</span>
+                <span className="sbme-intel-up">{r.ceil}</span>
+                <span className="sbme-intel-muted">{r.own}</span>
+                <span className={r.lev >= 0 ? "sbme-intel-up" : "sbme-intel-down"}>{r.lev > 0 ? "+" : ""}{r.lev}</span>
+              </div>
+            ))}
+          </div>
+          <p className="sbme-intel-note">
+            &uarr; Interface demonstration. Values shown are illustrative, not live data.
+          </p>
+        </div>
+
+        <div className="sbme-intel-actions">
+          <Link href="/optimizer" className="sbme-intel-btn sbme-intel-btn-primary">BUILD A LINEUP</Link>
+          <Link href="/market-tools" className="sbme-intel-btn sbme-intel-btn-secondary">EXPLORE MARKET TOOLS</Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── MAIN PAGE ── */
 export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -348,90 +428,7 @@ export default function LandingPage() {
               </svg>
             </div>
 
-            {/* ── SB ME INTELLIGENCE™ PRODUCT SHOWCASE ── */}
-            <div className="rounded-3xl border overflow-hidden shadow-2xl relative z-10" style={{ background: cardElevated, borderColor: border }}>
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: border }}>
-                <div className="flex items-center gap-2.5">
-                  <div className="live-dot" />
-                  <span className="text-xs font-bold tracking-widest" style={{ color: gold }}>SB ME INTELLIGENCE&trade;</span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ background: `${gold}15`, color: gold }}>INTERFACE DEMO</span>
-              </div>
-
-              {/* Sports tabs */}
-              <div className="flex gap-1 px-4 py-2.5 border-b overflow-x-auto" style={{ borderColor: border }}>
-                {["MLB", "NFL", "NBA", "NHL", "EPL", "UCL", "MLS"].map((s, i) => (
-                  <span key={s} className="text-[10px] font-bold px-2 py-1 rounded-md shrink-0"
-                    style={{ color: i === 0 ? gold : textSecondary, background: i === 0 ? `${gold}12` : "transparent", border: i === 0 ? `1px solid ${gold}25` : "1px solid transparent" }}>
-                    {s}
-                  </span>
-                ))}
-              </div>
-
-              {/* Headline + copy inside the card */}
-              <div className="px-5 pt-4 pb-2">
-                <p className="text-xs font-extrabold leading-snug mb-1" style={{ color: textPrimary }}>
-                  One Platform. Your Data.<br /><span style={{ color: gold }}>Smarter Lineups &amp; Sports Analysis.</span>
-                </p>
-                <p className="text-[13px] leading-relaxed" style={{ color: textSecondary }}>
-                  Real-time DFS data, SB ME projections, lineup optimization, simulations, stacks, player research, and sportsbook market analysis — built into one intelligence platform.
-                </p>
-              </div>
-
-              {/* Optimizer-style preview table */}
-              <div className="px-5 py-2.5">
-                <div className="text-[9px] font-bold tracking-wider uppercase mb-1.5" style={{ color: textMuted }}>DFS Optimizer Preview</div>
-                <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${border}80` }}>
-                  <table className="w-full text-[10px]" style={{ borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ background: `${navy}80` }}>
-                        {["PLAYER", "SALARY", "SB PROJ.", "FPPG", "CEILING", "OWN%", "LEV."].map((h) => (
-                          <th key={h} className="py-1.5 px-1.5 text-left font-bold" style={{ color: textMuted }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[
-                        { n: "C. Sale", p: "P", sal: "$9,600", proj: 36.5, fppg: 38.0, ceil: 52.0, own: "18.4%", lev: 2.1 },
-                        { n: "L. Gilbert", p: "P", sal: "$9,800", proj: 34.5, fppg: 35.2, ceil: 48.0, own: "14.2%", lev: 1.6 },
-                        { n: "F. Freeman", p: "1B", sal: "$5,400", proj: 16.8, fppg: 31.1, ceil: 28.0, own: "22.7%", lev: -0.8 },
-                        { n: "T. Stephenson", p: "C", sal: "$3,600", proj: 13.7, fppg: 38.1, ceil: 24.0, own: "8.1%", lev: 3.4 },
-                        { n: "C. Seager", p: "SS", sal: "$4,600", proj: 11.8, fppg: 25.7, ceil: 20.0, own: "12.3%", lev: 1.1 },
-                      ].map((r, i) => (
-                        <tr key={i} style={{ borderBottom: i < 4 ? `1px solid ${border}30` : "none" }}>
-                          <td className="py-1.5 px-1.5">
-                            <span className="text-[9px] font-bold mr-1" style={{ color: gold }}>{r.p}</span>
-                            <span className="font-semibold" style={{ color: textPrimary }}>{r.n}</span>
-                          </td>
-                          <td className="py-1.5 px-1.5 font-semibold" style={{ color: gold }}>{r.sal}</td>
-                          <td className="py-1.5 px-1.5 font-bold" style={{ color: gold }}>{r.proj}</td>
-                          <td className="py-1.5 px-1.5 font-semibold" style={{ color: textPrimary }}>{r.fppg}</td>
-                          <td className="py-1.5 px-1.5" style={{ color: "#4ade80" }}>{r.ceil}</td>
-                          <td className="py-1.5 px-1.5" style={{ color: textSecondary }}>{r.own}</td>
-                          <td className="py-1.5 px-1.5 font-semibold" style={{ color: r.lev >= 0 ? "#4ade80" : "#f87171" }}>{r.lev > 0 ? "+" : ""}{r.lev}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="text-[9px] mt-1.5 text-center" style={{ color: textMuted }}>
-                  &uarr; Interface demonstration. Values shown are illustrative, not live data.
-                </p>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2.5 px-5 pb-4 pt-2">
-                <Link href="/optimizer" className="flex-1 text-center py-2.5 rounded-xl text-xs font-bold transition-all duration-200 hover:brightness-110"
-                  style={{ background: gold, color: navy }}>
-                  BUILD A LINEUP
-                </Link>
-                <Link href="/market-tools" className="flex-1 text-center py-2.5 rounded-xl text-xs font-bold border transition-all duration-200 hover:border-[#c9a84c] hover:text-[#c9a84c]"
-                  style={{ borderColor: border, color: textSecondary }}>
-                  EXPLORE MARKET TOOLS
-                </Link>
-              </div>
-            </div>
+            <IntelligenceDemoCard />
           </div>
         </div>
       </Section>
