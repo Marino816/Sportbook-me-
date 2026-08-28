@@ -13,7 +13,9 @@ dfs.optimal_cache, dfs.optimal_lock) — never raw Blue Collar feeds.
 
 from __future__ import annotations
 
+import inspect
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -178,6 +180,7 @@ async def get_player_sb_metrics(
     platform: str = "draftkings",
     sort_by: str = "projected_fp",
     top_n: int = 25,
+    player_name: Optional[str] = None,
 ) -> dict:
     """Return SB ME modeled metrics (projection, value, ownership, leverage,
     ceiling/floor) for a slate's players. Uses the canonical pool."""
@@ -220,6 +223,39 @@ async def get_player_sb_metrics(
         "sgo_prop_lines": p.get("sgo_prop_lines"),
     } for p in ordered]
 
+    pinned = None
+    if player_name:
+        from dfs.name_normalize import names_equal
+        compact = re.sub(r"[^a-z0-9]", "", (player_name or "").lower())
+        for p in pool:
+            nm = p.get("name") or ""
+            if names_equal(nm, player_name) or re.sub(r"[^a-z0-9]", "", nm.lower()) == compact:
+                pinned = {
+                    "player_id": p.get("id"),
+                    "name": p.get("name"),
+                    "position": p.get("roster_position") or p.get("position"),
+                    "team": p.get("team"),
+                    "opponent": p.get("opponent"),
+                    "salary": p.get("salary"),
+                    "projected_fp": p.get("projected_fp"),
+                    "value": p.get("value"),
+                    "bc_value": p.get("bc_value"),
+                    "bc_beta_proj": p.get("bc_beta_proj"),
+                    "sbme_ownership_pct": p.get("sbme_ownership_pct"),
+                    "leverage": p.get("leverage"),
+                    "ceiling": p.get("ceiling"),
+                    "floor": p.get("floor"),
+                    "projection_source": p.get("projection_source"),
+                    "sgo_player_id": p.get("sgo_player_id"),
+                    "sbme_game_total": p.get("sbme_game_total"),
+                    "sbme_implied_team_total": p.get("sbme_implied_team_total"),
+                    "sbme_environment_source": p.get("sbme_environment_source"),
+                    "sgo_prop_lines": p.get("sgo_prop_lines"),
+                }
+                break
+        if pinned:
+            players = [pinned] + [p for p in players if p.get("name") != pinned.get("name")]
+
     return {
         "slate_id": slate_id,
         "platform": platform,
@@ -228,6 +264,8 @@ async def get_player_sb_metrics(
         "sort_by": sort_by,
         "count": len(players),
         "ownership_model": metadata.get("ownership", {}).get("model"),
+        "requested_player": _clean(pinned) if pinned else None,
+        "requested_player_found": bool(pinned) if player_name else None,
         "players": _clean(players),
     }
 
@@ -550,7 +588,246 @@ async def get_sbme_game_environment(
     }
 
 
+# ── Tool: resolve_player_on_slate ──────────────────────────────
+
+async def resolve_player_on_slate(
+    db: AsyncSession,
+    slate_id: int,
+    player_name: str,
+    platform: str = "draftkings",
+) -> dict:
+    """Resolve a player name against a published slate. Never invent eligibility."""
+    from dfs.canonical import build_canonical_pool
+    from dfs.name_normalize import names_equal, fold_player_name
+    from dfs.db import DFSPlayer
+
+    slate = await _get_published_slate(db, slate_id)
+    if not slate:
+        return {"found": False, "error": f"Slate {slate_id} not found or not published"}
+
+    target = fold_player_name(player_name)
+    compact = re.sub(r"[^a-z0-9]", "", target)
+    pool, metadata = await build_canonical_pool(db, slate_id, platform=platform, with_ownership=True)
+    rows = pool or []
+    if not rows:
+        q = await db.execute(select(DFSPlayer).where(DFSPlayer.slate_id == slate_id))
+        rows = [{
+            "id": p.sbme_player_id or p.provider_player_id,
+            "name": p.player_name,
+            "position": p.position,
+            "team": p.team,
+            "opponent": p.opponent,
+            "salary": p.salary,
+            "projected_fp": None,
+            "value": None,
+            "sbme_ownership_pct": None,
+            "leverage": None,
+            "ceiling": None,
+            "floor": None,
+        } for p in q.scalars().all()]
+
+    found = None
+    for p in rows:
+        nm = p.get("name") or ""
+        if names_equal(nm, player_name) or re.sub(r"[^a-z0-9]", "", fold_player_name(nm)) == compact:
+            found = p
+            break
+
+    display_name = (found.get("name") if found else None) or player_name
+    if not found:
+        return {
+            "found": False,
+            "player_name": display_name,
+            "slate_id": slate_id,
+            "slate_name": slate.slate_name,
+            "sport": slate.sport,
+            "platform": slate.platform,
+            "message": f"{display_name} is not in this selected slate.",
+        }
+
+    return _clean({
+        "found": True,
+        "player_id": found.get("id"),
+        "name": display_name,
+        "position": found.get("roster_position") or found.get("position"),
+        "team": found.get("team"),
+        "opponent": found.get("opponent"),
+        "salary": found.get("salary"),
+        "projected_fp": found.get("projected_fp"),
+        "value": found.get("value"),
+        "sbme_ownership_pct": found.get("sbme_ownership_pct"),
+        "leverage": found.get("leverage"),
+        "ceiling": found.get("ceiling"),
+        "floor": found.get("floor"),
+        "projection_source": found.get("projection_source"),
+        "slate_id": slate_id,
+        "slate_name": slate.slate_name,
+        "sport": slate.sport,
+        "platform": slate.platform,
+    })
+
+
+# ── Tool: build_optimizer_lineup ───────────────────────────────
+
+async def build_optimizer_lineup(
+    db: AsyncSession,
+    slate_id: int,
+    platform: str = "draftkings",
+    sport: str = "MLB",
+    locked_player_ids: Optional[list] = None,
+    excluded_player_ids: Optional[list] = None,
+    strategy: str = "balanced",
+) -> dict:
+    """Build one lineup from the canonical pool via MLBOptimizer. No invented players."""
+    from dfs.canonical import build_canonical_pool
+    from dfs.optimal_lock import is_slate_locked, slate_lock_status
+    from assistant.session_state import build_optimizer_handoff_href, ConversationContext, PlayerRef
+
+    slate = await _get_published_slate(db, slate_id)
+    if not slate:
+        return {"ok": False, "error": f"Slate {slate_id} not found or not published"}
+
+    platform = (platform or slate.platform or "draftkings").lower()
+    sport = (sport or slate.sport or "MLB").upper()
+    lock_status = slate_lock_status(slate.start_time).value
+    locked = is_slate_locked(slate.start_time)
+    handoff_ctx = ConversationContext(
+        sport=sport,
+        platform=platform,
+        slate_id=slate_id,
+        slate_name=slate.slate_name,
+        slate_status="LOCKED" if locked else "UNLOCKED",
+        locked_players=[PlayerRef(name=str(x)) for x in (locked_player_ids or []) if x],
+    )
+    href = build_optimizer_handoff_href(handoff_ctx)
+
+    if locked:
+        return {
+            "ok": False,
+            "can_optimize": False,
+            "slate_id": slate_id,
+            "slate_name": slate.slate_name,
+            "slate_status": "LOCKED",
+            "lock_status": lock_status,
+            "optimizer_url": href,
+            "note": (
+                f"{slate.slate_name} is LOCKED. You can still analyze the pool, "
+                "but new contest lineup submission/optimization may no longer be useful for entry."
+            ),
+        }
+
+    if sport != "MLB":
+        return {
+            "ok": False,
+            "can_optimize": False,
+            "slate_id": slate_id,
+            "sport": sport,
+            "platform": platform,
+            "optimizer_url": href,
+            "note": (
+                f"Direct AI lineup generation currently supports MLB. "
+                f"Open the Optimizer for {sport}."
+            ),
+        }
+
+    locks = [str(x) for x in (locked_player_ids or []) if x is not None and str(x).strip()]
+    excludes = [str(x) for x in (excluded_player_ids or []) if x is not None and str(x).strip()]
+
+    unresolved = []
+    if locks:
+        for lock in locks:
+            resolved = await resolve_player_on_slate(db, slate_id, lock, platform=platform)
+            if not resolved.get("found"):
+                unresolved.append(lock)
+        if unresolved:
+            name = unresolved[0]
+            return {
+                "ok": False,
+                "can_optimize": False,
+                "slate_id": slate_id,
+                "slate_name": slate.slate_name,
+                "missing_locks": unresolved,
+                "message": f"{name} is not in this selected slate.",
+                "optimizer_url": href,
+            }
+
+    pool, metadata = await build_canonical_pool(db, slate_id, platform=platform, with_ownership=False)
+    if not pool or len(pool) < 10:
+        return {
+            "ok": False,
+            "can_optimize": False,
+            "slate_id": slate_id,
+            "error": metadata.get("error") or "Player pool is too small to optimize.",
+            "optimizer_url": href,
+        }
+
+    try:
+        from optimizer.mlb_optimizer import MLBOptimizer
+        opt = MLBOptimizer(
+            pool,
+            platform=platform,
+            strategy=strategy or "balanced",
+            locks=locks,
+            excludes=excludes,
+        )
+        lineups = opt.generate(count=1)
+    except Exception as e:
+        logger.warning(f"AI optimizer failed: {e}")
+        return {
+            "ok": False,
+            "can_optimize": True,
+            "slate_id": slate_id,
+            "error": f"Optimizer could not complete: {e}",
+            "optimizer_url": href,
+        }
+
+    if not lineups:
+        return {
+            "ok": False,
+            "can_optimize": True,
+            "slate_id": slate_id,
+            "error": "Optimizer returned no legal lineup for these locks/constraints.",
+            "optimizer_url": href,
+        }
+
+    lu = lineups[0]
+    players_out = []
+    for pl in lu.get("players") or []:
+        players_out.append({
+            "name": pl.get("name"),
+            "team": pl.get("team"),
+            "salary": pl.get("salary"),
+            "projected_fp": pl.get("projected_fp"),
+            "roster_slot": pl.get("roster_slot") or pl.get("position"),
+            "id": pl.get("id"),
+        })
+    return _clean({
+        "ok": True,
+        "can_optimize": True,
+        "source": "native",
+        "sport": sport,
+        "platform": platform,
+        "slate_id": slate_id,
+        "slate_name": slate.slate_name,
+        "slate_status": "UNLOCKED",
+        "lock_status": lock_status,
+        "strategy": strategy or "balanced",
+        "locked_players": locks,
+        "total_salary": lu.get("total_salary"),
+        "projected_score": lu.get("projected_score"),
+        "remaining_salary": lu.get("remaining_salary"),
+        "solver_status": lu.get("solver_status"),
+        "players": players_out,
+        "optimizer_url": href,
+        "note": (
+            f"Built a {platform} {sport} lineup for {slate.slate_name}"
+            + (f" with {', '.join(locks)} locked." if locks else ".")
+        ),
+    })
+
+
 # ── Registry (name → schema + handler) ─────────────────────────
+
 
 def _fn_schema(name: str, description: str, properties: dict, required: list) -> dict:
     return {
@@ -592,12 +869,13 @@ TOOLS = [
     ),
     _fn_schema(
         "get_player_sb_metrics",
-        "Return SB ME modeled metrics for a slate's players: SB Projection, Value, SB OWN% (modeled ownership), Leverage, Ceiling, Floor. Use for 'best value', 'highest projection', 'leverage', or 'ownership' questions.",
+        "Return SB ME modeled metrics for a slate's players: SB Projection, Value, SB OWN% (modeled ownership), Leverage, Ceiling, Floor. Use for 'best value', 'highest projection', 'leverage', 'ownership', or 'SB ME metrics' questions. If session state has a locked player, pass player_name so that player is pinned first.",
         {
             "slate_id": {"type": "integer", "description": "The slate ID."},
             "platform": {"type": "string", "enum": ["draftkings", "fanduel"], "description": "DFS platform."},
             "sort_by": {"type": "string", "enum": ["projected_fp", "value", "sbme_ownership_pct", "leverage", "salary"], "description": "Metric to sort by (descending)."},
             "top_n": {"type": "integer", "description": "Number of top players to return (default 25, max 60)."},
+            "player_name": {"type": "string", "description": "Optional player to pin at the top of the results."},
         },
         ["slate_id"],
     ),
@@ -679,6 +957,29 @@ TOOLS = [
         },
         [],
     ),
+    _fn_schema(
+        "resolve_player_on_slate",
+        "Resolve a player name against a selected DFS slate. Returns canonical id and SB ME metrics if the player is on the slate. If not found, returns found=false — never invent eligibility.",
+        {
+            "slate_id": {"type": "integer", "description": "The slate ID."},
+            "player_name": {"type": "string", "description": "Player name to resolve."},
+            "platform": {"type": "string", "enum": ["draftkings", "fanduel"], "description": "DFS platform."},
+        },
+        ["slate_id", "player_name"],
+    ),
+    _fn_schema(
+        "build_optimizer_lineup",
+        "Build one DFS lineup with the SB ME optimizer for a known sport/platform/slate. Lock players if provided. Use when the customer asks to build/optimize a lineup and session state already has sport, platform, and slate_id. Do not call if those are missing.",
+        {
+            "slate_id": {"type": "integer", "description": "The slate ID."},
+            "platform": {"type": "string", "enum": ["draftkings", "fanduel"], "description": "DFS platform."},
+            "sport": {"type": "string", "description": "Sport, e.g. MLB."},
+            "locked_player_ids": {"type": "array", "items": {"type": "string"}, "description": "Player names or IDs to lock."},
+            "excluded_player_ids": {"type": "array", "items": {"type": "string"}, "description": "Player names or IDs to exclude."},
+            "strategy": {"type": "string", "enum": ["balanced", "cash", "gpp", "aggressive", "nuclear"], "description": "Optimizer strategy."},
+        },
+        ["slate_id"],
+    ),
 ]
 
 # name → async handler(db, **args) -> dict
@@ -694,6 +995,8 @@ TOOL_HANDLERS = {
     "get_sgo_team_props": get_sgo_team_props,
     "get_player_last_n": get_player_last_n,
     "get_sbme_game_environment": get_sbme_game_environment,
+    "resolve_player_on_slate": resolve_player_on_slate,
+    "build_optimizer_lineup": build_optimizer_lineup,
 }
 
 ALLOWED_TOOLS = frozenset(TOOL_HANDLERS.keys())
@@ -705,7 +1008,11 @@ async def execute_tool(name: str, arguments: dict, db: AsyncSession) -> dict:
         return {"error": f"Unknown tool: {name}"}
     try:
         handler = TOOL_HANDLERS[name]
-        result = await handler(db, **arguments)
+        args = dict(arguments or {})
+        sig = inspect.signature(handler)
+        allowed = {k for k in sig.parameters if k != "db"}
+        filtered = {k: v for k, v in args.items() if k in allowed}
+        result = await handler(db, **filtered)
         return _clean(result) if isinstance(result, dict) else {"result": _clean(result)}
     except TypeError as e:
         return {"error": f"Invalid arguments for {name}: {e}"}

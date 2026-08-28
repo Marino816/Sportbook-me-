@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
@@ -11,6 +11,7 @@ import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatBookmakerName } from "@/lib/bookmakers";
 import { LastFive } from "@/lib/last-five";
+import { parseOptimizerHandoff } from "@/lib/ai-session";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 const PLATFORMS = ["draftkings", "fanduel"] as const;
@@ -177,6 +178,18 @@ export default function OptimizerPage() {
   const [lastGenMeta, setLastGenMeta] = useState<{ sport: string; platform: string; strategy: string; gameCount: number } | null>(null);
   const [selectedLineupIndex, setSelectedLineupIndex] = useState(0);
   const [projPool, setProjPool] = useState<Record<string, { projected_fp: number; salary: number; position: string; team: string; opponent: string; projection_source: string }>>({});
+  const handoffApplied = useRef(false);
+
+  useEffect(() => {
+    if (handoffApplied.current || typeof window === "undefined") return;
+    const handoff = parseOptimizerHandoff(window.location.search);
+    if (!handoff.sport && !handoff.platform && !handoff.slateId && !handoff.lockedNames.length) return;
+    handoffApplied.current = true;
+    if (handoff.sport) ws.setSport(handoff.sport);
+    if (handoff.platform) ws.setPlatform(handoff.platform);
+    if (handoff.slateId) ws.setSlateId(handoff.slateId);
+    if (handoff.lockedNames.length) ws.setLockedIds(handoff.lockedNames);
+  }, [ws]);
 
   // ── DFS slate ──
   useEffect(() => {
@@ -192,9 +205,14 @@ export default function OptimizerPage() {
         const current = pub.filter((s: any) => s.is_current !== false);
         if (!cancelled) {
           setSlates(current);
-          // Keep a workspace slate if it still belongs to this sport/platform.
+          const urlSlate = typeof window !== "undefined"
+            ? Number(new URLSearchParams(window.location.search).get("slate"))
+            : NaN;
+          const urlOk = Number.isFinite(urlSlate) && current.some((s: any) => s.id === urlSlate);
           const existingOk = ws.slateId != null && current.some((s: any) => s.id === ws.slateId);
-          if (!existingOk) {
+          if (urlOk) {
+            ws.setSlateId(urlSlate);
+          } else if (!existingOk) {
             const main = current.find((s: any) => s.slate_name.toLowerCase().includes("main"));
             const defaultId = main?.id ?? (current.length > 0 ? current[0].id : null);
             ws.setSlateId(defaultId);

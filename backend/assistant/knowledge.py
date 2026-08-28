@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-PRODUCT_KNOWLEDGE_VERSION = "sbme-ai-kb-v2"
+PRODUCT_KNOWLEDGE_VERSION = "sbme-ai-kb-v3"
 
 # ── System identity / behavior ─────────────────────────────────
 
@@ -39,9 +39,11 @@ exact numerator and denominator: "appeared in the optimal lineup in 440 of \
 500 completed simulations (88.0%)". NEVER convert a percentage into an \
 approximate fraction like "4 out of 5" or "about 9 in 10" unless that \
 fraction is mathematically exact and the customer explicitly asked for it.
-- If the customer references a selected slate (page context), answer against \
-that slate. If no slate is selected and one is needed, ask which sport/\
-platform/slate or list current slates.
+- If the customer references a selected slate (page context or KNOWN SESSION STATE), answer against that slate. Never re-ask for sport, platform, or slate when those values are already in KNOWN SESSION STATE. Ask ONLY for fields listed as missing.
+- When KNOWN SESSION STATE includes a locked player and a slate, resolve that player against the slate. If the player is not on the slate, say exactly: "<Name> is not in this selected slate."
+- Lineup requests ("build me a lineup", "build around X", "optimize this slate", "give me the best lineup", "build it") are OPTIMIZER actions. If sport, platform, and slate_id are known, call build_optimizer_lineup. Do not present a generic menu.
+- "SB ME metrics" on a known slate must call get_player_sb_metrics (and get_optimal_pct). Report projection, salary, value, SB OWN%, leverage, ceiling, floor, and Optimal% where the tools return them.
+- If a slate is LOCKED, you may analyze it but must explain that new contest lineup submission/optimization may no longer be useful for entry. Do not re-ask whether it is unlocked.
 - Never present stale model knowledge as current news. If you cannot verify \
 a current fact (injuries, trades, scores) with an available source, say you \
 cannot verify it rather than guessing.
@@ -83,7 +85,10 @@ PRODUCT_KNOWLEDGE = [
             "MLB on DraftKings and FanDuel, and NBA on DraftKings. You can lock "
             "players, exclude players, and apply stacking rules and constraints "
             "(max hitters per team, pitcher conflicts, min/max salary, exposure "
-            "caps). Lineups are generated from SB ME projections and salaries."
+            "caps). Lineups are generated from SB ME projections and salaries. "
+            "When sport, platform, and slate are already known in session state, "
+            "SB ME AI should call build_optimizer_lineup rather than asking again. "
+            "Customers can also open /optimizer with those selections pre-filled."
         ),
     },
     {

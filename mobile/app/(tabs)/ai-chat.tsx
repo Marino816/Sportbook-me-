@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
-import { sendAIChat, setStrategyMode, AIMessage } from "../../lib/ai-api";
+import { sendAIChat, setStrategyMode, AIMessage, AIChatContext } from "../../lib/ai-api";
 
 const QUICK_ACTIONS = [
   { label: "🏗️ Build GPP lineup", prompt: "Build my best GPP lineup tonight for DraftKings NBA." },
@@ -18,16 +18,24 @@ export default function AIChatScreen() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("Tournament");
+  const [convId, setConvId] = useState<string | undefined>();
+  const [context, setContext] = useState<AIChatContext>({});
   const scrollRef = useRef<ScrollView>(null);
 
   async function handleSend(text?: string) {
     const msg = (text || input).trim();
     if (!msg || loading) return;
     setInput("");
+    const history = messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .slice(-20)
+      .map((m) => ({ role: m.role, content: m.content }));
     setMessages(prev => [...prev, { role: "user", content: msg }]);
     setLoading(true);
     try {
-      const response = await sendAIChat(msg);
+      const response = await sendAIChat(msg, convId, history, context);
+      if (response.conversation_id) setConvId(response.conversation_id);
+      if (response.context) setContext(response.context);
       setMessages(prev => [...prev, response]);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "AI service is temporarily unavailable. Please try again." }]);

@@ -595,3 +595,170 @@ class TestChatEndpoint:
         # 11th should be blocked
         r = await client.post("/api/ai/chat", json={"message": "one too many"}, headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 429
+
+    async def test_history_is_forwarded(self, client, monkeypatch):
+        token = await _register_and_login(client, "hist@test.com")
+        fake = FakeLLMClient([_make_fake_result("Got it.")])
+        monkeypatch.setattr("assistant.chat_router.get_llm", lambda: fake)
+        monkeypatch.setattr("assistant.chat_router._audit", _noop_audit)
+        fake_r = FakeRedis()
+        monkeypatch.setattr("providers.redis_client.get_redis_client", lambda: fake_r)
+
+        r = await client.post("/api/ai/chat", json={
+            "message": "DraftKings",
+            "history": [
+                {"role": "user", "content": "Build me a lineup around Yordan Alvarez"},
+                {"role": "assistant", "content": "Which sport and slate?"},
+            ],
+        }, headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200
+        texts = " ".join(m.get("content") or "" for m in fake.calls[0]["messages"])
+        assert "Build me a lineup around Yordan Alvarez" in texts
+        assert r.json()["context"]["platform"] == "draftkings"
+
+    async def test_regression_lineup_conversation_persists_context(self, client, monkeypatch):
+        """Exact workflow: Yordan → DK → MLB → 7:10 Main → metrics → Build it."""
+        token = await _register_and_login(client, "yordan@test.com")
+
+        future = datetime(2026, 8, 29, 23, 10, tzinfo=timezone.utc)
+        async with _TestSession() as db:
+            db.add(DFSSlate(
+                id=42, platform="draftkings", sport="MLB",
+                slate_name="7:10 PM ET Main", start_time=future,
+                status="PUBLISHED", player_count=1107,
+            ))
+            db.add(DFSPlayer(
+                slate_id=42, provider_player_id="yordan-1", sbme_player_id="sgo-yordan",
+                player_name="Yordan Alvarez", team="HOU", opponent="NYY",
+                position="OF", salary=5800, eligible_positions=["OF"],
+            ))
+            await db.commit()
+
+        pool = []
+        for i, pos in enumerate(["P", "P", "C", "1B", "2B", "3B", "SS", "OF", "OF", "OF", "OF", "OF"]):
+            pool.append({
+                "id": f"p{i}",
+                "name": "Yordan Alvarez" if pos == "OF" and i == 7 else f"Player {i}",
+                "position": pos,
+                "roster_position": pos,
+                "eligible_positions": [pos],
+                "team": "HOU",
+                "opponent": "NYY",
+                "salary": 5800 if i == 7 else 3000 + i * 100,
+                "projected_fp": 12.4 if i == 7 else 5.0 + i,
+                "value": 2.1,
+                "sbme_ownership_pct": 18.2,
+                "leverage": 1.1,
+                "ceiling": 16.7,
+                "floor": 8.1,
+            })
+
+        async def fake_pool(*_a, **_k):
+            return pool, {"sport": "MLB", "slate_name": "7:10 PM ET Main", "ownership": {"model": "sbme"}}
+
+        monkeypatch.setattr("dfs.canonical.build_canonical_pool", fake_pool)
+
+        class FakeOpt:
+            def __init__(self, *a, **k):
+                self.players = pool
+                self.quarantined = []
+                self.bc_proj_fallback = {}
+            def generate(self, count=1, **k):
+                return [{
+                    "total_salary": 49800,
+                    "projected_score": 48.2,
+                    "remaining_salary": 200,
+                    "solver_status": "OPTIMAL",
+                    "players": [pool[7]],
+                }]
+
+        monkeypatch.setattr("optimizer.mlb_optimizer.MLBOptimizer", FakeOpt)
+
+        fake = FakeLLMClient([
+            _make_fake_result("Which platform and slate should I use for Yordan?"),
+            _make_fake_result("DraftKings noted. Which sport and slate?"),
+            _make_fake_result("MLB noted. Which slate?"),
+            _make_fake_result("Locked in the 7:10 PM Main slate."),
+            _make_fake_result("Here are the SB ME metrics for this slate."),
+            _make_fake_result("Built the DraftKings MLB lineup with Yordan Alvarez locked."),
+        ])
+        monkeypatch.setattr("assistant.chat_router.get_llm", lambda: fake)
+        monkeypatch.setattr("assistant.chat_router._audit", _noop_audit)
+        fake_r = FakeRedis()
+        monkeypatch.setattr("providers.redis_client.get_redis_client", lambda: fake_r)
+        monkeypatch.setattr("assistant.limits._redis", lambda: fake_r)
+
+        headers = {"Authorization": f"Bearer {token}"}
+        ctx = {}
+        history = []
+        conv = None
+
+        async def turn(message):
+            nonlocal ctx, conv
+            r = await client.post("/api/ai/chat", json={
+                "message": message,
+                "conversation_id": conv,
+                "history": history[-20:],
+                "context": ctx,
+            }, headers=headers)
+            assert r.status_code == 200, r.text
+            data = r.json()
+            conv = data["conversation_id"]
+            ctx = data["context"]
+            history.append({"role": "user", "content": message})
+            history.append({"role": "assistant", "content": data["content"]})
+            return data
+
+        d1 = await turn("Build me a lineup around Yordan Alvarez")
+        assert d1["context"]["requested_action"] == "optimizer"
+        assert d1["missing_fields"] == ["sport", "platform", "slate_id"]
+        assert any("yordan" in p["name"].lower() for p in d1["context"]["locked_players"])
+        sys1 = " ".join(m.get("content") or "" for m in fake.calls[0]["messages"] if m.get("role") == "system")
+        assert "MISSING (ask only these): sport, platform, slate_id" in sys1
+        assert "Do not re-ask" in sys1
+
+        d2 = await turn("ON DRAFTKINGS")
+        assert d2["context"]["platform"] == "draftkings"
+        assert d2["context"]["sport"] is None
+        assert d2["missing_fields"] == ["sport", "slate_id"]
+        sys2 = " ".join(m.get("content") or "" for m in fake.calls[1]["messages"] if m.get("role") == "system")
+        assert "platform = draftkings" in sys2
+        assert "sport, slate_id" in sys2
+        assert "What sport are you interested in?" not in sys2
+
+        d3 = await turn("MLB")
+        assert d3["context"]["sport"] == "MLB"
+        assert d3["context"]["platform"] == "draftkings"
+        assert d3["missing_fields"] == ["slate_id"]
+
+        d4 = await turn("7:10PM ET Main 12 Games – 1,107 players – UNLOCKED")
+        assert d4["context"]["slate_id"] == 42
+        assert d4["context"]["slate_status"] == "UNLOCKED"
+        assert d4["missing_fields"] == []
+        sys4 = " ".join(m.get("content") or "" for m in fake.calls[3]["messages"] if m.get("role") == "system")
+        assert "MISSING: none" in sys4
+        assert "Do not ask for sport, platform, or slate" in sys4
+
+        d5 = await turn("SB ME metrics")
+        assert d5["context"]["requested_action"] == "metrics"
+        assert d5["context"]["slate_id"] == 42
+        assert "get_player_sb_metrics" in d5["tools_used"]
+        sys5 = " ".join(m.get("content") or "" for m in fake.calls[4]["messages"] if m.get("role") == "system")
+        assert "SESSION TOOL RESULTS" in sys5
+        assert "get_player_sb_metrics" in sys5
+        assert "sport, platform, or slate" in sys5.lower() or "MISSING: none" in sys5
+
+        d6 = await turn("Build it")
+        assert d6["context"]["requested_action"] == "optimizer"
+        assert d6["context"]["platform"] == "draftkings"
+        assert d6["context"]["sport"] == "MLB"
+        assert d6["context"]["slate_id"] == 42
+        assert "build_optimizer_lineup" in d6["tools_used"]
+        assert d6["suggested_actions"]
+        assert any(a["id"] == "open_optimizer" for a in d6["suggested_actions"])
+        href = next(a["href"] for a in d6["suggested_actions"] if a["id"] == "open_optimizer")
+        assert "slate=42" in href
+        assert "Yordan" in href
+        sys6 = " ".join(m.get("content") or "" for m in fake.calls[5]["messages"] if m.get("role") == "system")
+        assert "build_optimizer_lineup" in sys6
+        assert "I'd be happy to help with MLB" not in sys6

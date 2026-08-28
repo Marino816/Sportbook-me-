@@ -13,10 +13,10 @@ This endpoint replaces the old canned /assistant/chat for real AI.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import time
+import uuid
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,6 +33,16 @@ from assistant.knowledge import (
 )
 from assistant.tools import TOOLS, execute_tool, ALLOWED_TOOLS
 from assistant.limits import RateLimiter, resolve_tier
+from assistant.session_state import (
+    ConversationContext,
+    SuggestedAction,
+    merge_conversation_context,
+    render_session_note,
+    build_suggested_actions,
+    fill_tool_arguments,
+    classify_action,
+    is_optimizer_commit,
+)
 
 router = APIRouter(prefix="/api/ai", tags=["SB ME AI"])
 logger = logging.getLogger(__name__)
@@ -56,6 +66,7 @@ class ChatRequest(BaseModel):
     platform: Optional[str] = None
     slate_id: Optional[int] = None
     history: Optional[list[ChatHistoryItem]] = None
+    context: Optional[ConversationContext] = None
 
 
 class ChatResponse(BaseModel):
@@ -66,6 +77,9 @@ class ChatResponse(BaseModel):
     tokens_used: int = 0
     cost_estimate: float = 0.0
     kb_version: str = ""
+    context: ConversationContext = Field(default_factory=ConversationContext)
+    suggested_actions: list[SuggestedAction] = Field(default_factory=list)
+    missing_fields: list[str] = Field(default_factory=list)
 
 
 # ── Prompt-injection guard ─────────────────────────────────────
@@ -151,6 +165,48 @@ def _page_context_note(req: ChatRequest) -> str:
     return "Page context: " + " ".join(parts)
 
 
+async def _prefetch_session_tools(
+    message: str,
+    ctx: ConversationContext,
+    db: AsyncSession,
+) -> list[tuple[str, dict]]:
+    """Run metrics/optimizer tools when session context is already complete."""
+    if ctx.missing_fields():
+        return []
+    jobs: list[tuple[str, dict]] = []
+    action = classify_action(message) or ctx.requested_action
+    if action == "metrics":
+        metrics_args = fill_tool_arguments("get_player_sb_metrics", {"top_n": 20}, ctx)
+        jobs.append(("get_player_sb_metrics", metrics_args))
+        jobs.append(("get_optimal_pct", fill_tool_arguments("get_optimal_pct", {"top_n": 15}, ctx)))
+        if ctx.locked_players:
+            jobs.append((
+                "resolve_player_on_slate",
+                fill_tool_arguments("resolve_player_on_slate", {}, ctx),
+            ))
+    if is_optimizer_commit(message) and not ctx.missing_fields():
+        if ctx.slate_status == "LOCKED":
+            jobs.append((
+                "build_optimizer_lineup",
+                fill_tool_arguments("build_optimizer_lineup", {}, ctx),
+            ))
+        else:
+            jobs.append((
+                "build_optimizer_lineup",
+                fill_tool_arguments("build_optimizer_lineup", {}, ctx),
+            ))
+    results: list[tuple[str, dict]] = []
+    seen: set[str] = set()
+    for name, args in jobs:
+        key = name
+        if key in seen:
+            continue
+        seen.add(key)
+        payload = await execute_tool(name, args, db)
+        results.append((name, payload))
+    return results
+
+
 # ── Endpoint ───────────────────────────────────────────────────
 
 @router.post("/chat", response_model=ChatResponse)
@@ -180,6 +236,16 @@ async def ai_chat(
     limiter = RateLimiter()
     usage = limiter.check(user.id, tier)
 
+    session_ctx = await merge_conversation_context(
+        body.context,
+        body.message,
+        db,
+        sport=body.sport,
+        platform=body.platform,
+        slate_id=body.slate_id,
+    )
+    prefetched = await _prefetch_session_tools(body.message, session_ctx, db)
+
     # 3. LLM client
     llm = get_llm()
     if not llm.is_configured():
@@ -194,10 +260,25 @@ async def ai_chat(
     if kb_text:
         messages.append({"role": "system", "content": kb_text})
 
-    # Page context
+    # Page context (legacy top-level sport/platform/slate_id)
     ctx_note = _page_context_note(body)
     if ctx_note:
         messages.append({"role": "system", "content": ctx_note})
+
+    messages.append({"role": "system", "content": render_session_note(session_ctx)})
+
+    if prefetched:
+        pre_blob = json.dumps(
+            [{"tool": name, "result": payload} for name, payload in prefetched],
+            default=str,
+        )[:12000]
+        messages.append({
+            "role": "system",
+            "content": (
+                "SESSION TOOL RESULTS (already fetched — use these numbers. "
+                "Do not re-ask sport, platform, or slate):\n" + pre_blob
+            ),
+        })
 
     # History (bounded)
     if body.history:
@@ -210,7 +291,7 @@ async def ai_chat(
     messages.append({"role": "user", "content": body.message})
 
     # 5. Tool loop
-    tools_used: list[str] = []
+    tools_used: list[str] = [name for name, _ in prefetched]
     total_tokens = 0
     final_content = ""
     model_used = ""
@@ -236,12 +317,13 @@ async def ai_chat(
             for tc in result.tool_calls:
                 if tc.name not in ALLOWED_TOOLS:
                     continue  # never call a tool outside the allow-list
+                filled = fill_tool_arguments(tc.name, tc.arguments or {}, session_ctx)
                 tools_used.append(tc.name)
-                tool_result = await execute_tool(tc.name, tc.arguments, db)
+                tool_result = await execute_tool(tc.name, filled, db)
                 assistant_tool_calls.append({
                     "id": tc.id,
                     "type": "function",
-                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    "function": {"name": tc.name, "arguments": json.dumps(filled)},
                 })
                 tool_messages.append({
                     "role": "tool",
@@ -290,7 +372,7 @@ async def ai_chat(
         limiter.record_tokens(user.id, total_tokens)
 
     # 7. Audit logging
-    conv_id = body.conversation_id or f"conv:{hashlib.sha256(str(user.id).encode()).hexdigest()[:12]}"
+    conv_id = body.conversation_id or f"conv:{uuid.uuid4().hex[:16]}"
 
     resp_body = {
         "conversation_id": conv_id,
@@ -319,4 +401,7 @@ async def ai_chat(
         tokens_used=total_tokens,
         cost_estimate=cost_estimate,
         kb_version=PRODUCT_KNOWLEDGE_VERSION,
+        context=session_ctx,
+        suggested_actions=build_suggested_actions(session_ctx),
+        missing_fields=session_ctx.missing_fields(),
     )
