@@ -71,6 +71,33 @@ export function parseOptimizerHandoff(search: string): {
   };
 }
 
+export function hasMeaningfulContext(ctx: ConversationContext): boolean {
+  return Boolean(
+    ctx.sport
+    || ctx.platform
+    || ctx.slate_id
+    || ctx.slate_name
+    || (ctx.locked_players || []).some((p) => p?.name),
+  );
+}
+
+export function sessionContextView(ctx: ConversationContext): { line: string; locked: string | null } | null {
+  if (!hasMeaningfulContext(ctx)) return null;
+  const bits: string[] = [];
+  if (ctx.sport) bits.push(ctx.sport);
+  if (ctx.platform === "draftkings") bits.push("DraftKings");
+  else if (ctx.platform === "fanduel") bits.push("FanDuel");
+  else if (ctx.platform) bits.push(ctx.platform);
+  if (ctx.slate_name) bits.push(ctx.slate_name);
+  else if (ctx.slate_id) bits.push(`slate ${ctx.slate_id}`);
+  if (ctx.slate_status) bits.push(ctx.slate_status);
+  const locks = (ctx.locked_players || []).map((p) => p.name).filter(Boolean);
+  return {
+    line: bits.join(" • "),
+    locked: locks.length ? `Locked: ${locks.join(", ")}` : null,
+  };
+}
+
 export function formatContextStrip(ctx: ConversationContext): string {
   const parts: string[] = [];
   if (ctx.platform === "draftkings") parts.push("DraftKings");
