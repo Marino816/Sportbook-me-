@@ -219,7 +219,8 @@ class SportsGameOddsProvider:
         return await self._request("GET", "/players", params=params, paginated=True)
 
     async def get_player_stats(self, player_id: str, season: str = None) -> dict:
-        """Get player statistics."""
+        """NOT used by customer Last-N. Dedicated /players/{id}/stats is unconfirmed
+        on the current tier. Historical scoring uses /events?include=results."""
         params = {"season": season} if season else None
         return await self._request("GET", f"/players/{player_id}/stats", params=params)
 
@@ -229,11 +230,12 @@ class SportsGameOddsProvider:
         return await self._request("GET", f"/teams/{team_id}/stats", params=params)
 
     async def get_odds(self, event_id: str) -> dict:
-        """Get moneyline, spread, total, alt lines for an event."""
+        """DEPRECATED for customer features. Dedicated /odds/{id} is unconfirmed.
+        Use nested event markets via providers.nested_events."""
         return await self._request("GET", f"/odds/{event_id}")
 
     async def get_player_props(self, event_id: str) -> list:
-        """Get player prop markets for an event."""
+        """DEPRECATED for customer features. Use nested event.markets."""
         return await self._request("GET", f"/props/players/{event_id}", paginated=True)
 
     async def get_team_props(self, event_id: str) -> list:
@@ -241,11 +243,11 @@ class SportsGameOddsProvider:
         return await self._request("GET", f"/props/teams/{event_id}", paginated=True)
 
     async def get_fair_odds(self, event_id: str) -> dict:
-        """Get fair/implied odds."""
+        """DEPRECATED. Fair odds are on nested event.odds[oddID].fairOdds."""
         return await self._request("GET", f"/fair-odds/{event_id}")
 
     async def get_consensus(self, event_id: str) -> dict:
-        """Get book consensus lines."""
+        """DEPRECATED. Use nested per-bookmaker lines."""
         return await self._request("GET", f"/consensus/{event_id}")
 
     async def get_scores(self, event_id: str) -> dict:

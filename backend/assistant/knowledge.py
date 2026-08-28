@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-PRODUCT_KNOWLEDGE_VERSION = "sbme-ai-kb-v1"
+PRODUCT_KNOWLEDGE_VERSION = "sbme-ai-kb-v2"
 
 # ── System identity / behavior ─────────────────────────────────
 
@@ -69,7 +69,9 @@ PRODUCT_KNOWLEDGE = [
             "platform. Its intelligence layer is branded 'SB ME Intelligence™'. "
             "It provides an Optimizer, current DFS slates with salaries, SB "
             "Projection, Value, SB OWN%, Leverage, Optimal%, Ceiling/Floor, "
-            "Props, simulations, stacking, and a Parlay Builder."
+            "Props, simulations, stacking, a Parlay Builder, and SportsGameOdds "
+            "research tools (cached current events, odds, player props, Last-N "
+            "history, and SB ME derived game environment)."
         ),
     },
     {
@@ -190,8 +192,9 @@ PRODUCT_KNOWLEDGE = [
         "title": "Sportsbooks & platforms",
         "content": (
             "SB ME sources odds and props from multiple bookmakers via "
-            "SportsGameOdds. DFS slates are available for DraftKings and FanDuel. "
-            "Market Tools shows live odds, odds comparison, and arbitrage scans."
+            "SportsGameOdds nested /v2/events. DFS slates are available for "
+            "DraftKings and FanDuel. Market Tools shows live odds, odds "
+            "comparison, and arbitrage scans from that cached nested payload."
         ),
     },
     {
@@ -226,6 +229,23 @@ PRODUCT_KNOWLEDGE = [
             "(NFL, NHL, NCAAF, NCAAB, Golf) are in the product inventory but data "
             "coverage depends on the available providers; do not assume live data "
             "exists for a sport unless a tool returns it."
+        ),
+    },
+    {
+        "id": "sgo_research",
+        "keywords": ["odds", "moneyline", "spread", "total", "implied", "last 5", "last-n", "game status", "score", "fair odds", "sportsbook", "environment"],
+        "title": "SportsGameOdds research (cached)",
+        "content": (
+            "SB ME AI can read SportsGameOdds research from SB ME's nested event "
+            "cache: current events, scores/status, bookmaker odds and fair odds "
+            "when present, player prop O/U lines (hits, HR, strikeouts), Last-N "
+            "DraftKings MLB history from finalized results, and SB ME derived "
+            "game environment (sbme_game_total, de-vig moneyline probability, "
+            "implied team totals). Derived environment fields are SB ME "
+            "calculations, not provider facts. Prop lines are betting thresholds, "
+            "not fantasy-point projections. Tools do not call SportsGameOdds "
+            "directly except Last-N, which uses the existing historical "
+            "/events?include=results path after player-ID reconciliation."
         ),
     },
 ]

@@ -36,6 +36,9 @@ class SBBookLine:
     over_under: Optional[float] = None
     is_main_line: bool = False
     last_updated: Optional[str] = None
+    opening_odds: Optional[int] = None
+    opening_spread: Optional[float] = None
+    opening_over_under: Optional[float] = None
 
 
 @dataclass
@@ -174,6 +177,22 @@ def from_sdk_event(sdk_event) -> SBEvent:
             if o.by_bookmaker:
                 for bk_id, bk in o.by_bookmaker.items():
                     bookmaker_set.add(bk.bookmaker_id or bk_id)
+                    def _opt_int(val):
+                        if val is None:
+                            return None
+                        try:
+                            return int(val)
+                        except (TypeError, ValueError):
+                            return None
+
+                    def _opt_float(val):
+                        if val is None:
+                            return None
+                        try:
+                            return float(val)
+                        except (TypeError, ValueError):
+                            return None
+
                     books.append(SBBookLine(
                         bookmaker=bk.bookmaker_id or bk_id,
                         available=bk.available if bk.available is not None else True,
@@ -181,7 +200,17 @@ def from_sdk_event(sdk_event) -> SBEvent:
                         spread=float(bk.spread) if bk.spread is not None else None,
                         over_under=float(bk.over_under) if bk.over_under is not None else None,
                         is_main_line=bk.is_main_line if bk.is_main_line is not None else False,
-                        last_updated=bk.last_updated_at,
+                        last_updated=str(bk.last_updated_at) if getattr(bk, "last_updated_at", None) else None,
+                        opening_odds=_opt_int(
+                            getattr(bk, "opening_odds", None) or getattr(bk, "openingOdds", None)
+                        ),
+                        opening_spread=_opt_float(
+                            getattr(bk, "opening_spread", None) or getattr(bk, "openingSpread", None)
+                        ),
+                        opening_over_under=_opt_float(
+                            getattr(bk, "opening_over_under", None)
+                            or getattr(bk, "openingOverUnder", None)
+                        ),
                     ))
 
             markets.append(SBMarket(

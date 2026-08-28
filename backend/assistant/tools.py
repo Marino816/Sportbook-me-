@@ -213,6 +213,11 @@ async def get_player_sb_metrics(
         "ceiling": p.get("ceiling"),
         "floor": p.get("floor"),
         "projection_source": p.get("projection_source"),
+        "sgo_player_id": p.get("sgo_player_id"),
+        "sbme_game_total": p.get("sbme_game_total"),
+        "sbme_implied_team_total": p.get("sbme_implied_team_total"),
+        "sbme_environment_source": p.get("sbme_environment_source"),
+        "sgo_prop_lines": p.get("sgo_prop_lines"),
     } for p in ordered]
 
     return {
@@ -302,6 +307,208 @@ async def get_optimal_pct(
     }
 
 
+def _league(sport: Optional[str]) -> str:
+    return (sport or "MLB").upper()
+
+
+async def _cached_events(sport: Optional[str] = "MLB") -> list:
+    from providers.nested_events import load_cached_events
+    return load_cached_events(_league(sport))
+
+
+# ── Tool: get_sgo_current_events ───────────────────────────────
+
+async def get_sgo_current_events(
+    db: AsyncSession,
+    sport: str = "MLB",
+) -> dict:
+    """Cached nested /v2/events only — no direct SportsGameOdds HTTP."""
+    events = await _cached_events(sport)
+    rows = []
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        home = evt.get("home_team") if isinstance(evt.get("home_team"), dict) else {}
+        away = evt.get("away_team") if isinstance(evt.get("away_team"), dict) else {}
+        rows.append({
+            "event_id": evt.get("id"),
+            "league": evt.get("league") or _league(sport),
+            "start_time": evt.get("start_time"),
+            "status": evt.get("status"),
+            "status_display": evt.get("status_display"),
+            "home_team": home.get("abbreviation") or home.get("name"),
+            "away_team": away.get("abbreviation") or away.get("name"),
+            "home_score": evt.get("home_score"),
+            "away_score": evt.get("away_score"),
+        })
+    return {
+        "available": bool(rows),
+        "source": "sgo_nested_cache",
+        "sport": _league(sport),
+        "count": len(rows),
+        "events": rows,
+        "note": None if rows else "No cached SportsGameOdds events. Market Tools refresh fills this cache.",
+    }
+
+
+# ── Tool: get_sgo_game_status ──────────────────────────────────
+
+async def get_sgo_game_status(
+    db: AsyncSession,
+    event_id: Optional[str] = None,
+    sport: str = "MLB",
+) -> dict:
+    from providers.nested_events import find_event_by_id
+    events = await _cached_events(sport)
+    if event_id:
+        evt = find_event_by_id(events, event_id)
+        events = [evt] if evt else []
+    games = []
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        home = evt.get("home_team") if isinstance(evt.get("home_team"), dict) else {}
+        away = evt.get("away_team") if isinstance(evt.get("away_team"), dict) else {}
+        games.append({
+            "event_id": evt.get("id"),
+            "status": evt.get("status"),
+            "status_display": evt.get("status_display"),
+            "home_team": home.get("abbreviation") or home.get("name"),
+            "away_team": away.get("abbreviation") or away.get("name"),
+            "home_score": evt.get("home_score"),
+            "away_score": evt.get("away_score"),
+            "period": evt.get("period"),
+        })
+    return {
+        "available": bool(games),
+        "source": "sgo_nested_cache",
+        "games": games,
+    }
+
+
+# ── Tool: get_sgo_current_odds ─────────────────────────────────
+
+async def get_sgo_current_odds(
+    db: AsyncSession,
+    event_id: Optional[str] = None,
+    sport: str = "MLB",
+) -> dict:
+    from providers.nested_events import find_event_by_id, sbevent_to_game_row, sbevent_to_compare_books
+    events = await _cached_events(sport)
+    if event_id:
+        evt = find_event_by_id(events, event_id)
+        events = [evt] if evt else []
+    games = []
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        row = sbevent_to_game_row(evt)
+        row["books"] = sbevent_to_compare_books(evt)
+        games.append(row)
+    return {
+        "available": bool(games),
+        "source": "sgo_nested_cache",
+        "note": "Bookmaker prices from nested event.markets. Fair odds included when present on the market.",
+        "games": games,
+    }
+
+
+# ── Tool: get_sgo_player_props ─────────────────────────────────
+
+async def get_sgo_player_props(
+    db: AsyncSession,
+    player_name: Optional[str] = None,
+    player_id: Optional[str] = None,
+    event_id: Optional[str] = None,
+    sport: str = "MLB",
+) -> dict:
+    from providers.nested_events import find_event_by_id, sbevent_player_props
+    events = await _cached_events(sport)
+    if event_id:
+        evt = find_event_by_id(events, event_id)
+        events = [evt] if evt else []
+    ident = player_id or player_name or ""
+    props = []
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        props.extend(sbevent_player_props(evt, player_id=ident))
+    return {
+        "available": bool(props),
+        "source": "sgo_nested_cache",
+        "note": "SGO betting O/U thresholds. Not fantasy-point projections.",
+        "props": props[:80],
+    }
+
+
+# ── Tool: get_player_last_n ────────────────────────────────────
+
+async def get_player_last_n(
+    db: AsyncSession,
+    player_id: str,
+    name: Optional[str] = None,
+    team: Optional[str] = None,
+    sport: str = "MLB",
+    n: int = 5,
+    slate_id: Optional[int] = None,
+) -> dict:
+    """Last-N via the existing historical /events?include=results path after ID reconcile."""
+    from api.player_stats import compute_last_n
+    from scoring import ScoringPlatform
+
+    n = max(1, min(int(n or 5), 10))
+    payload = await compute_last_n(
+        db,
+        player_id,
+        n=n,
+        platform="draftkings",
+        sport=_league(sport),
+        name=name or "",
+        team=team or "",
+        slate_id=slate_id,
+        scoring_platform=ScoringPlatform.DRAFTKINGS,
+    )
+    payload["source"] = "sgo_historical"
+    payload["note"] = (
+        "DraftKings MLB historical scoring from finalized SportsGameOdds results. "
+        "FanDuel historical scoring is not enabled."
+    )
+    return payload
+
+
+# ── Tool: get_sbme_game_environment ────────────────────────────
+
+async def get_sbme_game_environment(
+    db: AsyncSession,
+    event_id: Optional[str] = None,
+    team: Optional[str] = None,
+    sport: str = "MLB",
+) -> dict:
+    from providers.nested_events import derive_game_environment, environments_by_team, find_event_by_id
+    from dfs.team_normalize import normalize_team_abbr
+
+    events = await _cached_events(sport)
+    if event_id:
+        evt = find_event_by_id(events, event_id)
+        if not evt:
+            return {"available": False, "source": "sbme_derived", "reason": "Event not in nested cache."}
+        env = derive_game_environment(evt)
+        return {"available": True, "source": "sbme_derived", "environment": env}
+    if team:
+        by_team = environments_by_team(events)
+        env = by_team.get(normalize_team_abbr(team))
+        if not env:
+            return {"available": False, "source": "sbme_derived", "reason": "Team not found in cached events."}
+        return {"available": True, "source": "sbme_derived", "environment": env}
+    envs = [derive_game_environment(e) for e in events if isinstance(e, dict)]
+    return {
+        "available": bool(envs),
+        "source": "sbme_derived",
+        "note": "SB ME derived from nested moneyline/total/spread. Not a provider-supplied fact.",
+        "environments": envs,
+    }
+
+
 # ── Registry (name → schema + handler) ─────────────────────────
 
 def _fn_schema(name: str, description: str, properties: dict, required: list) -> dict:
@@ -364,6 +571,64 @@ TOOLS = [
         },
         ["slate_id"],
     ),
+    _fn_schema(
+        "get_sgo_current_events",
+        "List current SportsGameOdds events from SB ME's nested event cache (start time, teams, status). Cache-only; does not call SportsGameOdds directly.",
+        {"sport": {"type": "string", "description": "League/sport, e.g. MLB."}},
+        [],
+    ),
+    _fn_schema(
+        "get_sgo_game_status",
+        "Return game status and scores from the nested SportsGameOdds event cache.",
+        {
+            "event_id": {"type": "string", "description": "Optional SGO event ID."},
+            "sport": {"type": "string", "description": "League/sport, e.g. MLB."},
+        },
+        [],
+    ),
+    _fn_schema(
+        "get_sgo_current_odds",
+        "Return current moneyline/spread/total and per-bookmaker prices from the nested event cache, including fair odds when present.",
+        {
+            "event_id": {"type": "string", "description": "Optional SGO event ID."},
+            "sport": {"type": "string", "description": "League/sport, e.g. MLB."},
+        },
+        [],
+    ),
+    _fn_schema(
+        "get_sgo_player_props",
+        "Return nested SportsGameOdds player prop O/U lines (hits, HR, strikeouts, etc.). These are betting thresholds, not fantasy-point projections.",
+        {
+            "player_name": {"type": "string", "description": "Player name."},
+            "player_id": {"type": "string", "description": "SGO player ID if known."},
+            "event_id": {"type": "string", "description": "Optional SGO event ID."},
+            "sport": {"type": "string", "description": "League/sport, e.g. MLB."},
+        },
+        [],
+    ),
+    _fn_schema(
+        "get_player_last_n",
+        "Return last-N completed games with DraftKings MLB fantasy scoring from finalized SportsGameOdds results. Resolves DFS IDs to SGO player IDs. FanDuel historical scoring is not available.",
+        {
+            "player_id": {"type": "string", "description": "SGO player ID, DFS sbme_player_id, or provider player ID."},
+            "name": {"type": "string", "description": "Player name used for exact reconciliation."},
+            "team": {"type": "string", "description": "Team abbreviation."},
+            "sport": {"type": "string", "description": "Sport, default MLB."},
+            "n": {"type": "integer", "description": "Number of games (1-10, default 5)."},
+            "slate_id": {"type": "integer", "description": "Optional DFS slate ID to scope ID lookup."},
+        },
+        ["player_id"],
+    ),
+    _fn_schema(
+        "get_sbme_game_environment",
+        "Return SB ME derived game environment: game total, moneyline implied win probability, and implied team totals. These are SB ME calculations from nested markets, not SportsGameOdds-supplied facts.",
+        {
+            "event_id": {"type": "string", "description": "Optional SGO event ID."},
+            "team": {"type": "string", "description": "Optional team abbreviation."},
+            "sport": {"type": "string", "description": "League/sport, e.g. MLB."},
+        },
+        [],
+    ),
 ]
 
 # name → async handler(db, **args) -> dict
@@ -372,6 +637,12 @@ TOOL_HANDLERS = {
     "get_slate_players": get_slate_players,
     "get_player_sb_metrics": get_player_sb_metrics,
     "get_optimal_pct": get_optimal_pct,
+    "get_sgo_current_events": get_sgo_current_events,
+    "get_sgo_game_status": get_sgo_game_status,
+    "get_sgo_current_odds": get_sgo_current_odds,
+    "get_sgo_player_props": get_sgo_player_props,
+    "get_player_last_n": get_player_last_n,
+    "get_sbme_game_environment": get_sbme_game_environment,
 }
 
 ALLOWED_TOOLS = frozenset(TOOL_HANDLERS.keys())

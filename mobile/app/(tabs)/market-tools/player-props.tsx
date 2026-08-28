@@ -21,13 +21,23 @@ export default function PlayerPropsScreen() {
     setLoading(true);
     try {
       const token = await getToken();
-      // Get slate data to find players from intelligence
-      const res = await fetch(`${API_URL}/intelligence/slate/1`, {
+      const res = await fetch(`${API_URL}/sgo/events?league=MLB`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      const ps = json.data?.players || json.players || [];
+      const events = json.data?.events || json.events || json.data || [];
+      const ps: any[] = [];
+      for (const evt of Array.isArray(events) ? events : []) {
+        for (const p of evt.players || []) {
+          ps.push({
+            ...p,
+            player_id: p.player_id || p.id,
+            player_name: p.name || p.player_name,
+            event_id: evt.id,
+          });
+        }
+      }
       setPlayers(ps);
     } catch (e: any) {
       setError(e.message);
@@ -42,7 +52,7 @@ export default function PlayerPropsScreen() {
     try {
       const token = await getToken();
       const pid = player.player_id || player.id;
-      const res = await fetch(`${API_URL}/market-tools/player-props?player_id=${pid}`, {
+      const res = await fetch(`${API_URL}/market-tools/player-props?player_id=${encodeURIComponent(pid)}&sport=MLB`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

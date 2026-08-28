@@ -9,9 +9,9 @@ Stack ownership is computed from the SB ME ownership model (sum of member
 ownership) — NOT fabricated. Optimal stack appearance is derived from
 simulations where available; otherwise N/A.
 
-Implied team total is N/A unless a market total is supplied (it is not part
-of the canonical pool), so the table shows SB Projection (sum of member
-projections) as the modeled value.
+Implied team total is an SB ME derived field (sbme_implied_team_total) from
+nested SGO moneyline/total/spread when present. It is not a provider fact
+and is not a stack eligibility requirement.
 """
 
 from __future__ import annotations
@@ -116,7 +116,10 @@ def build_top_stacks(
                     "team": team,
                     "opponent": opp,
                     "stack_size": size,
-                    "implied_total": None,  # no market total in canonical pool
+                    "implied_total": (top[0].get("sbme_implied_team_total") if top else None),
+                    "sbme_implied_team_total": (top[0].get("sbme_implied_team_total") if top else None),
+                    "sbme_game_total": (top[0].get("sbme_game_total") if top else None),
+                    "sbme_implied_total_method": (top[0].get("sbme_implied_total_method") if top else None),
                     "sb_projection": proj,
                     "stack_ownership": ownership,
                     "optimal_stack_pct": optimal,
@@ -148,7 +151,8 @@ def build_top_stacks(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "team_count": len(teams),
         "stack_count": len(stacks),
-        "implied_total": "N/A — no market team total in canonical pool",
+        "implied_total": "SB ME derived team implied total from nested SGO markets when available",
+        "implied_total_source": "sbme_derived",
     }
 
     return {"stacks": stacks, "metadata": metadata}

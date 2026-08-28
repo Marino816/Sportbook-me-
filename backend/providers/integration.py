@@ -249,6 +249,8 @@ class SGOIntegration:
         return [from_sdk_event(e) for e in raw]
 
     async def get_odds(self, event_id: str) -> Optional[NormalizedGameOdds]:
+        """DEPRECATED for customer features — dedicated /odds/{id} is unconfirmed
+        on the current tier. Use nested /v2/events via providers.nested_events."""
         key = f"odds:{event_id}"
         data, source = await self._fetch_or_cache(key, "odds",
             lambda: self._provider.get_odds(event_id),
@@ -257,6 +259,7 @@ class SGOIntegration:
         return data if data else None
 
     async def get_player_props(self, event_id: str) -> list:
+        """DEPRECATED for customer features — use nested event.markets."""
         key = f"props:{event_id}"
         data, source = await self._fetch_or_cache(key, "props",
             lambda: self._provider.get_player_props(event_id),
@@ -265,6 +268,7 @@ class SGOIntegration:
         return data if data is not None else []
 
     async def get_fair_odds(self, event_id: str) -> Optional[dict]:
+        """DEPRECATED — fairOdds lives on nested event.odds[oddID]. Do not call /fair-odds/{id}."""
         key = f"fair_odds:{event_id}"
         data, source = await self._fetch_or_cache(key, "fair_odds",
             lambda: self._provider.get_fair_odds(event_id)
@@ -272,6 +276,7 @@ class SGOIntegration:
         return data
 
     async def get_consensus(self, event_id: str) -> Optional[dict]:
+        """DEPRECATED — use nested per-bookmaker lines. Do not call /consensus/{id}."""
         key = f"consensus:{event_id}"
         data, source = await self._fetch_or_cache(key, "consensus",
             lambda: self._provider.get_consensus(event_id)

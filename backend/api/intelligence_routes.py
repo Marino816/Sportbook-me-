@@ -15,7 +15,8 @@ from intelligence.engine import (
     PlayerSignal, GameEnvironmentSignal, DataSourceStatus, DFSDataMode,
     american_to_implied_probability, probability_edge, SPORT_ENV_THRESHOLDS,
 )
-from providers.intelligence import SGOIntelligenceBuilder
+from dfs.team_normalize import normalize_team_abbr, teams_equivalent
+from dfs.name_normalize import fold_player_name
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
 logger = logging.getLogger(__name__)
@@ -26,8 +27,8 @@ async def intelligence_health():
     """Provider status + odds math verification."""
     return {
         "provider": {
-            "dfs": "SportsDataIO",
-            "market": "SportsGameOdds",
+            "dfs": "native DFS (Blue Collar / CSV)",
+            "market": "SportsGameOdds (nested /v2/events)",
         },
         "market_context_status": "check /intelligence/slate/{id} for live status",
         "odds_math_verify": {
@@ -46,12 +47,12 @@ async def get_slate_intelligence(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Return SB ME intelligence combining SportsDataIO DFS data
-    with SportsGameOdds market context.
+    Return SB ME intelligence combining native DFS contest data
+    (Blue Collar / CSV salaries) with SportsGameOdds nested event markets.
 
     Data sources:
-      - SportsDataIO: DFS salaries, projections, positions (via Projection table)
-      - SportsGameOdds: market context (via providers/integration.py cache)
+      - Native DFS: salaries, positions, Blue Collar fppg
+      - SportsGameOdds: nested /v2/events markets (fantasyScore, props, odds)
 
     Provider statuses are separated in every record.
     """
@@ -63,7 +64,7 @@ async def get_slate_intelligence(
     if not slate:
         raise HTTPException(404, "Slate not found")
 
-    # ── Load DFS projections (SportsDataIO fallback) ──
+    # ── Load DFS projections (native / published slate) ──
     r = await db.execute(
         select(Projection, DBPlayer)
         .join(DBPlayer, Projection.player_id == DBPlayer.id)
@@ -73,19 +74,28 @@ async def get_slate_intelligence(
     )
     rows = r.all()
 
-    # ── Load SGO market context (cached) ──
+    # ── Load SGO market context from nested /v2/events cache ──
     sgo_games = {}
     sgo_available = False
     try:
-        from providers.integration import SGOIntegration
-        async with SGOIntegration() as sgo:
-            sgo_events = await sgo.get_events(league_id="MLB")
-            for ev in sgo_events:
-                eid = ev.id
-                odds = await sgo.get_odds(eid)
-                props = await sgo.get_player_props(eid)
-                sgo_games[eid] = {"event": ev, "odds": odds, "props": props}
-            sgo_available = True
+        from providers.nested_events import (
+            derive_game_environment,
+            extract_research_props,
+            load_cached_or_fetch_events,
+        )
+        nested_events = await load_cached_or_fetch_events((slate.sport or "MLB").upper())
+        for ev in nested_events:
+            if not isinstance(ev, dict):
+                continue
+            eid = str(ev.get("id") or "")
+            if not eid:
+                continue
+            sgo_games[eid] = {
+                "event": ev,
+                "env": derive_game_environment(ev),
+                "props": extract_research_props(ev),
+            }
+        sgo_available = bool(sgo_games)
     except Exception as e:
         logger.warning(f"SGO unavailable for intelligence: {e}")
 
@@ -109,60 +119,62 @@ async def get_slate_intelligence(
             base_projection=round(fp, 1),
         )
 
-        # Match to SGO game context if available
+        # Match to nested SGO game context if available
         if sgo_available:
+            pt = normalize_team_abbr(player.team or "")
+            folded = fold_player_name(player.name or "")
             for eid, game in sgo_games.items():
-                home = game["event"].home_team.lower()
-                away = game["event"].away_team.lower()
-                pt = (player.team or "").lower()
-                if pt and (pt in home or pt in away):
-                    pi.team_id = player.team
-                    pi.opponent_id = away if pt in home else home
+                ev = game["event"]
+                env = game["env"]
+                home = ev.get("home_team") if isinstance(ev.get("home_team"), dict) else {}
+                away = ev.get("away_team") if isinstance(ev.get("away_team"), dict) else {}
+                home_abbr = normalize_team_abbr(home.get("abbreviation") or "")
+                away_abbr = normalize_team_abbr(away.get("abbreviation") or "")
+                if pt and not (teams_equivalent(pt, home_abbr) or teams_equivalent(pt, away_abbr)):
+                    continue
+                pi.team_id = player.team
+                pi.opponent_id = away_abbr if teams_equivalent(pt, home_abbr) else home_abbr
 
-                    # Game intelligence (build once per event)
-                    if eid not in seen_events:
-                        seen_events.add(eid)
-                        gi = GameIntelligence(
-                            event_id=eid,
-                            home_team_name=game["event"].home_team,
-                            away_team_name=game["event"].away_team,
-                        )
-                        if game["odds"]:
-                            books = game["odds"].books if game["odds"] else []
-                            gi.book_count = len(books)
-                            if books:
-                                gi.total_line = books[0].total_over
-                                gi.spread_line = books[0].spread_home
-                                gi.moneyline_home = books[0].moneyline_home
-                                gi.moneyline_away = books[0].moneyline_away
-                            gi.game_environment = SignalComputer.game_environment(gi.total_line)
-                        games[eid] = gi
+                if eid not in seen_events:
+                    seen_events.add(eid)
+                    gi = GameIntelligence(
+                        event_id=eid,
+                        home_team_name=home.get("name") or home_abbr,
+                        away_team_name=away.get("name") or away_abbr,
+                    )
+                    gi.book_count = len(ev.get("bookmakers") or [])
+                    gi.total_line = env.get("sbme_game_total")
+                    gi.spread_line = env.get("sbme_home_spread")
+                    gi.moneyline_home = env.get("sbme_home_ml")
+                    gi.moneyline_away = env.get("sbme_away_ml")
+                    gi.game_environment = SignalComputer.game_environment(gi.total_line)
+                    games[eid] = gi
 
-                    if eid in games:
-                        pi.game_total = games[eid].total_line
-                        pi.game_environment = games[eid].game_environment
+                if eid in games:
+                    pi.game_total = games[eid].total_line
+                    pi.game_environment = games[eid].game_environment
 
-                    # Player props
-                    if game["props"]:
-                        player_data = {"playerID": str(proj.player_id), "name": player.name, "position": proj.roster_position}
-                        builder = SGOIntelligenceBuilder()
-                        dp = builder.build_player_intelligence(player_data, game["props"], {})
-                        if dp.fantasy_market_line is not None:
-                            pi.fantasy_market_line = dp.fantasy_market_line
-                            pi.fantasy_market_edge = round(pi.base_projection - dp.fantasy_market_line, 1)
-                            pi.fantasy_market_book = dp.fantasy_market_book
-                        for mk, sig in dp.prop_signals.items():
-                            pi.prop_signals[mk] = PropIntelligence(
-                                market=mk,
-                                bookmaker=sig.bookmaker,
-                                line=sig.line,
-                                over_price=sig.over_price,
-                                under_price=sig.under_price,
-                                fair_line=sig.fair_line,
-                                edge_pct=sig.edge_pct,
-                            )
-                        pi.prop_book_count = dp.sportsbook_count
-                    break  # matched game
+                research = game["props"].get(folded) or {}
+                if research.get("hits_line") is not None:
+                    pi.prop_signals["hits"] = PropIntelligence(
+                        market="hits",
+                        bookmaker="",
+                        line=research.get("hits_line"),
+                    )
+                if research.get("hr_line") is not None:
+                    pi.prop_signals["home_runs"] = PropIntelligence(
+                        market="home_runs",
+                        bookmaker="",
+                        line=research.get("hr_line"),
+                    )
+                if research.get("strikeouts_line") is not None:
+                    pi.prop_signals["strikeouts"] = PropIntelligence(
+                        market="strikeouts",
+                        bookmaker="",
+                        line=research.get("strikeouts_line"),
+                    )
+                pi.prop_book_count = len(research) - 2 if research else 0  # minus note/name keys
+                break
 
         SignalComputer.compute_all(pi)
         players.append(pi.to_dict())

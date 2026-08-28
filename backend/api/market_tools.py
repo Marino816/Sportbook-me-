@@ -92,41 +92,49 @@ async def _get_market_cache():
 
 @router.get("/live-odds")
 async def get_live_odds(
-    event_id: str = Query(..., description="SGO event ID"),
+    event_id: str = Query("", description="Optional SGO event ID"),
+    league: str = Query("MLB", description="League when listing games (MLB, NFL, NBA, NHL)"),
+    slate_id: Optional[int] = Query(None, description="Ignored — DFS slate IDs are not SGO event IDs"),
     user: User = Depends(get_current_user),
 ):
+    """Live odds from the canonical nested /v2/events cache.
+
+    Accepts optional event_id. When omitted, returns the league game list
+    (mobile Market Tools). slate_id is accepted only so old clients do not 422;
+    it is not used as an SGO identifier.
     """
-    Get live odds and recent line movements for an event.
-
-    Returns moneyline, spread, total, and player prop snapshots
-    with best available prices and bookmaker rankings.
-    """
-    cache = await _get_market_cache()
-    async with cache:
-        data = await cache.get_event_data(event_id)
-
-    if not data:
-        raise HTTPException(404, f"No market data found for event {event_id}")
-
-    from market_engine.live_odds import track_market, format_live_markets
-
-    snapshots = track_market(
-        event_id,
-        odds=data.get("odds"),
-        props=data.get("props"),
-        consensus=data.get("consensus"),
-        fair_odds=data.get("fair_odds"),
+    from providers.nested_events import (
+        derive_game_environment,
+        find_cached_event,
+        find_event_by_id,
+        load_cached_or_fetch_events,
+        sbevent_to_game_row,
     )
 
-    formatted = format_live_markets(event_id, snapshots)
+    league_u = (league or "MLB").upper()
+    events = await load_cached_or_fetch_events(league_u)
 
+    if event_id:
+        evt = find_event_by_id(events, event_id) or find_cached_event(event_id)
+        if not evt:
+            raise HTTPException(404, f"No nested market data found for event {event_id}")
+        row = sbevent_to_game_row(evt)
+        return wrap_data({
+            "event_id": event_id,
+            "league": league_u,
+            "games": [row],
+            "count": 1,
+            "sbme_environment": derive_game_environment(evt),
+            **row,
+        }, source="sgo_nested_cache")
+
+    games = [sbevent_to_game_row(e) for e in events if isinstance(e, dict)]
     return wrap_data({
-        "event_id": event_id,
-        "snapshot_count": len(snapshots),
-        "markets": formatted,
-        "cache_hits": cache.stats.cache_hits,
-        "cache_misses": cache.stats.cache_misses,
-    }, source="sportsgameodds" if data.get("odds") else "cached")
+        "league": league_u,
+        "games": games,
+        "count": len(games),
+        "note": "Canonical nested SportsGameOdds /v2/events. slate_id is not an event identifier.",
+    }, source="sgo_nested_cache")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -138,38 +146,37 @@ async def get_live_odds(
 async def compare_odds(
     event_id: str = Query(..., description="SGO event ID"),
     market_type: str = Query("all", description="Filter: moneyline, spread, total, all"),
+    league: str = Query("MLB"),
     user: User = Depends(get_current_user),
 ):
-    """
-    Side-by-side odds comparison across all available bookmakers.
-
-    For each market (moneyline, spread, total), shows every book's
-    line and price, highlights the best price per side, and computes
-    consensus lines.
-    """
-    cache = await _get_market_cache()
-    async with cache:
-        data = await cache.get_event_data(event_id)
-
-    if not data:
-        raise HTTPException(404, f"No market data found for event {event_id}")
-
-    from market_engine.comparison import compare_odds as _compare_odds
-
-    result = _compare_odds(
-        event_id,
-        odds=data.get("odds"),
-        props=data.get("props"),
+    """Side-by-side bookmaker lines from nested event.markets — no dedicated /odds URL."""
+    from providers.nested_events import (
+        derive_game_environment,
+        find_cached_event,
+        find_event_by_id,
+        load_cached_or_fetch_events,
+        sbevent_player_props,
+        sbevent_to_compare_books,
     )
 
-    # Filter by market type if requested
-    if market_type != "all":
-        result["markets"] = [
-            m for m in result.get("markets", [])
-            if m.get("market") == market_type
-        ]
+    events = await load_cached_or_fetch_events(league)
+    evt = find_event_by_id(events, event_id) or find_cached_event(event_id)
+    if not evt:
+        raise HTTPException(404, f"No nested market data found for event {event_id}")
 
-    return wrap_data(result, source="sportsgameodds")
+    home = evt.get("home_team") if isinstance(evt.get("home_team"), dict) else {}
+    away = evt.get("away_team") if isinstance(evt.get("away_team"), dict) else {}
+    books = sbevent_to_compare_books(evt)
+    return wrap_data({
+        "event_id": event_id,
+        "home_team": home.get("abbreviation") or home.get("name"),
+        "away_team": away.get("abbreviation") or away.get("name"),
+        "bookmakers": books,
+        "books": books,
+        "player_props": sbevent_player_props(evt) if market_type in ("all", "props") else [],
+        "sbme_environment": derive_game_environment(evt),
+        "market_type": market_type,
+    }, source="sgo_nested_cache")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -195,48 +202,49 @@ async def get_player_props(
     If event_id is provided, only props for that event are fetched.
     If player_id is provided, only that player's props are returned.
     """
-    from market_engine.props import analyze_player_props, props_intelligence_card
+    """
+    Player props from nested event.markets (hits / HR / K research lines).
 
-    if not event_id:
-        # Need to find an event for the sport — fetch events and use first active one
-        sgo = await _get_sgo_integration()
-        async with sgo:
-            events = await sgo.get_events(league_id=sport)
-        if not events:
-            raise HTTPException(404, f"No active events found for {sport}")
-        # Use the first available event
-        event_id = events[0].id
-
-    cache = await _get_market_cache()
-    async with cache:
-        data = await cache.get_event_data(event_id)
-
-    if not data or not data.get("props"):
-        raise HTTPException(404, f"No player prop data found for event {event_id}")
-
-    analysis = analyze_player_props(
-        data["props"],
-        player_id=player_id if player_id else None,
-        sport=sport,
+    Betting O/U thresholds are research signals — not fantasy-point projections.
+    """
+    from providers.nested_events import (
+        find_cached_event,
+        find_event_by_id,
+        load_cached_or_fetch_events,
+        sbevent_player_props,
     )
 
-    # If player_id specified, build full intelligence card
-    if player_id:
-        player_props = analysis  # single player's market dict
-        card = props_intelligence_card(
-            player_id=player_id,
-            player_name="",  # Will be populated by SGO if available
-            sport=sport,
-            props_analysis=player_props,
-        )
-        return wrap_data(card, source="sportsgameodds")
+    league = (sport or "MLB").upper()
+    events = await load_cached_or_fetch_events(league)
+    if event_id:
+        evt = find_event_by_id(events, event_id) or find_cached_event(event_id)
+        events = [evt] if evt else []
+    props = []
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        props.extend(sbevent_player_props(evt, player_id=player_id))
+
+    if not props:
+        return wrap_data({
+            "event_id": event_id or None,
+            "sport": league,
+            "player_count": 0,
+            "players": [],
+            "props": [],
+            "available": False,
+            "note": "No nested player-prop markets in the cached /v2/events payload.",
+        }, source="sgo_nested_cache")
 
     return wrap_data({
-        "event_id": event_id,
-        "sport": sport,
-        "player_count": len(analysis),
-        "players": analysis,
-    }, source="sportsgameodds")
+        "event_id": event_id or None,
+        "sport": league,
+        "player_count": len({p.get("player_id") for p in props}),
+        "players": props,
+        "props": props,
+        "available": True,
+        "note": "SGO betting O/U thresholds from nested events. Not fantasy-point projections.",
+    }, source="sgo_nested_cache")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -319,45 +327,50 @@ async def arbitrage_scan(
     All results are labeled as mathematical market comparisons,
     not guaranteed profit.
     """
-    from market_engine.arbitrage import scan_arbitrage, format_arbitrage_response
+    from market_engine.arbitrage import arbitrage_check, format_arbitrage_response
+    from providers.nested_events import load_cached_or_fetch_events, sbevent_to_compare_books
 
-    # Get active events
-    sgo = await _get_sgo_integration()
-    async with sgo:
-        events = await sgo.get_events(league_id=league)
-
+    events = await load_cached_or_fetch_events(league)
     if not events:
-        return wrap_data(format_arbitrage_response("", [], league), source="sportsgameodds")
+        return wrap_data(format_arbitrage_response("", [], league), source="sgo_nested_cache")
 
-    # Scan each event
     all_opportunities = []
-    cache = await _get_market_cache()
-    async with cache:
-        for event in events[:10]:  # Limit to 10 events to avoid rate limits
-            eid = event.id
-            try:
-                data = await cache.get_event_data(eid)
-                if not data:
+    scanned = 0
+    for evt in events[:20]:
+        if not isinstance(evt, dict):
+            continue
+        scanned += 1
+        eid = str(evt.get("id") or "")
+        books = sbevent_to_compare_books(evt)
+        home_candidates = [(b.get("bookmaker_name"), b.get("moneyline_home")) for b in books if b.get("moneyline_home") is not None]
+        away_candidates = [(b.get("bookmaker_name"), b.get("moneyline_away")) for b in books if b.get("moneyline_away") is not None]
+        if not home_candidates or not away_candidates:
+            continue
+        # Best American price = highest decimal conversion handled inside arbitrage_check
+        for book_a, odds_a in home_candidates:
+            for book_b, odds_b in away_candidates:
+                if book_a == book_b:
                     continue
+                try:
+                    opp = arbitrage_check(
+                        odds_a=int(odds_a),
+                        odds_b=int(odds_b),
+                        event_id=eid,
+                        market="moneyline",
+                        outcome_a="home",
+                        book_a=str(book_a or ""),
+                        outcome_b="away",
+                        book_b=str(book_b or ""),
+                    )
+                except Exception:
+                    continue
+                if opp is not None:
+                    from market_engine.arbitrage import _format_opp
+                    all_opportunities.append(_format_opp(opp) if not isinstance(opp, dict) else opp)
 
-                opps = scan_arbitrage(
-                    eid,
-                    odds=data.get("odds"),
-                    props=data.get("props"),
-                )
-                all_opportunities.extend(opps)
-            except Exception as e:
-                logger.warning(f"Failed to scan event {eid}: {e}")
-                continue
-
-    response = format_arbitrage_response(
-        "",  # multiple events
-        all_opportunities,
-        league,
-    )
-    response["events_scanned"] = min(len(events), 10)
-
-    return wrap_data(response, source="sportsgameodds")
+    response = format_arbitrage_response("", all_opportunities, league)
+    response["events_scanned"] = scanned
+    return wrap_data(response, source="sgo_nested_cache")
 
 
 # ══════════════════════════════════════════════════════════════

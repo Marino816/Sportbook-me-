@@ -407,6 +407,21 @@ export interface CanonicalPlayer {
   ceiling: number | null;
   floor: number | null;
   mapping_status: string;
+  sgo_player_id?: string | null;
+  dfs_player_id?: string | null;
+  sbme_game_total?: number | null;
+  sbme_implied_team_total?: number | null;
+  sbme_opponent_implied_total?: number | null;
+  sbme_team_win_prob_devig?: number | null;
+  sbme_implied_total_method?: string | null;
+  sbme_environment_source?: string | null;
+  sbme_environment_note?: string | null;
+  sgo_prop_lines?: {
+    hits_line?: number;
+    hr_line?: number;
+    strikeouts_line?: number;
+    note?: string;
+  } | null;
 }
 
 export async function fetchDataHubSlate(slateId: number, platform: string): Promise<ApiResponse<{ players: CanonicalPlayer[]; metadata: any }>> {

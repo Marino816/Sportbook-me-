@@ -215,6 +215,10 @@ def _sb_event_to_dict(evt: SBEvent) -> dict:
             "bookmaker": b.bookmaker, "available": b.available,
             "moneyline": b.moneyline, "spread": b.spread,
             "over_under": b.over_under, "is_main_line": b.is_main_line,
+            "last_updated": b.last_updated,
+            "opening_odds": b.opening_odds,
+            "opening_spread": b.opening_spread,
+            "opening_over_under": b.opening_over_under,
         } for b in m.books]
         markets.append({
             "odd_id": m.odd_id, "market_name": m.market_name,
@@ -224,7 +228,7 @@ def _sb_event_to_dict(evt: SBEvent) -> dict:
             "fair_odds": m.fair_odds, "fair_spread": m.fair_spread,
             "fair_over_under": m.fair_over_under, "books": books,
         })
-    return {
+    payload = {
         "id": evt.id, "sport": evt.sport, "league": evt.league,
         "start_time": evt.start_time, "status": evt.status,
         "status_display": evt.status_display, "venue": evt.venue,
@@ -234,6 +238,12 @@ def _sb_event_to_dict(evt: SBEvent) -> dict:
         "players": [{"player_id": p.player_id, "name": p.name, "team_id": p.team_id, "position": p.position} for p in evt.players],
         "markets": markets, "bookmakers": evt.bookmakers,
     }
+    try:
+        from providers.nested_events import derive_game_environment
+        payload["sbme_environment"] = derive_game_environment(payload)
+    except Exception:
+        payload["sbme_environment"] = None
+    return payload
 
 
 # ── Routes ───────────────────────────────────────────────────
@@ -453,7 +463,10 @@ async def get_consensus(event_id: str, user: User = Depends(get_current_user)):
 
 @router.get("/usage")
 async def get_usage(user: User = Depends(get_current_user)):
+    # /v2/account/usage is wrapped by SdkSgoProvider.get_usage but has no
+    # confirmed live response on this integration. Leave the stub until verified.
     return wrap_data({
-        "message": "Rookie tier — see /v2/account/usage directly",
-        "tier": "rookie"
+        "message": "Account usage is not confirmed on the current SportsGameOdds integration.",
+        "tier": "unconfirmed",
+        "available": False,
     }, source="sportsgameodds")

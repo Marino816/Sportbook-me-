@@ -31,7 +31,7 @@ export default function CompareOddsScreen() {
     setLoading(true);
     try {
       const token = await getToken();
-      const res = await fetch(`${API_URL}/market-tools/live-odds?slate_id=1`, {
+      const res = await fetch(`${API_URL}/market-tools/live-odds?league=MLB`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

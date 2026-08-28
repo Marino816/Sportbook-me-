@@ -135,8 +135,9 @@ def _event_date_matches(start_time: object, event_date: Optional[str]) -> bool:
 
 
 def _norm_name(n: str) -> str:
-    """Normalize a player name for case-insensitive matching."""
-    return (n or "").strip().lower()
+    """Unicode NFD / accent-fold + case-fold. Exact match only — never fuzzy."""
+    from dfs.name_normalize import fold_player_name
+    return fold_player_name(n)
 
 
 def _market_to_prop_key(market_name: str, stat_id: str) -> Optional[str]:
@@ -166,20 +167,9 @@ async def build_sgo_intelligence(sport: str, dfs_players: list[dict], event_date
     """
     sport_upper = sport.upper()
 
-    # Read cached SBEvent data
-    from api.sgo_data import _rget
-    cache_key = f"sgo:v2:sbevents:{sport_upper}"
-    events = _rget(cache_key)
+    from providers.nested_events import load_cached_or_fetch_events
 
-    if not events or not isinstance(events, list):
-        logger.info("No cached SGO events for %s — fetching live SDK events.", sport_upper)
-        try:
-            from api.sgo_data import _canonical_event_provider, _sb_event_to_dict
-            sb_events = await _canonical_event_provider().get_sb_events(sport_upper)
-            events = [_sb_event_to_dict(e) for e in (sb_events or [])]
-        except Exception as exc:
-            logger.warning("Live SGO fetch failed for %s: %s", sport_upper, exc)
-            return {}
+    events = await load_cached_or_fetch_events(sport_upper, allow_fetch=True)
 
     if not events or not isinstance(events, list):
         return {}

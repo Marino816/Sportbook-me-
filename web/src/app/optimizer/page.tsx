@@ -797,7 +797,7 @@ export default function OptimizerPage() {
                                 <IconBtn icon={<Lock size={12} />} active={isLocked} title="Lock player" onClick={() => toggleLock(p.name)} />
                                 <IconBtn icon={<Ban size={12} />} active={isExcluded} title="Exclude player" onClick={() => toggleExclude(p.name)} />
                               </div>
-                              <LastFive player={{ name: p.name, player_id: p.player_id }} platform={platform} />
+                              <LastFive player={{ name: p.name, player_id: p.player_id, team: teamName, sport }} platform={platform} />
                             </Td>
                           </tr>
                         );

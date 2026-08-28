@@ -142,6 +142,14 @@ async def build_canonical_pool(
     # If the solver cannot construct valid rosters from the real-projection pool,
     # it returns empty — an honest signal, not a fabricated-workaround signal.
 
+    # Derived SGO environment / research props from the nested event cache.
+    # Not an eligibility requirement — missing env leaves fields null.
+    try:
+        from providers.nested_events import attach_environment_to_pool, load_cached_events
+        attach_environment_to_pool(pool, load_cached_events(sport))
+    except Exception as exc:
+        logger.warning("Canonical env attach skipped: %s", exc)
+
     # Value = SB projection / (salary / 1000). Distinct from Blue Collar "value".
     for pl in pool:
         sal = float(pl.get("salary") or 0)

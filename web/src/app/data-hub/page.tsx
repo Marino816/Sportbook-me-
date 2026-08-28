@@ -233,14 +233,22 @@ export default function DataHubPage() {
               <Stat label="Leverage" value={fmt(drawerPlayer.leverage, 1)} />
               <Stat label="Ceiling / Floor" value={`${fmt(drawerPlayer.ceiling, 0)} / ${fmt(drawerPlayer.floor, 0)}`} />
               <Stat label="Projection Source" value={drawerPlayer.projection_source} />
+              <Stat label="Game total (SB ME)" value={drawerPlayer.sbme_game_total != null ? String(drawerPlayer.sbme_game_total) : "N/A"} />
+              <Stat label="Implied team total (SB ME)" value={drawerPlayer.sbme_implied_team_total != null ? String(drawerPlayer.sbme_implied_team_total) : "N/A"} />
+              <Stat label="Hits O/U" value={drawerPlayer.sgo_prop_lines?.hits_line != null ? String(drawerPlayer.sgo_prop_lines.hits_line) : "N/A"} />
+              <Stat label="HR O/U" value={drawerPlayer.sgo_prop_lines?.hr_line != null ? String(drawerPlayer.sgo_prop_lines.hr_line) : "N/A"} />
+              <Stat label="K O/U" value={drawerPlayer.sgo_prop_lines?.strikeouts_line != null ? String(drawerPlayer.sgo_prop_lines.strikeouts_line) : "N/A"} />
             </div>
+            {drawerPlayer.sbme_environment_note && (
+              <p style={{ fontSize: 10, color: textMuted, marginBottom: 12 }}>{drawerPlayer.sbme_environment_note}</p>
+            )}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <ActionBtn label={ws.lockedIds.includes(drawerPlayer.name) ? "Unlock" : "Lock"} icon={<Lock size={14} />} onClick={() => ws.toggleLock(drawerPlayer.name)} />
               <ActionBtn label={ws.excludedIds.includes(drawerPlayer.name) ? "Un-exclude" : "Exclude"} icon={<Ban size={14} />} onClick={() => ws.toggleExclude(drawerPlayer.name)} />
               <ActionBtn label={ws.likedIds.includes(drawerPlayer.name) ? "Unlike" : "Like"} icon={<Heart size={14} />} onClick={() => ws.toggleLike(drawerPlayer.name)} />
               <ActionBtn label="Send to Optimizer" icon={<Send size={14} />} gold onClick={() => { ws.toggleLock(drawerPlayer.name); router.push("/optimizer"); }} />
             </div>
-            <LastFive player={{ name: drawerPlayer.name, player_id: drawerPlayer.id }} platform={ws.platform} />
+            <LastFive player={{ name: drawerPlayer.name, player_id: drawerPlayer.sgo_player_id || drawerPlayer.id, sgo_player_id: drawerPlayer.sgo_player_id, team: drawerPlayer.team, sport: ws.sport, slate_id: ws.slateId ?? undefined }} platform={ws.platform} />
           </div>
         </div>
       )}

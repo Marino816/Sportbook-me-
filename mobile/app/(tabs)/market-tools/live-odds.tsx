@@ -46,7 +46,7 @@ export default function LiveOddsScreen() {
   const [data, setData] = useState<LiveOddsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [slateId, setSlateId] = useState(1);
+  const [league, setLeague] = useState("MLB");
   const [search, setSearch] = useState("");
 
   const load = async () => {
@@ -54,7 +54,7 @@ export default function LiveOddsScreen() {
     setError(null);
     try {
       const token = await getToken();
-      const res = await fetch(`${API_URL}/market-tools/live-odds?slate_id=${slateId}`, {
+      const res = await fetch(`${API_URL}/market-tools/live-odds?league=${encodeURIComponent(league)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -68,7 +68,7 @@ export default function LiveOddsScreen() {
     }
   };
 
-  useFocusEffect(useCallback(() => { load(); }, [slateId]));
+  useFocusEffect(useCallback(() => { load(); }, [league]));
 
   const games = (data?.games || []).filter((g) => {
     if (!search) return true;
@@ -134,26 +134,17 @@ export default function LiveOddsScreen() {
       style={s.container}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor="#c9a84c" />}
     >
-      {/* Slate selector */}
+      {/* League selector — nested SGO events, not DFS slate IDs */}
       <View style={s.filterRow}>
-        <TouchableOpacity
-          style={[s.slateBtn, slateId === 1 && s.slateBtnActive]}
-          onPress={() => setSlateId(1)}
-        >
-          <Text style={[s.slateBtnText, slateId === 1 && s.slateBtnTextActive]}>Main Slate</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.slateBtn, slateId === 2 && s.slateBtnActive]}
-          onPress={() => setSlateId(2)}
-        >
-          <Text style={[s.slateBtnText, slateId === 2 && s.slateBtnTextActive]}>Evening</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[s.slateBtn, slateId === 3 && s.slateBtnActive]}
-          onPress={() => setSlateId(3)}
-        >
-          <Text style={[s.slateBtnText, slateId === 3 && s.slateBtnTextActive]}>Late</Text>
-        </TouchableOpacity>
+        {["MLB", "NFL", "NBA", "NHL"].map((lg) => (
+          <TouchableOpacity
+            key={lg}
+            style={[s.slateBtn, league === lg && s.slateBtnActive]}
+            onPress={() => setLeague(lg)}
+          >
+            <Text style={[s.slateBtnText, league === lg && s.slateBtnTextActive]}>{lg}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Search */}
@@ -247,7 +238,7 @@ export default function LiveOddsScreen() {
       })}
 
       {games.length === 0 && (
-        <Text style={s.emptyText}>No games available for this slate.</Text>
+        <Text style={s.emptyText}>No games available for this league.</Text>
       )}
     </ScrollView>
   );

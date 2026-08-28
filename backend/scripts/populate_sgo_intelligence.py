@@ -13,17 +13,19 @@ from difflib import SequenceMatcher
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ── Config ────────────────────────────────────────────────────
-SGO_API_KEY = "b2ef0b9bab4f7201998565ae30b8592e"
-DB_URL = "postgresql://postgres:***@ballast.proxy.rlwy.net:52138/railway"
-SGO_BASE = "https://api.sportsgameodds.com/v2"
-SLATE_ID = 1
-PLATFORM = "draftkings"
-SPORT = "MLB"
-LINEUP_COUNT = 3
+# Credentials come from the environment only. Never hardcode provider keys.
+SGO_API_KEY = os.environ.get("SPORTSGAMEODDS_API_KEY", "").strip()
+DB_URL = os.environ.get("DATABASE_URL", "").strip()
+SGO_BASE = os.environ.get("SPORTSGAMEODDS_BASE_URL", "https://api.sportsgameodds.com/v2")
+SLATE_ID = int(os.environ.get("SLATE_ID", "1"))
+PLATFORM = os.environ.get("PLATFORM", "draftkings")
+SPORT = os.environ.get("SPORT", "MLB")
+LINEUP_COUNT = int(os.environ.get("LINEUP_COUNT", "3"))
 
-os.environ["DATABASE_URL"] = DB_URL
-os.environ["SPORTSGAMEODDS_API_KEY"] = SGO_API_KEY
+if not SGO_API_KEY:
+    raise SystemExit("SPORTSGAMEODDS_API_KEY is required")
+if not DB_URL:
+    raise SystemExit("DATABASE_URL is required")
 
 import httpx
 from models.database import _init_engine, get_db

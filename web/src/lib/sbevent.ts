@@ -32,6 +32,10 @@ export interface SBBookLine {
   spread: number | null;
   over_under: number | null;
   is_main_line: boolean;
+  last_updated: string | null;
+  opening_odds: number | null;
+  opening_spread: number | null;
+  opening_over_under: number | null;
 }
 
 export interface SBMarket {
@@ -145,6 +149,10 @@ function asBook(v: unknown): SBBookLine {
     spread: asNum(b.spread),
     over_under: asNum(b.over_under),
     is_main_line: asBool(b.is_main_line, false),
+    last_updated: typeof b.last_updated === "string" ? b.last_updated : null,
+    opening_odds: asNum(b.opening_odds),
+    opening_spread: asNum(b.opening_spread),
+    opening_over_under: asNum(b.opening_over_under),
   };
 }
 

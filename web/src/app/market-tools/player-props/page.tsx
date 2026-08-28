@@ -410,7 +410,7 @@ export default function PlayerPropsPage() {
                 </div>
               )}
               <div style={{ marginTop: 12 }}>
-                <LastFive player={{ name: selectedPlayer.playerName, player_id: selectedPlayer.playerId }} platform="draftkings" />
+                <LastFive player={{ name: selectedPlayer.playerName, player_id: selectedPlayer.playerId, team: selectedPlayer.teamAbbr, sport: "MLB" }} platform="draftkings" />
               </div>
             </div>
           ) : null}

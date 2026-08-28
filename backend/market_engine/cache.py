@@ -110,31 +110,43 @@ class MarketCache:
     # ── Event-level fetch (one call feeds everything) ──
 
     async def get_event_data(self, event_id: str) -> dict:
-        """Fetch all market data for an event (props + odds + fair)."""
+        """Return nested /v2/events data from the canonical cache.
+
+        Dedicated /odds/{id}, /props, /fair-odds, /consensus are not called.
+        Customer market tools should prefer providers.nested_events helpers.
+        """
         key = f"event_data:{event_id}"
 
         async def _fetch():
-            odds, props, fair, consensus = await asyncio.gather(
-                self._provider.get_odds(event_id),
-                self._provider.get_player_props(event_id),
-                self._provider.get_fair_odds(event_id),
-                self._provider.get_consensus(event_id),
-                return_exceptions=True,
+            from providers.nested_events import (
+                find_cached_event,
+                find_event_by_id,
+                load_cached_or_fetch_events,
             )
+            evt = find_cached_event(event_id)
+            if evt is None:
+                for lg in ("MLB", "NFL", "NBA", "NHL"):
+                    events = await load_cached_or_fetch_events(lg)
+                    evt = find_event_by_id(events, event_id)
+                    if evt is not None:
+                        break
             return {
-                "odds": odds if not isinstance(odds, Exception) else None,
-                "props": props if not isinstance(props, Exception) else None,
-                "fair_odds": fair if not isinstance(fair, Exception) else None,
-                "consensus": consensus if not isinstance(consensus, Exception) else None,
+                "nested": evt,
+                "odds": None,
+                "props": None,
+                "fair_odds": None,
+                "consensus": None,
             }
 
         return await self._cached(key, "props", _fetch)
 
     async def get_events(self, league_id: str = "MLB"):
+        """Nested SBEvent dicts from Redis, with one SDK /v2/events fill on miss."""
+        from providers.nested_events import load_cached_or_fetch_events
         key = f"events:{league_id}"
 
         async def _fetch():
-            return await self._provider.get_events(league_id=league_id)
+            return await load_cached_or_fetch_events(league_id)
 
         return await self._cached(key, "events", _fetch)
 

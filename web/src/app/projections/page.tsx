@@ -3,7 +3,7 @@
 import { useState, Suspense } from "react";
 import { Search, Download, TrendingUp, TrendingDown } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchProjections, type PlayerProjection } from "@/lib/api";
+import { fetchProjections, fetchDFSSlates, type PlayerProjection } from "@/lib/api";
 
 const SPORTS = [
   { id: "nfl",    label: "NFL",    emoji: "🏈", color: "#d4ac0d",
@@ -44,9 +44,17 @@ function ProjectionsInner() {
 
   const sport = SPORTS.find(s => s.id === activeSport) || SPORTS[1];
 
+  const { data: slatesRes } = useQuery({
+    queryKey: ["dfs-slates", activeSport],
+    queryFn: () => fetchDFSSlates(undefined, activeSport.toUpperCase()),
+    retry: 1,
+  });
+  const publishedSlateId = (slatesRes?.data ?? []).find((s) => s.status === "PUBLISHED")?.id;
+
   const { data: liveData, isLoading } = useQuery({
-    queryKey: ["projections", activeSport],
-    queryFn: () => fetchProjections(1),
+    queryKey: ["projections", publishedSlateId],
+    queryFn: () => fetchProjections(publishedSlateId as number),
+    enabled: publishedSlateId != null,
     retry: 1,
   });
 

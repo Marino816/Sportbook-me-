@@ -11,6 +11,7 @@ from difflib import SequenceMatcher
 from typing import Optional
 
 from dfs.models import DFSContestPlayer
+from dfs.name_normalize import fold_player_name
 from dfs.team_normalize import normalize_team_abbr, teams_equivalent
 
 logger = logging.getLogger(__name__)
@@ -44,11 +45,7 @@ TEAM_NAME_MAP = {
 
 def _normalize_name(name: str) -> str:
     """Normalize player name for comparison (case, whitespace, accents)."""
-    import unicodedata
-    import re
-    folded = unicodedata.normalize("NFD", name or "")
-    folded = "".join(ch for ch in folded if unicodedata.category(ch) != "Mn")
-    return " ".join(folded.lower().strip().split())
+    return fold_player_name(name)
 
 
 def _looks_like_team_abbr(value: str) -> bool:
