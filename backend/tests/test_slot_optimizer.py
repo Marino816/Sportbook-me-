@@ -55,11 +55,32 @@ class TestSlotOptimizer:
         else:
             assert UNIQUE_LINEUP_UNAVAILABLE
 
-    def test_fd_nfl_requires_verified_cap(self):
+    def test_fd_nfl_uses_60k_and_nine_slots(self):
         r = get_roster("NFL", "fanduel")
-        assert r.salary_cap is None
-        try:
-            SlotOptimizer(_nfl_pool(), sport="NFL", platform="fanduel")
-            assert False, "expected unverified cap to raise"
-        except ValueError as e:
-            assert "not verified" in str(e).lower() or "not in verified" in str(e).lower() or "Salary cap" in str(e)
+        assert r.salary_cap == 60000
+        opt = SlotOptimizer(_nfl_pool(), sport="NFL", platform="fanduel", strategy="cash")
+        lus = opt.generate(count=1)
+        assert len(lus) == 1
+        assert len(lus[0]["players"]) == 9
+        assert lus[0]["total_salary"] <= 60000
+        slots = [p["roster_slot"] for p in lus[0]["players"]]
+        assert slots.count("QB") == 1
+        assert slots.count("RB") == 2
+        assert slots.count("WR") == 3
+        assert slots.count("TE") == 1
+        assert "FLEX" in slots
+        assert "DEF" in slots
+
+    def test_fd_ncaaf_uses_60k_and_seven_slots(self):
+        r = get_roster("NCAAF", "fanduel")
+        assert r.salary_cap == 60000
+        opt = SlotOptimizer(_nfl_pool(), sport="NCAAF", platform="fanduel", strategy="cash")
+        lus = opt.generate(count=1)
+        assert len(lus) == 1
+        assert len(lus[0]["players"]) == 7
+        assert lus[0]["total_salary"] <= 60000
+        slots = [p["roster_slot"] for p in lus[0]["players"]]
+        assert slots.count("QB") == 1
+        assert slots.count("RB") == 2
+        assert slots.count("WR") == 3
+        assert "SFLX" in slots or "SUPER FLEX" in slots

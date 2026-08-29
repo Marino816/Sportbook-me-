@@ -28,12 +28,21 @@ import { LastFive } from "@/lib/last-five";
 import { AppShell } from "@/components/app-shell";
 import { buildOptimizerHandoffUrl } from "@/lib/ai-session";
 import {
+  filterCustomerVisibleSlates,
   formatSlateLockTime,
   getSlateDisplayStatus,
   normPlayerName,
   platformLabel,
   type SlateDisplayStatus,
 } from "@/lib/dfs-slate-status";
+import { useEvents } from "@/lib/use-events";
+import {
+  eventsWithMarketContext,
+  formatKickoffEt,
+  SCHEDULE_INTEL_NOTE,
+  scheduleMatchupLabel,
+  upcomingScheduleEvents,
+} from "@/lib/upcoming-schedule";
 
 /** DFS sports with a real slate pipeline — verified in backend/dfs/import_service.py */
 const DFS_SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
@@ -78,6 +87,7 @@ export default function DataHubPage() {
   const [teamFilter, setTeamFilter] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
   const [drawerPlayer, setDrawerPlayer] = useState<CanonicalPlayer | null>(null);
+  const { events } = useEvents(ws.sport);
 
   const selectedSlate = useMemo(
     () => slates.find((s) => s.id === ws.slateId) ?? null,
@@ -94,11 +104,11 @@ export default function DataHubPage() {
       setError(null);
       try {
         const res = await fetchDFSSlates(ws.platform, ws.sport);
-        const published = (res?.data ?? []).filter((s) => s.status === "PUBLISHED");
-        const current = published.filter((s) => s.is_current !== false);
+        const published = filterCustomerVisibleSlates(res?.data ?? [], ws.sport);
+        const current = published.filter((s) => s.freshness === "CURRENT" || s.is_current === true);
         if (!cancelled) {
           setSlates(published);
-          setHasStaleSlates(published.length > current.length);
+          setHasStaleSlates((res?.data ?? []).some((s) => s.freshness === "STALE" || s.is_current === false));
           const existingOk = ws.slateId != null && published.some((s) => s.id === ws.slateId);
           if (!existingOk) {
             const pool = current.length > 0 ? current : published;
@@ -218,6 +228,10 @@ export default function DataHubPage() {
     return { withProj, total: players.length };
   }, [players]);
 
+  const scheduleEvents = useMemo(() => upcomingScheduleEvents(events), [events]);
+  const marketEvents = useMemo(() => eventsWithMarketContext(scheduleEvents), [scheduleEvents]);
+  const hasActiveSlate = slates.length > 0 && ws.slateId != null;
+
   const optimizerHref = buildOptimizerHandoffUrl({
     sport: ws.sport,
     platform: ws.platform,
@@ -276,7 +290,7 @@ export default function DataHubPage() {
             </select>
           </div>
           <div className="sbme-dhub-ctl">
-            <span className="sbme-dhub-ctl-step">3 · Slate</span>
+            <span className="sbme-dhub-ctl-step">{slates.length === 0 ? "3 · No Active Slate" : "3 · Slate"}</span>
             <label className="sbme-dhub-ctl-label" htmlFor="dh-slate">Active Slate</label>
             <select
               id="dh-slate"
@@ -286,7 +300,7 @@ export default function DataHubPage() {
               disabled={slatesLoading || slates.length === 0}
             >
               {slates.length === 0 ? (
-                <option value="">No slates available</option>
+                <option value="">No active slate</option>
               ) : (
                 slates.map((s) => (
                   <option key={s.id} value={String(s.id)}>
@@ -297,17 +311,22 @@ export default function DataHubPage() {
             </select>
           </div>
           <div className="sbme-dhub-ctl">
-            <span className="sbme-dhub-ctl-step">4 · Analyze</span>
+            <span className="sbme-dhub-ctl-step">{slates.length === 0 ? "4 · Waiting for DFS Slate" : "4 · Analyze"}</span>
             <label className="sbme-dhub-ctl-label">Next Step</label>
             <button
               type="button"
               className="sbme-dhub-btn sbme-dhub-btn--gold"
               style={{ width: "100%", marginTop: 2 }}
-              disabled={!ws.slateId}
-              onClick={() => router.push(optimizerHref)}
+              disabled={!hasActiveSlate}
+              onClick={() => { if (hasActiveSlate) router.push(optimizerHref); }}
             >
               <Send size={14} /> Open Optimizer
             </button>
+            {!hasActiveSlate && !slatesLoading && (
+              <p className="sbme-dhub-muted" style={{ fontSize: 10, marginTop: 6, lineHeight: 1.4 }}>
+                Optimizer unavailable until a DFS slate is available.
+              </p>
+            )}
           </div>
         </div>
 
@@ -323,8 +342,33 @@ export default function DataHubPage() {
           <div className="sbme-dhub-loading"><Loader2 size={24} className="animate-spin" /></div>
         ) : slates.length === 0 ? (
           <div className="sbme-dhub-empty">
-            <strong>No slate data available</strong>
-            No published {ws.sport} slates for {platformLabel(ws.platform)}. Upload a contest salary CSV to populate the Data Hub.
+            <strong>NO DFS SLATE CURRENTLY AVAILABLE</strong>
+            SB ME has not received an active {platformLabel(ws.platform)} contest slate for this sport yet.
+            <p className="sbme-dhub-muted" style={{ marginTop: 10, fontSize: 11 }}>
+              Optimizer unavailable until a DFS slate is available.
+            </p>
+            {scheduleEvents.length > 0 && (
+              <div className="sbme-dhub-sched">
+                <div className="sbme-dhub-sched-label">UPCOMING SCHEDULE</div>
+                <p className="sbme-dhub-sched-note">{SCHEDULE_INTEL_NOTE}</p>
+                <div className="sbme-dhub-sched-chips">
+                  {scheduleEvents.slice(0, 24).map((e) => (
+                    <div key={e.id} className="sbme-dhub-sched-chip">
+                      <div>{scheduleMatchupLabel(e)}</div>
+                      <div className="sbme-dhub-sched-time">{formatKickoffEt(e.start_time)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {marketEvents.length > 0 && (
+              <div className="sbme-dhub-sched" style={{ marginTop: 16 }}>
+                <div className="sbme-dhub-sched-label">MARKET CONTEXT</div>
+                <p className="sbme-dhub-sched-note">
+                  {marketEvents.length} game{marketEvents.length !== 1 ? "s" : ""} currently have SportsGameOdds market data in cache. This is not a DFS contest slate.
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -432,7 +476,7 @@ export default function DataHubPage() {
           </section>
         )}
 
-        {ws.slateId && (
+        {ws.slateId && slates.length > 0 && (
           <>
             <div className="sbme-dhub-toolbar">
               {positionOptions.map((pos) => (

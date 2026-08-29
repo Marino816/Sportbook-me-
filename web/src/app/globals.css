@@ -2129,6 +2129,44 @@ body {
   line-height: 1.55;
 }
 .sbme-dhub-empty strong { color: #c9a84c; display: block; margin-bottom: 6px; }
+.sbme-dhub-sched {
+  margin: 22px auto 0;
+  max-width: 760px;
+  text-align: left;
+}
+.sbme-dhub-sched-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #c9a84c;
+  margin-bottom: 6px;
+}
+.sbme-dhub-sched-note {
+  font-size: 10px;
+  color: #64748b;
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+.sbme-dhub-sched-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sbme-dhub-sched-chip {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(10, 15, 36, 0.72);
+  border: 1px solid rgba(30, 41, 59, 0.95);
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sbme-dhub-sched-time {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 500;
+  margin-top: 2px;
+}
 .sbme-dhub-loading {
   text-align: center;
   padding: 56px 20px;

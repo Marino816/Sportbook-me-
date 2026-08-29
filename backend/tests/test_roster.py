@@ -1,4 +1,9 @@
-from dfs.roster import get_roster, eligible_for_slot, uses_slot_optimizer
+from dfs.roster import (
+    average_remaining_per_player,
+    eligible_for_slot,
+    get_roster,
+    uses_slot_optimizer,
+)
 
 
 class TestRosterTemplates:
@@ -29,17 +34,21 @@ class TestRosterTemplates:
         assert r.slots == ("QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DST")
         assert r.salary_cap == 50000
 
-    def test_fd_ncaaf_slots_cap_unverified(self):
+    def test_fd_ncaaf_slots_and_cap(self):
         r = get_roster("NCAAF", "fanduel")
         assert r is not None
         assert r.slots == ("QB", "RB", "RB", "WR", "WR", "WR", "SFLX")
-        assert r.salary_cap is None
+        assert r.salary_cap == 60000
+        assert r.player_count == 7
+        assert average_remaining_per_player(60000, 7) == 8571
 
-    def test_fd_nfl_slots_cap_unverified(self):
+    def test_fd_nfl_slots_and_cap(self):
         r = get_roster("NFL", "fanduel")
         assert r is not None
         assert r.slots == ("QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DEF")
-        assert r.salary_cap is None
+        assert r.salary_cap == 60000
+        assert r.player_count == 9
+        assert average_remaining_per_player(60000, 9) == 6667
 
     def test_keyed_by_sport_and_platform(self):
         assert get_roster("NFL", "draftkings").slots != get_roster("NFL", "fanduel").slots

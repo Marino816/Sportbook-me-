@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, fetchOptimalPct, saveLineupHistory, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
 import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download, ArrowUpDown } from "lucide-react";
@@ -12,7 +11,14 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { formatBookmakerName } from "@/lib/bookmakers";
 import { LastFive } from "@/lib/last-five";
 import { parseOptimizerHandoff } from "@/lib/ai-session";
-import { getRoster, slotEligible, slotLabel, UNIQUE_LINEUP_UNAVAILABLE } from "@/lib/dfs-roster";
+import { averageRemainingPerPlayer, getRoster, slotEligible, slotLabel, UNIQUE_LINEUP_UNAVAILABLE } from "@/lib/dfs-roster";
+import { filterCustomerVisibleSlates } from "@/lib/dfs-slate-status";
+import {
+  formatKickoffEt,
+  SCHEDULE_INTEL_NOTE,
+  scheduleMatchupLabel,
+  upcomingScheduleEvents,
+} from "@/lib/upcoming-schedule";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 const PLATFORMS = ["draftkings", "fanduel"] as const;
@@ -184,13 +190,7 @@ export default function OptimizerPage() {
       setSlatesLoading(true);
       try {
         const res = await fetchDFSSlates(platform, sport);
-        const pub = (res?.data ?? []).filter((s: any) => {
-          if (s.freshness === "STALE") return false;
-          if (s.is_live_eligible === true) return true;
-          if (s.freshness === "UPCOMING") return sport === "NFL" || sport === "NCAAF";
-          if (s.freshness === "CURRENT" || s.is_current === true) return true;
-          return false;
-        });
+        const pub = filterCustomerVisibleSlates(res?.data ?? [], sport);
         if (!cancelled) {
           setSlates(pub);
           const urlSlate = typeof window !== "undefined"
@@ -656,6 +656,10 @@ export default function OptimizerPage() {
     return { cap, remaining: rem, projFP: fp, value: val, ownership: "N/A" };
   }, [selectedLineup, roster, lockedPlayers, dfsPlayers]);
 
+  const remainingSlots = rosterRows.filter((r) => !r.name).length;
+  const avgRemaining = averageRemainingPerPlayer(builderMetrics.remaining, remainingSlots);
+  const scheduleEvents = useMemo(() => upcomingScheduleEvents(events), [events]);
+
   return (
     <div style={{ background: "#0a0f24", minHeight: "100vh", color: "#f0f6fc" }}>
       {/* HEADER */}
@@ -684,7 +688,7 @@ export default function OptimizerPage() {
           <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players · SGO {${slateIntegrity.total} players, ${(slateIntegrity.matchRate * 100).toFixed(0)}% matched}` : slates.length === 0 ? `No published ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate with lock time is available yet` : "Select a slate"}
+            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players · SGO {${slateIntegrity.total} players, ${(slateIntegrity.matchRate * 100).toFixed(0)}% matched}` : slates.length === 0 ? "No DFS slate currently available" : "Select a slate"}
           </span>
         </div>
         <button onClick={() => setShowStackingRules(!showStackingRules)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: showStackingRules ? "rgba(201,168,76,0.15)" : "#0a0f24", border: showStackingRules ? "1px solid #c9a84c" : "1px solid #1e293b", color: showStackingRules ? "#c9a84c" : "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
@@ -706,25 +710,47 @@ export default function OptimizerPage() {
         </div>
       )}
 
-      {/* GAME CARDS */}
-      <div style={{ padding: "12px 24px", borderBottom: "1px solid #1e293b", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-        <button onClick={selectAllGames} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#94a3b8", cursor: "pointer" }}>SELECT ALL</button>
-        <button onClick={removeAllGames} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#ef4444", cursor: "pointer" }}>REMOVE ALL</button>
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 4 }}>
-          {resolvedSlateId == null ? (
-            <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>Game chips load from the selected contest slate. SGO schedule alone is not a slate.</span>
-          ) : filteredEvents.length === 0 ? (
-            <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>No games attached to this slate yet.</span>
-          ) : filteredEvents.slice(0, 20).map((e) => {
-            const excluded = excludedGameIds.has(e.id);
-            return (
-              <button key={e.id} onClick={() => toggleGame(e.id)}
-                style={{ padding: "8px 14px", borderRadius: 10, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: excluded ? "rgba(239,68,68,0.06)" : "rgba(201,168,76,0.06)", border: excluded ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(201,168,76,0.2)", color: excluded ? "#64748b" : "#94a3b8", cursor: "pointer", opacity: excluded ? 0.5 : 1 }}>
-                {e.away_team?.abbreviation || "AWY"} @ {e.home_team?.abbreviation || "HOM"} · {e.start_time ? new Date(e.start_time).toLocaleString([], { hour: "numeric", minute: "2-digit" }) : ""}
-              </button>
-            );
-          })}
-        </div>
+      {/* GAME CARDS — slate games vs informational schedule */}
+      <div style={{ padding: "12px 24px", borderBottom: "1px solid #1e293b", display: "flex", flexDirection: "column", gap: 10 }}>
+        {resolvedSlateId == null && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#c9a84c", marginBottom: 4 }}>SLATE</div>
+            <div style={{ fontSize: 11, color: "#94a3b8" }}>No DFS slate currently available</div>
+          </div>
+        )}
+        {resolvedSlateId != null && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#c9a84c", width: "100%" }}>SLATE GAMES</div>
+            <button onClick={selectAllGames} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#94a3b8", cursor: "pointer" }}>SELECT ALL</button>
+            <button onClick={removeAllGames} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#ef4444", cursor: "pointer" }}>REMOVE ALL</button>
+            <div style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 4 }}>
+              {filteredEvents.length === 0 ? (
+                <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>No games attached to this slate yet. SGO schedule alone is not a slate.</span>
+              ) : filteredEvents.slice(0, 20).map((e) => {
+                const excluded = excludedGameIds.has(e.id);
+                return (
+                  <button key={e.id} onClick={() => toggleGame(e.id)}
+                    style={{ padding: "8px 14px", borderRadius: 10, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: excluded ? "rgba(239,68,68,0.06)" : "rgba(201,168,76,0.06)", border: excluded ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(201,168,76,0.2)", color: excluded ? "#64748b" : "#94a3b8", cursor: "pointer", opacity: excluded ? 0.5 : 1 }}>
+                    {e.away_team?.abbreviation || "AWY"} @ {e.home_team?.abbreviation || "HOM"} · {e.start_time ? new Date(e.start_time).toLocaleString([], { hour: "numeric", minute: "2-digit" }) : ""}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {resolvedSlateId != null ? (
+            <details>
+              <summary style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#64748b", cursor: "pointer" }}>UPCOMING SCHEDULE</summary>
+              <p style={{ fontSize: 10, color: "#64748b", margin: "6px 0 8px" }}>{SCHEDULE_INTEL_NOTE}</p>
+              <ScheduleChips events={scheduleEvents} />
+            </details>
+          ) : (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#c9a84c", marginBottom: 4 }}>UPCOMING SCHEDULE</div>
+              <p style={{ fontSize: 10, color: "#64748b", margin: "0 0 8px" }}>{SCHEDULE_INTEL_NOTE}</p>
+              <ScheduleChips events={scheduleEvents} />
+            </div>
+          )}
       </div>
 
       {/* MAIN WORKSPACE */}
@@ -896,9 +922,9 @@ export default function OptimizerPage() {
           <SectionTitle>LIVE LINEUP BUILDER</SectionTitle>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <MetricBox label="Salary Remaining" value={`$${(builderMetrics.remaining >= 0 ? builderMetrics.remaining : 0).toLocaleString()}`} />
+            <MetricBox label="Avg Remaining / Player" value={remainingSlots > 0 ? `$${avgRemaining.toLocaleString()}` : "—"} />
             <MetricBox label="Projected FP" value={builderMetrics.projFP ? builderMetrics.projFP.toFixed(1) : "—"} />
             <MetricBox label="Value" value={String(builderMetrics.value)} />
-            <MetricBox label="Proj Ownership" value={builderMetrics.ownership} />
           </div>
 
           {/* Lineup switcher (after generate) */}
@@ -962,19 +988,19 @@ export default function OptimizerPage() {
             <div style={{ marginTop: 12, padding: "16px 18px", borderRadius: 12, background: "rgba(201,168,76,0.04)", border: "1px solid rgba(201,168,76,0.12)", textAlign: "center" }}>
               <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>⏳</div>
               <div style={{ fontSize: 14, fontWeight: 800, color: "#c9a84c", marginBottom: 4 }}>
-                No {platform === "draftkings" ? "DraftKings" : "FanDuel"} {sport} Slate Available
+                No DFS slate currently available
               </div>
               <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2, lineHeight: 1.5 }}>
-                A published {platform === "draftkings" ? "DraftKings" : "FanDuel"} {sport} salary slate with a lock time is required before optimization can run.
+                SB ME has not received an active {platform === "draftkings" ? "DraftKings" : "FanDuel"} contest slate for this sport yet.
+              </div>
+              <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>
+                Optimizer unavailable until a DFS slate is available.
               </div>
               {hasStaleSlates && (
                 <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
                   One or more {platform === "draftkings" ? "DraftKings" : "FanDuel"} slates exist but are for past dates and have been blocked by freshness protection.
                 </div>
               )}
-              <Link href="/admin/dfs-import" style={{ display: "inline-block", marginTop: 10, padding: "6px 16px", borderRadius: 8, background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.25)", color: "#c9a84c", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
-                Upload Today's DKSalaries.csv
-              </Link>
             </div>
           )}
           {(ws.lockedIds.length > 0 || ws.excludedIds.length > 0) && (
@@ -990,6 +1016,25 @@ export default function OptimizerPage() {
 }
 
 // ── Sub-components ──────────────────────────────────────────
+
+function ScheduleChips({ events }: { events: SBEvent[] }) {
+  if (events.length === 0) {
+    return <span style={{ fontSize: 11, color: "#64748b" }}>No upcoming schedule games are available.</span>;
+  }
+  return (
+    <div style={{ display: "flex", gap: 6, overflowX: "auto", flexWrap: "wrap", paddingBottom: 4 }}>
+      {events.slice(0, 24).map((e) => (
+        <div
+          key={e.id}
+          style={{ padding: "8px 14px", borderRadius: 10, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: "#1a1f33", border: "1px solid #1e293b", color: "#94a3b8" }}
+        >
+          <div>{scheduleMatchupLabel(e)}</div>
+          <div style={{ fontSize: 10, color: "#64748b", fontWeight: 500 }}>{formatKickoffEt(e.start_time)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Selector({ label, value, options, onChange, format }: { label: string; value: string; options: string[]; onChange: (v: string) => void; format?: (v: string) => string }) {
   return (

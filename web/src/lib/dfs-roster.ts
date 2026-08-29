@@ -1,8 +1,8 @@
 /**
  * Sport + platform DFS roster templates (mirrors backend/dfs/roster.py).
  *
- * FanDuel NFL / NCAAF salary caps are intentionally null — they are not in
- * verified platform configuration. Do not invent a number on the client.
+ * FanDuel NFL / NCAAF salary caps are 60000 from the verified FanDuel
+ * contest reference (empty-lineup remaining + roster slot counts).
  */
 
 export type RosterTemplate = {
@@ -53,10 +53,10 @@ const TEMPLATES: Record<string, RosterTemplate> = {
   "NFL|fanduel": {
     sport: "NFL", platform: "fanduel",
     slots: ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DEF"],
-    salaryCap: null, minSalary: 0,
+    salaryCap: 60000, minSalary: 0,
     filterPositions: ["QB", "RB", "WR", "TE", "DEF"],
     flexEligible: FD_NFL_FLEX, sflxEligible: [], slotLabels: {},
-    salaryCapSource: "unverified", minUniqueDefault: 2,
+    salaryCapSource: "FanDuel NFL contest reference (60k / 9 slots)", minUniqueDefault: 2,
   },
   "NCAAF|draftkings": {
     sport: "NCAAF", platform: "draftkings",
@@ -69,10 +69,10 @@ const TEMPLATES: Record<string, RosterTemplate> = {
   "NCAAF|fanduel": {
     sport: "NCAAF", platform: "fanduel",
     slots: ["QB", "RB", "RB", "WR", "WR", "WR", "SFLX"],
-    salaryCap: null, minSalary: 0,
+    salaryCap: 60000, minSalary: 0,
     filterPositions: ["QB", "RB", "WR", "TE"],
     flexEligible: [], sflxEligible: FD_NCAAF_SFLX, slotLabels: { SFLX: "SUPER FLEX" },
-    salaryCapSource: "unverified", minUniqueDefault: 2,
+    salaryCapSource: "FanDuel NCAAF contest reference (60k / 7 slots)", minUniqueDefault: 2,
   },
   "NBA|draftkings": {
     sport: "NBA", platform: "draftkings",
@@ -138,6 +138,11 @@ export function slotEligible(
   if (roster.sport === "NBA" && slotN === "G") return positions.has("PG") || positions.has("SG") || positions.has("G");
   if (roster.sport === "NBA" && slotN === "F") return positions.has("SF") || positions.has("PF") || positions.has("F");
   return positions.has(slotN);
+}
+
+export function averageRemainingPerPlayer(remainingSalary: number, remainingSlots: number): number {
+  if (remainingSlots <= 0) return 0;
+  return Math.round(remainingSalary / remainingSlots);
 }
 
 export const UNIQUE_LINEUP_UNAVAILABLE =

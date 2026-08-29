@@ -47,3 +47,22 @@ export function platformLabel(platform: string): string {
   if (platform === "fanduel") return "FanDuel";
   return platform;
 }
+
+/** Same customer-visible rule used by Optimizer and Data Hub. */
+export function isCustomerVisibleSlate(slate: DFSSlateSummary, sport?: string): boolean {
+  if (slate.freshness === "STALE") return false;
+  if (slate.is_live_eligible === true) return true;
+  if (slate.freshness === "UPCOMING") {
+    const sp = (sport || slate.sport || "").toUpperCase();
+    return sp === "NFL" || sp === "NCAAF";
+  }
+  if (slate.freshness === "CURRENT" || slate.is_current === true) return true;
+  return false;
+}
+
+export function filterCustomerVisibleSlates(
+  slates: DFSSlateSummary[] | null | undefined,
+  sport?: string,
+): DFSSlateSummary[] {
+  return (slates || []).filter((s) => isCustomerVisibleSlate(s, sport));
+}

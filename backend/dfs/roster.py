@@ -7,11 +7,11 @@ verified platform configuration or were explicitly specified for this
 product.
 
 Salary-cap sources:
-  MLB DK 50000 / FD 35000  — optimizer.mlb_optimizer.PLATFORM_CONFIG
-  NBA DK 50000 / FD 60000  — builder.engine DK_CAP / FD_CAP
-  NFL DK 50000 / NCAAF DK 50000 — production review + dfs.parsers DK default
-  FanDuel NFL / FanDuel NCAAF salary caps are NOT present in verified
-  platform config or the BC adapter. They stay None (do not invent).
+    MLB DK 50000 / FD 35000  — optimizer.mlb_optimizer.PLATFORM_CONFIG
+    NBA DK 50000 / FD 60000  — builder.engine DK_CAP / FD_CAP
+    NFL DK 50000 / NCAAF DK 50000 — production review + dfs.parsers DK default
+    FanDuel NFL 60000 / FanDuel NCAAF 60000 — verified FanDuel contest
+    reference (empty-lineup salary remaining + roster slot counts)
 
 FLEX eligibility follows classic DraftKings / FanDuel football rules used
 to fill the listed slot structure. Slot lists themselves match the
@@ -115,10 +115,10 @@ ROSTER_TEMPLATES: dict[tuple[str, str], RosterTemplate] = {
         sport="NFL",
         platform="fanduel",
         slots=("QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DEF"),
-        salary_cap=None,  # not in verified platform config
+        salary_cap=60000,
         filter_positions=("QB", "RB", "WR", "TE", "DEF"),
         flex_eligible=_FD_NFL_FLEX,
-        salary_cap_source="unverified — FanDuel NFL cap is not in PLATFORM_CONFIG or BC adapter",
+        salary_cap_source="FanDuel NFL contest reference (60k / 9 slots)",
         min_unique_default=2,
     ),
     ("NCAAF", "draftkings"): _tpl(
@@ -137,11 +137,11 @@ ROSTER_TEMPLATES: dict[tuple[str, str], RosterTemplate] = {
         sport="NCAAF",
         platform="fanduel",
         slots=("QB", "RB", "RB", "WR", "WR", "WR", "SFLX"),
-        salary_cap=None,  # not in verified platform config
+        salary_cap=60000,
         filter_positions=("QB", "RB", "WR", "TE"),
         sflx_eligible=_FD_NCAAF_SFLX,
         slot_labels=_SFLX_LABEL,
-        salary_cap_source="unverified — FanDuel NCAAF cap is not in PLATFORM_CONFIG or BC adapter",
+        salary_cap_source="FanDuel NCAAF contest reference (60k / 7 slots)",
         min_unique_default=2,
     ),
     ("NBA", "draftkings"): _tpl(
@@ -241,3 +241,10 @@ def eligible_for_slot(player_pos: str | None, slot: str, roster: RosterTemplate)
 def uses_slot_optimizer(sport: str | None) -> bool:
     """Football contests use the generic slot CP-SAT solver (not MLB)."""
     return normalize_sport(sport) in {"NFL", "NCAAF"}
+
+
+def average_remaining_per_player(remaining_salary: int, remaining_slots: int) -> int:
+    """remaining salary / remaining open roster spots, rounded to dollars."""
+    if remaining_slots <= 0:
+        return 0
+    return int(round(float(remaining_salary) / float(remaining_slots)))
