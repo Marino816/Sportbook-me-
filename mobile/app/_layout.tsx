@@ -5,7 +5,7 @@
  */
 
 import { useEffect } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Stack, useRootNavigationState, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider, useAuth } from "../lib/auth";
@@ -20,14 +20,27 @@ function BootSplash() {
   );
 }
 
+function RestoreRetry({ onRetry }: { onRetry: () => void }) {
+  return (
+    <View style={styles.splash}>
+      <Text style={styles.retryTitle}>Couldn't reach your account</Text>
+      <Text style={styles.retryBody}>Your session is still saved. Try again.</Text>
+      <TouchableOpacity style={styles.retryBtn} onPress={onRetry}>
+        <Text style={styles.retryBtnText}>Retry</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function RootNavigator() {
-  const { status } = useAuth();
+  const { status, retryRestore } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const navigationState = useRootNavigationState();
 
   useEffect(() => {
-    if (status === "loading") return;
+    // Do not redirect until JWT restore + /auth/me have settled.
+    if (status === "loading" || status === "retrying") return;
     if (!navigationState?.key) return;
 
     const inTabs = segments[0] === "(tabs)";
@@ -56,6 +69,7 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" />
       </Stack>
       {status === "loading" ? <BootSplash /> : null}
+      {status === "retrying" ? <RestoreRetry onRetry={() => { void retryRestore(); }} /> : null}
     </View>
   );
 }
@@ -76,5 +90,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
+    padding: 32,
   },
+  retryTitle: { color: "#f0f6fc", fontSize: 18, fontWeight: "700", textAlign: "center" },
+  retryBody: { color: "#94a3b8", fontSize: 14, textAlign: "center", marginTop: 8 },
+  retryBtn: {
+    marginTop: 20,
+    backgroundColor: "#c9a84c",
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  retryBtnText: { color: "#060b1a", fontWeight: "800", fontSize: 16 },
 });

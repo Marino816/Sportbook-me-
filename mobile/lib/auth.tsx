@@ -1,6 +1,7 @@
 /**
  * Auth session for the Expo Router app.
  * Bootstrap validates JWT via GET /auth/me — a stored string is not enough.
+ * JWT lives in expo-secure-store only.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -15,7 +16,7 @@ import {
   type AuthUser,
 } from "./api";
 
-export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+export type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "retrying";
 
 type AuthContextValue = {
   status: AuthStatus;
@@ -24,44 +25,90 @@ type AuthContextValue = {
   signInWithBiometrics: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  retryRestore: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+/** Share one restore across React Strict Mode remounts so a cancelled first pass is not lost. */
+let inflightRestore: ReturnType<typeof restoreSession> | null = null;
+
+function restoreSessionShared() {
+  if (!inflightRestore) {
+    inflightRestore = restoreSession().finally(() => {
+      setTimeout(() => {
+        inflightRestore = null;
+      }, 0);
+    });
+  }
+  return inflightRestore;
+}
+
+function applyRestore(
+  session: Awaited<ReturnType<typeof restoreSession>>,
+  setUser: (u: AuthUser | null) => void,
+  setStatus: (s: AuthStatus) => void,
+) {
+  if (session.kind === "authenticated") {
+    setUser(session.user);
+    setStatus("authenticated");
+    return;
+  }
+  if (session.kind === "transient") {
+    setUser(null);
+    setStatus("retrying");
+    return;
+  }
+  setUser(null);
+  setStatus("unauthenticated");
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    let active = true;
     (async () => {
       try {
-        const session = await restoreSession();
-        if (cancelled) return;
-        if (session) {
-          setUser(session);
-          setStatus("authenticated");
-        } else {
-          setUser(null);
-          setStatus("unauthenticated");
-        }
+        const session = await restoreSessionShared();
+        if (!active) return;
+        applyRestore(session, setUser, setStatus);
       } catch {
-        if (!cancelled) {
+        if (!active) return;
+        const token = await getToken();
+        if (token) {
+          setUser(null);
+          setStatus("retrying");
+        } else {
           setUser(null);
           setStatus("unauthenticated");
         }
       }
     })();
     return () => {
-      cancelled = true;
+      active = false;
     };
+  }, []);
+
+  const retryRestore = useCallback(async () => {
+    setStatus("loading");
+    inflightRestore = null;
+    try {
+      const session = await restoreSession();
+      applyRestore(session, setUser, setStatus);
+    } catch {
+      const token = await getToken();
+      setUser(null);
+      setStatus(token ? "retrying" : "unauthenticated");
+    }
   }, []);
 
   const signIn = useCallback(async (identifier: string, password: string) => {
     await apiLogin(identifier, password);
     const session = await restoreSession();
-    if (!session) throw new Error("Could not establish session");
-    setUser(session);
+    if (session.kind !== "authenticated") throw new Error("Could not establish session");
+    setUser(session.user);
     setStatus("authenticated");
   }, []);
 
@@ -77,8 +124,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     if (!result.success) throw new Error("Biometric authentication cancelled");
     const session = await restoreSession();
-    if (!session) throw new Error("Session expired. Please sign in with your password.");
-    setUser(session);
+    if (session.kind !== "authenticated") throw new Error("Session expired. Please sign in with your password.");
+    setUser(session.user);
     setStatus("authenticated");
   }, []);
 
@@ -98,8 +145,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, user, signIn, signInWithBiometrics, signOut, refreshUser }),
-    [status, user, signIn, signInWithBiometrics, signOut, refreshUser],
+    () => ({ status, user, signIn, signInWithBiometrics, signOut, refreshUser, retryRestore }),
+    [status, user, signIn, signInWithBiometrics, signOut, refreshUser, retryRestore],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

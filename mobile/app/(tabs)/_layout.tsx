@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Redirect, Tabs } from "expo-router";
+import { Tabs } from "expo-router";
 import { useAuth } from "../../lib/auth";
 
 export default function TabLayout() {
   const { status } = useAuth();
-  if (status === "loading") return null;
-  if (status === "unauthenticated") return <Redirect href="/" />;
+  // Root layout owns login/dashboard redirects to avoid a replace loop.
+  if (status !== "authenticated") return null;
 
   return (
     <Tabs screenOptions={{
@@ -64,6 +64,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="market-tools"
         options={{
+          href: "/(tabs)/market-tools",
           title: "Market Tools",
           tabBarLabel: "Markets",
           tabBarIcon: ({ color, size }) => <Ionicons name="trending-up" size={size} color={color} />,

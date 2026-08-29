@@ -1,16 +1,47 @@
 /**
  * Canonical Sportbook Me mobile API client (Expo Router).
  *
- * Active app entry is expo-router (`mobile/app/**`).
- * Do not import the abandoned App.tsx / src prototype for runtime behavior.
+ * JWT storage is expo-secure-store ONLY (key: sportbook_me_token).
+ * Do not persist credentials in AsyncStorage.
+ *
+ * Expo Go on iOS may drop Keychain items when the experience is force-closed.
+ * That is an Expo Go container limitation, not a reason to weaken storage.
+ * Re-test persistence in a later EAS development build.
  *
  * Base URL: EXPO_PUBLIC_API_URL, else production Railway /api.
  */
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
 export const DEFAULT_API_URL = "https://sportbook-me-production.up.railway.app/api";
-const TOKEN_KEY = "sportbook_me_token";
+export const TOKEN_KEY = "sportbook_me_token";
+
+const SECURE_OPTS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+};
+
+function isDev(): boolean {
+  return typeof __DEV__ !== "undefined" && __DEV__;
+}
+
+function authLog(event: string, extra: Record<string, unknown> = {}): void {
+  if (!isDev()) return;
+  console.log(`[sbme-auth] ${event}`, extra);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Drop any leftover JWT copy from a prior insecure fallback. Never read it back as auth. */
+async function discardInsecureTokenCopy(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 export function getApiUrl(): string {
   const fromEnv = (process.env.EXPO_PUBLIC_API_URL || "").trim();
@@ -18,15 +49,54 @@ export function getApiUrl(): string {
 }
 
 export async function getToken(): Promise<string | null> {
-  return SecureStore.getItemAsync(TOKEN_KEY);
+  await discardInsecureTokenCopy();
+  try {
+    const fromSecure =
+      (await SecureStore.getItemAsync(TOKEN_KEY)) ||
+      (await SecureStore.getItemAsync(TOKEN_KEY, SECURE_OPTS));
+    if (fromSecure) {
+      authLog("token-read", { source: "secure-store", present: true });
+      return fromSecure;
+    }
+  } catch (e) {
+    authLog("token-read-secure-failed", { message: e instanceof Error ? e.message : "error" });
+  }
+
+  authLog("token-read", { source: "secure-store", present: false });
+  return null;
 }
 
 export async function setToken(token: string): Promise<void> {
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
+  await SecureStore.setItemAsync(TOKEN_KEY, token, SECURE_OPTS);
+  await discardInsecureTokenCopy();
+  let secureOk = false;
+  try {
+    secureOk = !!(
+      (await SecureStore.getItemAsync(TOKEN_KEY)) ||
+      (await SecureStore.getItemAsync(TOKEN_KEY, SECURE_OPTS))
+    );
+  } catch {
+    secureOk = false;
+  }
+  authLog("token-write", { securePersisted: secureOk });
+  if (!secureOk) {
+    throw new Error("Could not persist session");
+  }
 }
 
 export async function clearToken(): Promise<void> {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
+  try {
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+  } catch {
+    /* continue */
+  }
+  try {
+    await SecureStore.deleteItemAsync(TOKEN_KEY, SECURE_OPTS);
+  } catch {
+    /* continue */
+  }
+  await discardInsecureTokenCopy();
+  authLog("token-cleared", {});
 }
 
 export type AuthUser = {
@@ -86,6 +156,7 @@ export async function login(identifier: string, password: string) {
   const data = await res.json();
   if (!data?.access_token) throw new Error("Login failed");
   await setToken(data.access_token);
+  authLog("login-token-stored", { persisted: true });
   return data;
 }
 
@@ -100,27 +171,60 @@ export async function getMe() {
   return apiFetch("/auth/me");
 }
 
+export type SessionRestore =
+  | { kind: "authenticated"; user: AuthUser }
+  | { kind: "unauthenticated"; reason: "no_token" | "invalid" }
+  | { kind: "transient" };
+
 /**
  * Validate a stored JWT with GET /auth/me.
- * Missing or unauthorized tokens are cleared. Network failures keep the token
- * but do not establish a session.
+ * 401/403 clears the token. Transient failures keep the token.
  */
-export async function restoreSession(): Promise<AuthUser | null> {
-  const token = await getToken();
-  if (!token) return null;
-  try {
-    const res = await fetch(`${getApiUrl()}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.status === 401 || res.status === 403) {
-      await clearToken();
-      return null;
+export async function restoreSession(): Promise<SessionRestore> {
+  authLog("restore-start", {});
+  let token = await getToken();
+  if (!token) {
+    for (let i = 0; i < 3; i++) {
+      await delay(200);
+      token = await getToken();
+      if (token) break;
     }
-    if (!res.ok) return null;
-    return unwrapUser(await res.json());
-  } catch {
-    return null;
   }
+  if (!token) {
+    authLog("restore-no-token", {});
+    return { kind: "unauthenticated", reason: "no_token" };
+  }
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${getApiUrl()}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      authLog("restore-me", { status: res.status, attempt });
+      if (res.status === 401 || res.status === 403) {
+        await clearToken();
+        return { kind: "unauthenticated", reason: "invalid" };
+      }
+      if (!res.ok) {
+        if (attempt < 3) {
+          await delay(300);
+          continue;
+        }
+        authLog("restore-transient", { status: res.status });
+        return { kind: "transient" };
+      }
+      const user = unwrapUser(await res.json());
+      authLog("restore-user", { ok: !!user, hasEmail: !!user?.email });
+      if (user) return { kind: "authenticated", user };
+      authLog("restore-transient", { reason: "unwrap" });
+      return { kind: "transient" };
+    } catch (e) {
+      authLog("restore-me-error", { attempt, message: e instanceof Error ? e.message : "error" });
+      if (attempt < 3) await delay(300);
+    }
+  }
+  authLog("restore-transient", { reason: "network" });
+  return { kind: "transient" };
 }
 
 // ── Billing ──

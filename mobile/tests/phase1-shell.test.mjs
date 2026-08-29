@@ -3,7 +3,7 @@
  * Run: node --test tests/phase1-shell.test.mjs
  */
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -71,17 +71,21 @@ test("session restore validates /auth/me and clears unauthorized tokens", () => 
   assert.match(api, /\/auth\/me/);
   assert.match(api, /res\.status === 401 \|\| res\.status === 403/);
   assert.match(api, /await clearToken\(\)/);
+  assert.match(api, /kind: "transient"/);
 
   const auth = read("lib/auth.tsx");
   assert.match(auth, /restoreSession\(\)/);
+  assert.match(auth, /session\.kind === "transient"/);
+  assert.match(auth, /setStatus\("retrying"\)/);
+  assert.doesNotMatch(auth, /session\.kind === "transient"[\s\S]{0,80}setStatus\("authenticated"\)/);
   assert.match(auth, /signOut/);
   assert.match(auth, /clearToken\(\)/);
 });
 
 test("protected tabs redirect logged-out users", () => {
   const tabs = read("app/(tabs)/_layout.tsx");
-  assert.match(tabs, /status === "unauthenticated"/);
-  assert.match(tabs, /Redirect href="\/"/);
+  assert.match(tabs, /status !== "authenticated"/);
+  assert.doesNotMatch(tabs, /Redirect href="\/"/);
 
   const root = read("app/_layout.tsx");
   assert.match(root, /status === "unauthenticated" && inTabs/);
@@ -123,4 +127,75 @@ test("EXPO_PUBLIC_API_URL override contract", () => {
   assert.equal(getApiUrl(""), DEFAULT_API);
   assert.equal(getApiUrl("   "), DEFAULT_API);
   assert.equal(getApiUrl("https://example.test/api"), "https://example.test/api");
+});
+
+test("A. successful login persists token in SecureStore only", () => {
+  const api = read("lib/api.ts");
+  assert.match(api, /export const TOKEN_KEY = "sportbook_me_token"/);
+  assert.match(api, /await setToken\(data\.access_token\)/);
+  assert.match(api, /SecureStore\.setItemAsync\(TOKEN_KEY/);
+  assert.doesNotMatch(api, /AsyncStorage\.setItem\(TOKEN_KEY/);
+  assert.doesNotMatch(api, /AsyncStorage\.getItem\(TOKEN_KEY/);
+  assert.match(api, /AsyncStorage\.removeItem\(TOKEN_KEY/);
+  assert.match(api, /token-write/);
+});
+
+test("B. cold-start restore reads the same SecureStore key", () => {
+  const api = read("lib/api.ts");
+  const get = api.match(/export async function getToken[\s\S]*?^export async function setToken/m)?.[0] || "";
+  const restore = api.match(/export async function restoreSession[\s\S]*?^export async function getSubscriptionStatus/m)?.[0] || "";
+  assert.match(get, /SecureStore\.getItemAsync\(TOKEN_KEY/);
+  assert.doesNotMatch(get, /AsyncStorage\.getItem\(TOKEN_KEY/);
+  assert.match(restore, /getToken\(\)/);
+  assert.equal((api.match(/sportbook_me_token/g) || []).length >= 1, true);
+  assert.doesNotMatch(api, /TOKEN_KEY = "[^"]+"[\s\S]*TOKEN_KEY = "/);
+});
+
+test("C. restore validates token through /auth/me with Bearer", () => {
+  const api = read("lib/api.ts");
+  assert.match(api, /\$\{getApiUrl\(\)\}\/auth\/me/);
+  assert.match(api, /Authorization: `Bearer \$\{token\}`/);
+  assert.match(api, /res\.status === 401 \|\| res\.status === 403/);
+});
+
+test("D. auth loading and retrying prevent premature redirect", () => {
+  const root = read("app/_layout.tsx");
+  assert.match(root, /status === "loading" \|\| status === "retrying"/);
+  assert.match(root, /JWT restore \+ \/auth\/me have settled/);
+  const beforeRedirect = root.split("router.replace")[0];
+  assert.match(beforeRedirect, /status === "loading"/);
+  assert.match(root, /status === "retrying"/);
+  const tabs = read("app/(tabs)/_layout.tsx");
+  assert.match(tabs, /status !== "authenticated"/);
+  const auth = read("lib/auth.tsx");
+  assert.match(auth, /session\.kind === "authenticated"/);
+  assert.match(auth, /setStatus\("authenticated"\)/);
+});
+
+test("E. login placeholder is Username or email", () => {
+  const login = read("app/index.tsx");
+  assert.match(login, /placeholder="Username or email"/);
+  assert.match(login, />Username or email</);
+  assert.doesNotMatch(login, /placeholder="Email"/);
+});
+
+test("F. Market Tools child routes are hidden from the bottom tab bar", () => {
+  assert.equal(existsSync(join(root, "app/(tabs)/market-tools.tsx")), false);
+  assert.equal(existsSync(join(root, "app/(tabs)/market-tools/_layout.tsx")), true);
+  assert.equal(existsSync(join(root, "app/(tabs)/market-tools/index.tsx")), true);
+  const stack = read("app/(tabs)/market-tools/_layout.tsx");
+  assert.match(stack, /from "expo-router"/);
+  assert.match(stack, /<Stack/);
+  const tabs = read("app/(tabs)/_layout.tsx");
+  assert.match(tabs, /href: "\/\(tabs\)\/market-tools"/);
+  const named = [...tabs.matchAll(/<Tabs\.Screen[\s\S]*?name="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(
+    named.filter((n) => !["subscription", "settings", "ai-preferences", "intelligence"].includes(n)),
+    ["dashboard", "ai-chat", "optimizer", "lineups", "profile", "market-tools"],
+  );
+  for (const child of ["live-odds", "compare", "bookmakers", "player-props", "arbitrage", "parlay"]) {
+    assert.equal(named.includes(child), false, `child tab leaked: ${child}`);
+    assert.equal(named.includes(`market-tools/${child}`), false, `child tab leaked: market-tools/${child}`);
+    assert.equal(existsSync(join(root, `app/(tabs)/market-tools/${child}.tsx`)), true);
+  }
 });

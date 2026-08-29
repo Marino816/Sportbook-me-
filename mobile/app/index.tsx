@@ -38,6 +38,7 @@ export default function LoginScreen() {
         <Text style={s.tagline}>AI-Powered DFS Intelligence</Text>
         <Text style={s.motto}>Optimize. Analyze. Win.</Text>
 
+        <Text style={s.fieldLabel}>Username or email</Text>
         <TextInput
           style={s.input}
           placeholder="Username or email"
@@ -46,8 +47,9 @@ export default function LoginScreen() {
           onChangeText={setIdentifier}
           autoCapitalize="none"
           autoCorrect={false}
-          autoComplete="username"
-          textContentType="username"
+          autoComplete="off"
+          textContentType="none"
+          keyboardType="default"
         />
         <TextInput
           style={s.input}
@@ -80,6 +82,7 @@ const s = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 32, gap: 16 },
   tagline: { fontSize: 16, color: "#94a3b8", textAlign: "center", fontWeight: "600" },
   motto: { fontSize: 13, color: "#64748b", textAlign: "center", marginTop: -8 },
+  fieldLabel: { fontSize: 13, color: "#c9a84c", fontWeight: "700" },
   input: {
     backgroundColor: "#0a0f24", color: "#f0f6fc", borderRadius: 14,
     padding: 16, fontSize: 16, borderWidth: 1, borderColor: "#1e293b",
