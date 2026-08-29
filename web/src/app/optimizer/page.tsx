@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, fetchOptimalPct, saveLineupHistory, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
-import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download, ArrowUpDown } from "lucide-react";
+import { Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, BarChart3, Download, ArrowUpDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -12,13 +12,14 @@ import { formatBookmakerName } from "@/lib/bookmakers";
 import { LastFive } from "@/lib/last-five";
 import { parseOptimizerHandoff } from "@/lib/ai-session";
 import { averageRemainingPerPlayer, getRoster, slotEligible, slotLabel, UNIQUE_LINEUP_UNAVAILABLE } from "@/lib/dfs-roster";
-import { filterCustomerVisibleSlates } from "@/lib/dfs-slate-status";
+import { filterCustomerVisibleSlates, getSlateDisplayStatus, platformLabel } from "@/lib/dfs-slate-status";
 import {
   formatKickoffEt,
   SCHEDULE_INTEL_NOTE,
   scheduleMatchupLabel,
   upcomingScheduleEvents,
 } from "@/lib/upcoming-schedule";
+import { AppShell } from "@/components/app-shell";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 const PLATFORMS = ["draftkings", "fanduel"] as const;
@@ -125,6 +126,14 @@ function exportLineups(lineups: any[], meta: any): void {
   URL.revokeObjectURL(url);
 }
 
+function formatFetchedAt(ms: number | null | undefined): string {
+  if (!ms || !Number.isFinite(ms)) return "";
+  const ago = Math.max(0, Date.now() - ms);
+  if (ago < 60_000) return "Just now";
+  if (ago < 3_600_000) return `${Math.round(ago / 60_000)} min ago`;
+  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 export default function OptimizerPage() {
   const router = useRouter();
   const ws = useWorkspace();
@@ -140,7 +149,7 @@ export default function OptimizerPage() {
   const [bookmakerSource, setBookmakerSource] = useState<string>("Best Available");
   const [strategy, setStrategy] = useState<string>("balanced");
   const [lineupCount, setLineupCount] = useState(4);
-  const { events, loading: sgoLoading } = useEvents(sport);
+  const { events, loading: sgoLoading, lastFetch } = useEvents(sport);
 
   const [canonicalPool, setCanonicalPool] = useState<Record<string, CanonicalPlayer>>({});
   const [optPctStatus, setOptPctStatus] = useState<string>("NOT_RUN");
@@ -159,7 +168,6 @@ export default function OptimizerPage() {
   const [slates, setSlates] = useState<DFSSlateSummary[]>([]);
   const [slatesLoading, setSlatesLoading] = useState(true);
   const [hasStaleSlates, setHasStaleSlates] = useState(false);
-  const [showStackingRules, setShowStackingRules] = useState(false);
   const [maxHittersPerTeam, setMaxHittersPerTeam] = useState<number | undefined>();
   const [stackSize, setStackSize] = useState<number | undefined>();
   const [pitcherConflict, setPitcherConflict] = useState<boolean>(true);
@@ -659,104 +667,144 @@ export default function OptimizerPage() {
   const remainingSlots = rosterRows.filter((r) => !r.name).length;
   const avgRemaining = averageRemainingPerPlayer(builderMetrics.remaining, remainingSlots);
   const scheduleEvents = useMemo(() => upcomingScheduleEvents(events), [events]);
+  const selectedSlate = useMemo(
+    () => slates.find((s) => s.id === resolvedSlateId) ?? null,
+    [slates, resolvedSlateId],
+  );
+  const filledSlots = rosterRows.filter((r) => Boolean(r.name)).length;
+  const capUsed = Math.max(0, (builderMetrics.cap || 0) - (builderMetrics.remaining || 0));
+  const capPct = builderMetrics.cap > 0 ? Math.min(120, (capUsed / builderMetrics.cap) * 100) : 0;
+  const slateStatusLabel = selectedSlate
+    ? getSlateDisplayStatus(selectedSlate)
+    : resolvedSlateId == null
+      ? "NONE"
+      : "LOADED";
+  const engineLabel = canGenerate ? "CP-SAT READY" : resolvedSlateId == null ? "CP-SAT STANDBY" : "CP-SAT BLOCKED";
+  const maxSbProj = useMemo(() => {
+    let m = 0;
+    for (const p of filteredPlayers) {
+      const entry = projPool[normName(p.name)];
+      if (entry?.projected_fp != null && entry.projection_source !== "UNAVAILABLE") {
+        m = Math.max(m, Number(entry.projected_fp) || 0);
+      }
+    }
+    return m;
+  }, [filteredPlayers, projPool]);
+  const avgPerSlot = roster && roster.salaryCap != null && roster.slots.length
+    ? Math.round(roster.salaryCap / roster.slots.length)
+    : null;
+  const gameCount = dfsPlayers.length > 0 ? Math.round(new Set(dfsPlayers.map((p) => p.team)).size / 2) : 0;
+  const projectionsUnavailable = resolvedSlateId != null && Object.values(projPool).length > 0
+    && !Object.values(projPool).some((e) => e.projected_fp != null && e.projection_source !== "UNAVAILABLE");
+  const rosterPct = slots.length ? Math.round((filledSlots / slots.length) * 100) : null;
+  const dataFresh = lastFetch && Number.isFinite(lastFetch) && Date.now() - lastFetch < 60_000;
 
   return (
-    <div style={{ background: "#0a0f24", minHeight: "100vh", color: "#f0f6fc" }}>
-      {/* HEADER */}
-      <div style={{ padding: "20px 24px", borderBottom: "1px solid #1e293b", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 900, color: "#c9a84c", fontStyle: "italic", margin: 0 }}>{sport} LINEUP OPTIMIZER</h1>
-          <p style={{ color: "#64748b", fontSize: 12, margin: "4px 0 0" }}>
-            SportsGameOdds Intelligence · CP-SAT Engine · {sgoLoading ? "Loading..." : `${events.length} events`} · Updated {new Date().toLocaleTimeString()}
+    <AppShell atmosphere="app">
+    <div className="sbme-opt">
+      <header className="sbme-opt-head">
+        <div className="sbme-opt-brand">
+          <p className="sbme-opt-kicker">SPORTBOOK ME <span>DFS.AI</span></p>
+          <h1>OPTIMIZER</h1>
+          <p className="sbme-opt-head-copy">
+            {sport} command center · {platformLabel(platform)} roster rules · CP-SAT engine.
+            {sgoLoading ? " Loading SportsGameOdds events…" : ` ${events.length} loaded events.`}
+            {lastFetch ? ` Events fetched ${formatFetchedAt(lastFetch)}.` : ""}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {PLATFORMS.map((p) => (
-            <button key={p} onClick={() => { ws.setPlatform(p); setLineups([]); setLastGenMeta(null); }}
-              style={{ padding: "10px 18px", borderRadius: 10, fontWeight: 700, fontSize: 13, background: platform === p ? "rgba(201,168,76,0.15)" : "#0a0f24", border: platform === p ? "1px solid #c9a84c" : "1px solid #1e293b", color: platform === p ? "#c9a84c" : "#94a3b8", cursor: "pointer", textTransform: "uppercase" }}>
-              {p === "draftkings" ? "DraftKings" : "FanDuel"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* SLATE + CONTROLS */}
-      <div style={{ padding: "12px 24px", borderBottom: "1px solid #1e293b", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <Selector label="Sport" value={sport} options={[...SPORTS]} onChange={ws.setSport} />
-          <Selector label="Slate" value={resolvedSlateId == null ? "" : String(resolvedSlateId)} options={slates.map((s) => String(s.id))} onChange={(v) => ws.setSlateId(v ? Number(v) : null)} format={(v) => { const s = slates.find((x) => String(x.id) === v); if (!s) return v; const t = s.start_time ? new Date(s.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""; return `${s.slate_name}${t ? ` · ${t}` : ""} (${s.player_count})`; }} />
-          <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
-          <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
-          <span style={{ fontSize: 11, color: "#64748b" }}>
-            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players · SGO {${slateIntegrity.total} players, ${(slateIntegrity.matchRate * 100).toFixed(0)}% matched}` : slates.length === 0 ? "No DFS slate currently available" : "Select a slate"}
+        <div className="sbme-opt-strip" aria-label="Optimizer status">
+          <span className="sbme-opt-chip sbme-opt-chip--gold">{sport}</span>
+          <span className="sbme-opt-chip">{platformLabel(platform)}</span>
+          <span className={`sbme-opt-chip${canGenerate ? " sbme-opt-chip--live sbme-opt-chip--pulse" : ""}`}>{engineLabel}</span>
+          <span className={`sbme-opt-chip${resolvedSlateId == null ? " sbme-opt-chip--warn" : " sbme-opt-chip--gold"}`}>
+            {resolvedSlateId == null ? "NO ACTIVE DFS SLATE" : `SLATE ${slateStatusLabel}`}
+          </span>
+          <span className="sbme-opt-chip">PLAYER POOL {dfsPlayers.length}</span>
+          {roster?.salaryCap != null && (
+            <span className="sbme-opt-chip sbme-opt-chip--gold">SALARY CAP ${roster.salaryCap.toLocaleString()}</span>
+          )}
+          <span className={`sbme-opt-chip${dataFresh ? " sbme-opt-chip--live sbme-opt-chip--pulse" : lastFetch ? " sbme-opt-chip--info" : ""}`}>
+            {dataFresh ? "LIVE DATA" : lastFetch ? `DATA ${formatFetchedAt(lastFetch)}` : "DATA —"}
           </span>
         </div>
-        <button onClick={() => setShowStackingRules(!showStackingRules)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: showStackingRules ? "rgba(201,168,76,0.15)" : "#0a0f24", border: showStackingRules ? "1px solid #c9a84c" : "1px solid #1e293b", color: showStackingRules ? "#c9a84c" : "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-          {showStackingRules ? <ChevronUp size={14} /> : <ChevronDown size={14} />} BUILD & STACKING RULES
-        </button>
+      </header>
+
+      <div className="sbme-opt-modes">
+        <div className="sbme-opt-mode">
+          <div className="sbme-opt-mode-label">Sport</div>
+          <div className="sbme-opt-tabs" role="tablist" aria-label="Sport">
+            {SPORTS.map((s) => (
+              <button key={s} type="button" role="tab" aria-selected={sport === s} className={`sbme-opt-tab${sport === s ? " is-on" : ""}`} onClick={() => ws.setSport(s)}>{s}</button>
+            ))}
+          </div>
+        </div>
+        <div className="sbme-opt-mode">
+          <div className="sbme-opt-mode-label">Operating mode</div>
+          <div className="sbme-opt-plat" role="group" aria-label="DFS platform">
+            {PLATFORMS.map((p) => (
+              <button key={p} type="button" aria-pressed={platform === p} className={platform === p ? "is-on" : ""} onClick={() => { ws.setPlatform(p); setLineups([]); setLastGenMeta(null); }}>
+                {p === "draftkings" ? "DraftKings" : "FanDuel"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="sbme-opt-mode">
+          <div className="sbme-opt-mode-label">Slate</div>
+          <Selector label="Slate" value={resolvedSlateId == null ? "" : String(resolvedSlateId)} options={slates.length ? slates.map((s) => String(s.id)) : [""]} onChange={(v) => ws.setSlateId(v ? Number(v) : null)} format={(v) => { if (!v) return "No DFS slate currently available"; const s = slates.find((x) => String(x.id) === v); if (!s) return v; const t = s.start_time ? new Date(s.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""; return `${s.slate_name}${t ? ` · ${t}` : ""} (${s.player_count})`; }} />
+          <div style={{ marginTop: 8 }}>
+            <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
+          </div>
+        </div>
       </div>
 
-      {/* STACKING RULES */}
-      {showStackingRules && (
-        <div style={{ padding: "14px 24px", borderBottom: "1px solid #1e293b", background: "#0a0f24", display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-          <RuleField label="Max Hitters/Team" value={maxHittersPerTeam} onChange={setMaxHittersPerTeam} placeholder="Any" />
-          <RuleField label="Team Stack Size" value={stackSize} onChange={setStackSize} placeholder="Off" />
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8", cursor: "pointer" }}>
-            <input type="checkbox" checked={pitcherConflict} onChange={(e) => setPitcherConflict(e.target.checked)} style={{ accentColor: "#c9a84c" }} /> Pitcher/Opposing-Hitter conflict
-          </label>
-          <RuleField label="Min Salary" value={minSalaryOverride} onChange={setMinSalaryOverride} placeholder="Default" />
-          <RuleField label="Max Salary" value={maxSalaryOverride} onChange={setMaxSalaryOverride} placeholder="Default" />
-          <RuleField label="Max Exposure %" value={globalMaxExposure} onChange={setGlobalMaxExposure} placeholder="None" step={5} />
+      <div className="sbme-opt-metrics" aria-label="Intelligence metrics">
+        <div className="sbme-opt-metric"><b>{roster?.salaryCap != null ? `$${roster.salaryCap.toLocaleString()}` : "—"}</b><span>Salary cap</span></div>
+        <div className="sbme-opt-metric"><b>{avgPerSlot != null ? `$${avgPerSlot.toLocaleString()}` : "—"}</b><span>Avg / slot</span></div>
+        <div className="sbme-opt-metric"><b>{slots.length || "—"}</b><span>Roster size</span></div>
+        <div className="sbme-opt-metric"><b>{dfsPlayers.length || "—"}</b><span>Player pool</span></div>
+        <div className="sbme-opt-metric"><b>{resolvedSlateId == null ? "NONE" : slateStatusLabel}</b><span>Slate status</span></div>
+        <div className="sbme-opt-metric"><b>{selectedSlate?.data_source || "—"}</b><span>Data source</span></div>
+      </div>
+
+      {resolvedSlateId == null && (
+        <div className="sbme-opt-banner" role="status">
+          <h3>NO ACTIVE DFS SLATE</h3>
+          <p>
+            No DFS slate currently available. No valid {platform === "draftkings" ? "DraftKings" : "FanDuel"} slate is currently available for this sport.
+            Upcoming games are schedule intelligence only. Optimization will activate when a valid DFS slate is available.
+          </p>
+        </div>
+      )}
+      {resolvedSlateId != null && (
+        <div className="sbme-opt-rail-wrap sbme-opt-rail-wrap--slate">
+          <div className="sbme-opt-rail-head">
+            <h2>SLATE GAMES</h2>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" className="sbme-opt-ghost" onClick={selectAllGames}>SELECT ALL</button>
+              <button type="button" className="sbme-opt-ghost" onClick={removeAllGames} style={{ color: "#ef4444" }}>REMOVE ALL</button>
+            </div>
+          </div>
+          <div className="sbme-opt-rail">
+            {filteredEvents.length === 0 ? (
+              <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>No games attached to this slate yet. SGO schedule alone is not a slate.</span>
+            ) : filteredEvents.slice(0, 20).map((e) => {
+              const excluded = excludedGameIds.has(e.id);
+              return (
+                <button type="button" key={e.id} onClick={() => toggleGame(e.id)} className={`sbme-opt-game${excluded ? " is-off" : ""}`}>
+                  {e.away_team?.abbreviation || "AWY"} @ {e.home_team?.abbreviation || "HOM"}
+                  <time>{e.start_time ? new Date(e.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</time>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* GAME CARDS — slate games vs informational schedule */}
-      <div style={{ padding: "12px 24px", borderBottom: "1px solid #1e293b", display: "flex", flexDirection: "column", gap: 10 }}>
-        {resolvedSlateId == null && (
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#c9a84c", marginBottom: 4 }}>SLATE</div>
-            <div style={{ fontSize: 11, color: "#94a3b8" }}>No DFS slate currently available</div>
-          </div>
-        )}
-        {resolvedSlateId != null && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#c9a84c", width: "100%" }}>SLATE GAMES</div>
-            <button onClick={selectAllGames} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#94a3b8", cursor: "pointer" }}>SELECT ALL</button>
-            <button onClick={removeAllGames} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#ef4444", cursor: "pointer" }}>REMOVE ALL</button>
-            <div style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 4 }}>
-              {filteredEvents.length === 0 ? (
-                <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>No games attached to this slate yet. SGO schedule alone is not a slate.</span>
-              ) : filteredEvents.slice(0, 20).map((e) => {
-                const excluded = excludedGameIds.has(e.id);
-                return (
-                  <button key={e.id} onClick={() => toggleGame(e.id)}
-                    style={{ padding: "8px 14px", borderRadius: 10, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: excluded ? "rgba(239,68,68,0.06)" : "rgba(201,168,76,0.06)", border: excluded ? "1px solid rgba(239,68,68,0.3)" : "1px solid rgba(201,168,76,0.2)", color: excluded ? "#64748b" : "#94a3b8", cursor: "pointer", opacity: excluded ? 0.5 : 1 }}>
-                    {e.away_team?.abbreviation || "AWY"} @ {e.home_team?.abbreviation || "HOM"} · {e.start_time ? new Date(e.start_time).toLocaleString([], { hour: "numeric", minute: "2-digit" }) : ""}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {resolvedSlateId != null ? (
-            <details>
-              <summary style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#64748b", cursor: "pointer" }}>UPCOMING SCHEDULE</summary>
-              <p style={{ fontSize: 10, color: "#64748b", margin: "6px 0 8px" }}>{SCHEDULE_INTEL_NOTE}</p>
-              <ScheduleChips events={scheduleEvents} />
-            </details>
-          ) : (
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: "#c9a84c", marginBottom: 4 }}>UPCOMING SCHEDULE</div>
-              <p style={{ fontSize: 10, color: "#64748b", margin: "0 0 8px" }}>{SCHEDULE_INTEL_NOTE}</p>
-              <ScheduleChips events={scheduleEvents} />
-            </div>
-          )}
-      </div>
-
-      {/* MAIN WORKSPACE */}
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        {/* LEFT 75% */}
-        <div style={{ flex: 3, minWidth: 0, display: "flex", flexDirection: "column", borderRight: "1px solid #1e293b" }}>
+      <div className="sbme-opt-workspace">
+        <section className="sbme-opt-pool" aria-label="Player pool">
           <div style={{ display: "flex", borderBottom: "1px solid #1e293b" }}>
             <TabChip label="PLAYER POOL" active={mainTab === "pool"} onClick={() => setMainTab("pool")} />
             <TabChip label="SAVED LINEUPS" active={mainTab === "saved"} onClick={() => { setMainTab("saved"); router.push("/lineups"); }} />
@@ -765,21 +813,19 @@ export default function OptimizerPage() {
 
           {mainTab === "pool" && (
             <>
-              <div style={{ display: "flex", padding: "8px 16px", gap: 8, borderBottom: "1px solid #1e293b", flexWrap: "wrap", alignItems: "center" }}>
-                <div style={{ display: "flex", gap: 4 }}>
+              <div className="sbme-opt-toolbar">
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                   <SubTabChip label="ALL PLAYERS" active={subTab === "all"} onClick={() => setSubTab("all")} />
                   <SubTabChip label={`EXCLUDED${ws.excludedIds.length ? ` (${ws.excludedIds.length})` : ""}`} active={subTab === "excluded"} onClick={() => setSubTab("excluded")} />
                   <SubTabChip label={`LIKED${ws.likedIds.length ? ` (${ws.likedIds.length})` : ""}`} active={subTab === "liked"} onClick={() => setSubTab("liked")} />
                 </div>
-                <div style={{ flex: 1 }} />
-                <button onClick={excludeAll} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: "#1a1f33", border: "1px solid #1e293b", color: "#ef4444", cursor: "pointer" }}>Exclude All</button>
+                <button type="button" className="sbme-opt-ghost" onClick={excludeAll} style={{ color: "#ef4444" }}>Exclude All</button>
                 <span style={{ fontSize: 11, color: "#64748b" }}>{filteredPlayers.length} players</span>
               </div>
-              <div style={{ display: "flex", padding: "6px 16px", gap: 4, borderBottom: "1px solid #1e293b", flexWrap: "wrap", alignItems: "center" }}>
+              <div className="sbme-opt-toolbar">
                 {["ALL", ...(roster?.filterPositions ?? [])].map((pos) => (
-                  <button key={pos} onClick={() => setPosFilter(pos)} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: posFilter === pos ? "rgba(201,168,76,0.15)" : "#1a1f33", border: posFilter === pos ? "1px solid #c9a84c" : "1px solid #1e293b", color: posFilter === pos ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>{pos}</button>
+                  <button key={pos} type="button" onClick={() => setPosFilter(pos)} className={`sbme-opt-tab${posFilter === pos ? " is-on" : ""}`}>{pos}</button>
                 ))}
-                <div style={{ width: 1, height: 20, background: "#1e293b", margin: "0 4px" }} />
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <ArrowUpDown size={12} style={{ color: "#64748b" }} />
                   <select
@@ -788,7 +834,9 @@ export default function OptimizerPage() {
                       const [f, d] = e.target.value.split("|") as [SortField, SortDir];
                       setSortField(f); setSortDir(d);
                     }}
-                    style={{ padding: "4px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#c9a84c", cursor: "pointer", outline: "none" }}
+                    className="sbme-opt-select"
+                    style={{ width: "auto" }}
+                    aria-label="Sort player pool"
                   >
                     <option value="salary|desc">Salary — High to Low</option>
                     <option value="salary|asc">Salary — Low to High</option>
@@ -798,19 +846,21 @@ export default function OptimizerPage() {
                     <option value="optimal|asc">Optimal% — Low to High</option>
                   </select>
                 </div>
-                <div style={{ width: 1, height: 20, background: "#1e293b", margin: "0 4px" }} />
-                <div style={{ position: "relative", flex: 1, maxWidth: 260 }}>
+                <label className="sbme-opt-search">
                   <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
-                  <input type="text" placeholder="Search players..." value={playerSearch} onChange={(e) => setPlayerSearch(e.target.value)} style={{ width: "100%", padding: "6px 10px 6px 30px", borderRadius: 8, fontSize: 12, background: "#0a0f24", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
-                </div>
+                  <input type="search" placeholder="Search players..." value={playerSearch} onChange={(e) => setPlayerSearch(e.target.value)} aria-label="Search players" />
+                </label>
               </div>
-              <div style={{ flex: 1, overflow: "auto" }}>
+              <div className="sbme-opt-table-wrap">
                 {filteredPlayers.length === 0 ? (
-                  <p style={{ color: "#64748b", textAlign: "center", padding: 40 }}>No players match the current filters.</p>
+                  <div className="sbme-opt-empty" style={{ margin: 16 }}>
+                    <h3>NO PLAYERS AVAILABLE</h3>
+                    <p>{resolvedSlateId == null ? "A valid DFS slate is required before the player pool can load." : "No players match the current filters."}</p>
+                  </div>
                 ) : (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <table className="sbme-opt-table">
                     <thead>
-                      <tr style={{ background: "#060b1a", position: "sticky", top: 0, zIndex: 1 }}>
+                      <tr>
                         <Th>Team</Th><Th>Opp</Th><Th>Start</Th><Th>Pos</Th><Th style={{ width: 28 }}>♥</Th><Th>Player</Th><Th>Salary</Th><Th><TTip help="Blue Collar DFS independently calculated fantasy-points projection. Not a DraftKings FPPG metric. Independent external estimate, not an SB ME projection.">BC Proj</TTip></Th><Th>SB Proj</Th><Th>My Proj</Th><Th>Value</Th>
                         <Th><TTip help="SB ME projected field ownership estimate. Not actual contest ownership.">SB OWN%</TTip></Th>
                         <Th><TTip help="Positive values indicate players projected to provide stronger value relative to modeled ownership.">LEV</TTip></Th>
@@ -843,23 +893,29 @@ export default function OptimizerPage() {
                         const ceiling = canon?.ceiling ?? null;
                         const floor = canon?.floor ?? null;
                         const optPct = optPctMap[normName(p.name)] ?? null;
+                        const rowClass = [isLocked ? "is-locked" : "", isLiked ? "is-liked" : "", isExcluded ? "is-excluded" : ""].filter(Boolean).join(" ");
                         return (
-                          <tr key={p.player_id} style={{ borderBottom: "1px solid #1e293b20", opacity: isExcluded ? 0.35 : 1, background: isLocked ? "rgba(201,168,76,0.08)" : isLiked ? "rgba(201,168,76,0.03)" : "transparent" }}>
+                          <tr key={p.player_id} className={rowClass || undefined}>
                             <Td>{teamName}</Td>
                             <Td style={{ color: "#64748b" }}>{opp || "—"}</Td>
                             <Td style={{ color: "#64748b", fontSize: 10 }}>{startT || "—"}</Td>
                             <Td style={{ color: "#c9a84c", fontWeight: 700, textTransform: "uppercase", fontSize: 10 }}>{dfs?.position || p.position || "—"}</Td>
                             <Td>
-                              <button onClick={() => toggleLike(p.name)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                              <button type="button" onClick={() => toggleLike(p.name)} aria-label={isLiked ? "Unlike player" : "Like player"} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                                 <Heart size={14} color={isLiked ? "#c9a84c" : "#334155"} fill={isLiked ? "#c9a84c" : "none"} />
                               </button>
                             </Td>
                             <Td style={{ color: "#f0f6fc", fontWeight: 600 }}>{p.name}</Td>
                             <Td style={{ color: dfs ? "#c9a84c" : "#64748b", fontWeight: dfs ? 700 : 400 }}>{dfs ? `$${dfs.salary.toLocaleString()}` : "—"}</Td>
                             <Td style={{ color: dfs?.fppg != null ? "#94a3b8" : "#64748b", fontWeight: dfs?.fppg != null ? 600 : 400 }}>{dfs?.fppg != null ? dfs.fppg.toFixed(1) : "N/A"}</Td>
-                            <Td style={{ color: sbProj != null ? "#c9a84c" : "#64748b", fontWeight: sbProj != null ? 700 : 400 }}>{sbProj != null ? sbProj.toFixed(1) : "N/A"}</Td>
+                            <Td style={{ color: sbProj != null ? "#c9a84c" : "#64748b", fontWeight: sbProj != null ? 700 : 400 }}>
+                              {sbProj != null ? sbProj.toFixed(1) : "N/A"}
+                              {sbProj != null && maxSbProj > 0 && (
+                                <span className="sbme-opt-bar" aria-hidden><span style={{ width: `${Math.max(6, Math.round((sbProj / maxSbProj) * 100))}%` }} /></span>
+                              )}
+                            </Td>
                             <Td>
-                              <input type="number" step="0.1" value={ws.projOverrides[p.name] ?? sbProj ?? ""} placeholder={sbProj != null ? "" : "—"} onChange={(e) => ws.setProjOverride(p.name, Number(e.target.value))} style={{ width: 56, padding: "4px 6px", borderRadius: 6, fontSize: 11, background: "#1a1f33", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
+                              <input type="number" step="0.1" value={ws.projOverrides[p.name] ?? sbProj ?? ""} placeholder={sbProj != null ? "" : "—"} onChange={(e) => ws.setProjOverride(p.name, Number(e.target.value))} aria-label={`My projection for ${p.name}`} style={{ width: 56, padding: "4px 6px", borderRadius: 6, fontSize: 11, background: "#1a1f33", border: "1px solid #1e293b", color: "#f0f6fc", outline: "none" }} />
                             </Td>
                             <Td style={{ color: value !== "—" ? "#c9a84c" : "#64748b", fontWeight: value !== "—" ? 700 : 400 }}>{value}</Td>
                             <Td style={{ color: ownPct != null ? "#94a3b8" : "#64748b" }}>{ownPct != null ? `${ownPct.toFixed(1)}%` : "N/A"}</Td>
@@ -889,13 +945,18 @@ export default function OptimizerPage() {
             <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
               {optimizeMutation.isPending ? <Center><Loader2 size={32} className="animate-spin" style={{ color: "#c9a84c" }} /><p style={{ color: "#94a3b8", marginTop: 8 }}>Running CP-SAT optimizer...</p></Center>
               : optimizeMutation.isError && !uniqueLineupError ? <Center><p style={{ color: "#ef4444", fontWeight: 700 }}>{optimizeMutation.error instanceof Error ? optimizeMutation.error.message : "Optimization failed"}</p></Center>
-              : lineups.length === 0 && !uniqueLineupError ? <Center><p style={{ color: "#64748b" }}>No lineups yet. Click OPTIMIZE to generate.</p></Center>
+              : lineups.length === 0 && !uniqueLineupError ? (
+                <div className="sbme-opt-empty">
+                  <h3>NO LINEUP GENERATED</h3>
+                  <p>No lineups yet. Click BUILD OPTIMAL LINEUP to generate from the current slate and locks.</p>
+                </div>
+              )
               : uniqueLineupError && lineups.length === 0 ? <Center><p style={{ color: "#f87171", fontWeight: 700 }}>{uniqueLineupError}</p></Center>
               : (
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
                     <h2 style={{ fontSize: 16, fontWeight: 800, color: "#c9a84c", margin: 0 }}>Built Lineups ({lineups.length})</h2>
-                    <div style={{ display: "flex", gap: 6 }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <MiniBtn icon={<Save size={13} />} label={savedNote || historySaved ? "Saved ✓" : "Save Lineup"} onClick={() => { void markSaved(); }} />
                       <MiniBtn icon={<RefreshCw size={13} />} label="Regenerate" onClick={regenerate} disabled={optimizeMutation.isPending} />
                       <MiniBtn icon={<BarChart3 size={13} />} label="Simulate" onClick={() => { ws.setPendingLineups(lineups); router.push("/sims"); }} />
@@ -915,57 +976,76 @@ export default function OptimizerPage() {
           {mainTab === "saved" && (
             <div style={{ flex: 1, padding: 20, textAlign: "center" }}><p style={{ color: "#64748b", marginTop: 40 }}>Redirecting to saved /lineups...</p></div>
           )}
-        </div>
+        </section>
 
-        {/* RIGHT 25% LINEUP BUILDER */}
-        <div style={{ flex: 1, minWidth: 280, maxWidth: 380, background: "#0a0f24", display: "flex", flexDirection: "column", gap: 12, padding: 16, overflow: "auto" }}>
-          <SectionTitle>LIVE LINEUP BUILDER</SectionTitle>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <MetricBox label="Salary Remaining" value={`$${(builderMetrics.remaining >= 0 ? builderMetrics.remaining : 0).toLocaleString()}`} />
+        <aside className="sbme-opt-builder" aria-label="Live lineup builder">
+          <div className="sbme-opt-builder-head">
+            <p className="sbme-opt-panel-title">LIVE LINEUP BUILDER</p>
+            {rosterPct != null && <span className="sbme-opt-complete">{filledSlots} / {slots.length} FILLED · {rosterPct}%</span>}
+          </div>
+          <div className="sbme-opt-fp">
+            <span>Projected FP</span>
+            <b>{builderMetrics.projFP ? builderMetrics.projFP.toFixed(1) : "—"}</b>
+          </div>
+          <div className="sbme-opt-meter">
+            <div className="sbme-opt-meter-top">
+              <span>SALARY {builderMetrics.cap ? `$${capUsed.toLocaleString()} / $${builderMetrics.cap.toLocaleString()}` : "—"}</span>
+              <span>REMAINING ${Math.max(0, builderMetrics.remaining).toLocaleString()}</span>
+            </div>
+            <div className="sbme-opt-meter-track" role="meter" aria-valuemin={0} aria-valuemax={builderMetrics.cap || 0} aria-valuenow={capUsed} aria-label="Salary used">
+              <div className={`sbme-opt-meter-fill${capPct >= 100 ? " is-over" : capPct >= 90 ? " is-warn" : ""}`} style={{ width: `${Math.min(100, capPct)}%` }} />
+            </div>
+          </div>
+          <div className="sbme-opt-builder-stats">
             <MetricBox label="Avg Remaining / Player" value={remainingSlots > 0 ? `$${avgRemaining.toLocaleString()}` : "—"} />
-            <MetricBox label="Projected FP" value={builderMetrics.projFP ? builderMetrics.projFP.toFixed(1) : "—"} />
             <MetricBox label="Value" value={String(builderMetrics.value)} />
           </div>
+          {projectionsUnavailable && (
+            <div className="sbme-opt-empty" style={{ marginBottom: 12, padding: 12 }}>
+              <h3>PROJECTIONS UNAVAILABLE</h3>
+              <p>No SB ME projections are loaded for this slate. Projected FP stays blank until real projections arrive.</p>
+            </div>
+          )}
 
-          {/* Lineup switcher (after generate) */}
           {lineups.length > 1 && (
             <>
-              <SectionTitle>BUILT LINE</SectionTitle>
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              <p className="sbme-opt-panel-title">BUILT LINE</p>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
                 {lineups.map((_, i) => (
-                  <button key={i} onClick={() => setSelectedLineupIndex(i)} style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: selectedLineupIndex === i ? "rgba(201,168,76,0.2)" : "#1a1f33", border: selectedLineupIndex === i ? "1px solid #c9a84c" : "1px solid #1e293b", color: selectedLineupIndex === i ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>Line {i + 1}</button>
+                  <button key={i} type="button" onClick={() => setSelectedLineupIndex(i)} className={`sbme-opt-tab${selectedLineupIndex === i ? " is-on" : ""}`}>Line {i + 1}</button>
                 ))}
               </div>
             </>
           )}
 
-          <SectionTitle>ROSTER · {platform === "fanduel" ? "FanDuel" : "DraftKings"} ({slots.length || "—"})</SectionTitle>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <p className="sbme-opt-panel-title">ROSTER · {platform === "fanduel" ? "FanDuel" : "DraftKings"} ({slots.length || "—"})</p>
+          <div>
             {rosterRows.map((row, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, background: row.name ? "rgba(201,168,76,0.1)" : "#1a1f33", border: row.name ? "1px solid #c9a84c" : "1px solid #1e293b", minHeight: 40 }}>
-                <span style={{ width: 50, fontSize: 10, fontWeight: 800, color: "#c9a84c", textTransform: "uppercase" }}>{slotLabel(row.slot, roster)}</span>
+              <div key={i} className={`sbme-opt-slot${row.name ? " is-filled" : ""}`}>
+                <span className="sbme-opt-slot-pos">{slotLabel(row.slot, roster)}</span>
                 {row.name ? (
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "#f0f6fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</div>
-                    <div style={{ fontSize: 10, color: "#64748b" }}>{row.team} vs {row.opponent || "—"}{row.salary ? ` · $${row.salary.toLocaleString()}` : ""}</div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>{row.team}{row.opponent ? ` vs ${row.opponent}` : ""}{row.salary ? ` · $${row.salary.toLocaleString()}` : ""}{row.proj ? ` · ${row.proj.toFixed(1)}` : ""}</div>
                   </div>
                 ) : (
-                  <span style={{ fontSize: 11, color: "#64748b", flex: 1 }}>{selectedLineup ? "" : "Lock a player to fill"}</span>
+                  <span style={{ fontSize: 11, color: "#64748b", flex: 1 }}>Select player</span>
                 )}
               </div>
             ))}
           </div>
-          <SectionTitle>LINEUP COUNT</SectionTitle>
+          <p className="sbme-opt-panel-title">LINEUP COUNT</p>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input type="range" min={1} max={50} value={lineupCount} onChange={(e) => setLineupCount(+e.target.value)} style={{ flex: 1, accentColor: "#c9a84c" }} />
+            <input type="range" min={1} max={50} value={lineupCount} onChange={(e) => setLineupCount(+e.target.value)} aria-label="Lineup count" style={{ flex: 1, accentColor: "#c9a84c" }} />
             <span style={{ fontSize: 14, fontWeight: 800, color: "#c9a84c", minWidth: 24, textAlign: "center" }}>{lineupCount}</span>
           </div>
-          <button onClick={() => optimizeMutation.mutate()} disabled={!canGenerate || optimizeMutation.isPending} style={{ width: "100%", padding: "16px", borderRadius: 14, fontWeight: 900, fontSize: 16, textTransform: "uppercase", letterSpacing: 1, background: canGenerate ? "#c9a84c" : "#1e293b", color: canGenerate ? "#060b1a" : "#64748b", border: "none", cursor: canGenerate ? "pointer" : "not-allowed", boxShadow: canGenerate ? "0 4px 24px rgba(201,168,76,0.4)" : "none", marginTop: 8 }}>
-            {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>OPTIMIZE</>}
+          <button type="button" className="sbme-opt-cmd" onClick={() => optimizeMutation.mutate()} disabled={!canGenerate || optimizeMutation.isPending}>
+            {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>BUILD OPTIMAL LINEUP</>}
           </button>
           {roster && roster.salaryCap == null && maxSalaryOverride == null && (
-            <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(201,168,76,0.06)", border: "1px solid rgba(201,168,76,0.18)", fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
-              {sport} {platform === "fanduel" ? "FanDuel" : "DraftKings"} salary cap is not in verified platform configuration. Optimization is blocked until a verified cap is configured.
+            <div className="sbme-opt-empty" style={{ marginTop: 12 }}>
+              <h3>SALARY CAP UNAVAILABLE</h3>
+              <p>{sport} {platform === "fanduel" ? "FanDuel" : "DraftKings"} salary cap is not in verified platform configuration. Optimization is blocked until a verified cap is configured.</p>
             </div>
           )}
           {resolvedSlateId != null && !slateIntegrity.healthy && (
@@ -974,7 +1054,7 @@ export default function OptimizerPage() {
                 <Ban size={13} /> SLATE INTEGRITY FAILURE — OPTIMIZE DISABLED
               </div>
               <div style={{ color: "#94a3b8", marginBottom: 4 }}>
-                Only {slateIntegrity.matched} of {slateIntegrity.total} SGO players in this slate's games ({Number(slateIntegrity.matchRate * 100).toFixed(1)}%) matched against DFS records. Minimum threshold: 85%.
+                Only {slateIntegrity.matched} of {slateIntegrity.total} SGO players in this slate&apos;s games ({Number(slateIntegrity.matchRate * 100).toFixed(1)}%) matched against DFS records. Minimum threshold: 85%.
                 ({slateIntegrity.dfsToSgoMatched} of {slateIntegrity.dfsScopeCount} DFS players matched back to SGO.)
               </div>
               {slateIntegrity.missingPlayers.length > 0 && (
@@ -985,33 +1065,68 @@ export default function OptimizerPage() {
             </div>
           )}
           {!slatesLoading && resolvedSlateId == null && (
-            <div style={{ marginTop: 12, padding: "16px 18px", borderRadius: 12, background: "rgba(201,168,76,0.04)", border: "1px solid rgba(201,168,76,0.12)", textAlign: "center" }}>
-              <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>⏳</div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#c9a84c", marginBottom: 4 }}>
-                No DFS slate currently available
-              </div>
-              <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2, lineHeight: 1.5 }}>
+            <div className="sbme-opt-empty" style={{ marginTop: 12 }}>
+              <h3>No DFS slate currently available</h3>
+              <p>
                 SB ME has not received an active {platform === "draftkings" ? "DraftKings" : "FanDuel"} contest slate for this sport yet.
-              </div>
-              <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>
+              </p>
+              <p style={{ marginTop: 8, color: "#64748b" }}>
                 Optimizer unavailable until a DFS slate is available.
-              </div>
+              </p>
               {hasStaleSlates && (
-                <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
+                <p style={{ marginTop: 6, fontSize: 10, color: "#64748b" }}>
                   One or more {platform === "draftkings" ? "DraftKings" : "FanDuel"} slates exist but are for past dates and have been blocked by freshness protection.
-                </div>
+                </p>
               )}
             </div>
           )}
-          {(ws.lockedIds.length > 0 || ws.excludedIds.length > 0) && (
-            <div style={{ fontSize: 10, color: "#64748b" }}>
-              {ws.lockedIds.length > 0 && <span>🔒 {ws.lockedIds.length} locked · </span>}
-              {ws.excludedIds.length > 0 && <span>🚫 {ws.excludedIds.length} excluded</span>}
-            </div>
-          )}
+        </aside>
+      </div>
+
+      <div className="sbme-opt-rail-wrap sbme-opt-rail-wrap--sched">
+        <div className="sbme-opt-rail-head">
+          <h2>UPCOMING SCHEDULE</h2>
+          <p className="sbme-opt-rail-note">{SCHEDULE_INTEL_NOTE}</p>
         </div>
+        <ScheduleChips events={scheduleEvents} />
+      </div>
+
+      <div className="sbme-opt-lower">
+        <section className="sbme-opt-intel sbme-opt-intel--stack">
+          <p className="sbme-opt-panel-title">STACKING INTELLIGENCE</p>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <RuleField label="Max Hitters/Team" value={maxHittersPerTeam} onChange={setMaxHittersPerTeam} placeholder="Any" />
+            <RuleField label="Team Stack Size" value={stackSize} onChange={setStackSize} placeholder="Off" />
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8", cursor: "pointer" }}>
+              <input type="checkbox" checked={pitcherConflict} onChange={(e) => setPitcherConflict(e.target.checked)} style={{ accentColor: "#c9a84c" }} /> Pitcher/Opposing-Hitter conflict
+            </label>
+            <RuleField label="Min Salary" value={minSalaryOverride} onChange={setMinSalaryOverride} placeholder="Default" />
+            <RuleField label="Max Salary" value={maxSalaryOverride} onChange={setMaxSalaryOverride} placeholder="Default" />
+            <RuleField label="Max Exposure %" value={globalMaxExposure} onChange={setGlobalMaxExposure} placeholder="None" step={5} />
+          </div>
+          <p style={{ fontSize: 11, color: "#64748b", margin: "8px 0 0" }}>Existing solver constraints only. No additional stack rules are implied.</p>
+        </section>
+        <section className="sbme-opt-intel sbme-opt-intel--insights">
+          <p className="sbme-opt-panel-title">OPTIMIZER INSIGHTS</p>
+          <p className="sbme-opt-insight">Salary remaining <b>${Math.max(0, builderMetrics.remaining).toLocaleString()}</b></p>
+          <p className="sbme-opt-insight">Lineup projection <b>{builderMetrics.projFP ? builderMetrics.projFP.toFixed(1) : "unavailable"}</b></p>
+          <p className="sbme-opt-insight">Locked <b>{ws.lockedIds.length}</b> · Excluded <b>{ws.excludedIds.length}</b></p>
+          <p className="sbme-opt-insight">Roster <b>{filledSlots} / {slots.length || 0}</b></p>
+          <p className="sbme-opt-insight">Stack size <b>{stackSize ?? "off"}</b> · Max hitters/team <b>{maxHittersPerTeam ?? "any"}</b></p>
+          <p className="sbme-opt-insight">Pitcher conflict <b>{pitcherConflict ? "on" : "off"}</b></p>
+        </section>
+        <section className="sbme-opt-intel sbme-opt-intel--slate">
+          <p className="sbme-opt-panel-title">SLATE INTELLIGENCE</p>
+          <p className="sbme-opt-insight">Slate <b>{selectedSlate?.slate_name || "No DFS slate currently available"}</b></p>
+          <p className="sbme-opt-insight">Sport <b>{sport}</b> · Platform <b>{platformLabel(platform)}</b></p>
+          <p className="sbme-opt-insight">Games <b>{selectedSlate ? (selectedSlate.game_count ?? gameCount) : "—"}</b> · Players <b>{selectedSlate ? (selectedSlate.player_count ?? dfsPlayers.length) : "—"}</b></p>
+          <p className="sbme-opt-insight">Status <b>{resolvedSlateId == null ? "NONE" : slateStatusLabel}</b></p>
+          <p className="sbme-opt-insight">SGO events <b>{sgoLoading ? "Loading..." : events.length}</b>{lastFetch ? ` · fetched ${formatFetchedAt(lastFetch)}` : ""}</p>
+          <p className="sbme-opt-insight">Source <b>{selectedSlate?.data_source || "—"}</b></p>
+        </section>
       </div>
     </div>
+    </AppShell>
   );
 }
 
@@ -1022,14 +1137,11 @@ function ScheduleChips({ events }: { events: SBEvent[] }) {
     return <span style={{ fontSize: 11, color: "#64748b" }}>No upcoming schedule games are available.</span>;
   }
   return (
-    <div style={{ display: "flex", gap: 6, overflowX: "auto", flexWrap: "wrap", paddingBottom: 4 }}>
+    <div className="sbme-opt-rail">
       {events.slice(0, 24).map((e) => (
-        <div
-          key={e.id}
-          style={{ padding: "8px 14px", borderRadius: 10, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: "#1a1f33", border: "1px solid #1e293b", color: "#94a3b8" }}
-        >
+        <div key={e.id} className="sbme-opt-sched">
           <div>{scheduleMatchupLabel(e)}</div>
-          <div style={{ fontSize: 10, color: "#64748b", fontWeight: 500 }}>{formatKickoffEt(e.start_time)}</div>
+          <time>{formatKickoffEt(e.start_time)}</time>
         </div>
       ))}
     </div>
@@ -1040,7 +1152,7 @@ function Selector({ label, value, options, onChange, format }: { label: string; 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={{ padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, background: "#0a0f24", border: "1px solid #1e293b", color: "#c9a84c", cursor: "pointer" }}>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="sbme-opt-select" aria-label={label}>
         {options.map((o) => <option key={o} value={o}>{format ? format(o) : o}</option>)}
       </select>
     </div>
@@ -1078,7 +1190,7 @@ function RuleField({ label, value, onChange, placeholder, step }: { label: strin
 
 function TabChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} style={{ padding: "12px 18px", fontSize: 12, fontWeight: 800, letterSpacing: 1, background: active ? "#0a0f24" : "transparent", border: "none", borderBottom: active ? "2px solid #c9a84c" : "2px solid transparent", color: active ? "#c9a84c" : "#64748b", cursor: "pointer", textTransform: "uppercase" }}>
+    <button type="button" onClick={onClick} aria-pressed={active} style={{ padding: "12px 18px", fontSize: 12, fontWeight: 800, letterSpacing: 1, background: active ? "#0a0f24" : "transparent", border: "none", borderBottom: active ? "2px solid #c9a84c" : "2px solid transparent", color: active ? "#c9a84c" : "#64748b", cursor: "pointer", textTransform: "uppercase" }}>
       {label}
     </button>
   );
@@ -1086,7 +1198,7 @@ function TabChip({ label, active, onClick }: { label: string; active: boolean; o
 
 function SubTabChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: active ? "rgba(201,168,76,0.15)" : "#1a1f33", border: active ? "1px solid #c9a84c" : "1px solid #1e293b", color: active ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>
+    <button type="button" onClick={onClick} aria-pressed={active} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: active ? "rgba(201,168,76,0.15)" : "#1a1f33", border: active ? "1px solid #c9a84c" : "1px solid #1e293b", color: active ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>
       {label}
     </button>
   );
@@ -1102,7 +1214,7 @@ function Td({ children, style }: { children: React.ReactNode; style?: React.CSSP
 
 function IconBtn({ icon, active, title, onClick }: { icon: React.ReactNode; active: boolean; title: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} title={title} style={{ padding: 4, borderRadius: 6, background: active ? "rgba(201,168,76,0.2)" : "transparent", border: active ? "1px solid #c9a84c" : "1px solid transparent", cursor: "pointer", color: active ? "#c9a84c" : "#64748b", display: "flex" }}>
+    <button type="button" onClick={onClick} title={title} aria-label={title} aria-pressed={active} style={{ padding: 4, borderRadius: 6, background: active ? "rgba(201,168,76,0.2)" : "transparent", border: active ? "1px solid #c9a84c" : "1px solid transparent", cursor: "pointer", color: active ? "#c9a84c" : "#64748b", display: "flex" }}>
       {icon}
     </button>
   );
@@ -1128,7 +1240,7 @@ function TTip({ children, help }: { children: React.ReactNode; help: string }) {
 
 function MiniBtn({ icon, label, onClick, disabled }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick} disabled={disabled} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, background: "#0a0f24", border: "1px solid #1e293b", color: "#94a3b8", fontSize: 12, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>
+    <button type="button" onClick={onClick} disabled={disabled} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, background: "#0a0f24", border: "1px solid #1e293b", color: "#94a3b8", fontSize: 12, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}>
       {icon}{label}
     </button>
   );
