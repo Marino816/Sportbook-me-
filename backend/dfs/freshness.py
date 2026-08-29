@@ -61,3 +61,73 @@ def is_stale_slate(start_time: Optional[datetime]) -> bool:
 def is_current_slate(start_time: Optional[datetime]) -> bool:
     """True when the slate date equals today (Eastern time)."""
     return slate_freshness(start_time) == "CURRENT"
+
+
+WEEKLY_SPORTS = frozenset({"NFL", "NCAAF"})
+
+
+def is_weekly_sport(sport: Optional[str]) -> bool:
+    return (sport or "").strip().upper() in WEEKLY_SPORTS
+
+
+def is_customer_visible_slate(start_time: Optional[datetime], sport: Optional[str] = None) -> bool:
+    """Whether a stored slate should appear in the customer optimizer.
+
+    CURRENT slates are always visible (existing MLB/NBA daily behavior).
+    UPCOMING slates are visible only for weekly sports (NFL / NCAAF) so
+    weekend contests can be selected before game day.
+    STALE slates are never visible.
+    """
+    freshness = slate_freshness(start_time)
+    if freshness == "CURRENT":
+        return True
+    if freshness == "UPCOMING" and is_weekly_sport(sport):
+        return True
+    return False
+
+
+def is_auto_publishable(start_time: Optional[datetime], sport: Optional[str] = None) -> bool:
+    """Ingest may auto-publish CURRENT slates, plus UPCOMING weekly slates."""
+    return is_customer_visible_slate(start_time, sport)
+
+
+def is_runnable_slate(status: Optional[str], start_time: Optional[datetime], sport: Optional[str] = None) -> bool:
+    """Whether a stored slate row may be loaded by optimizer or AI tools.
+
+    PUBLISHED + not STALE: yes (including upcoming MLB that an admin published).
+    DRAFT + weekly + UPCOMING: yes. Those rows exist because ingest previously
+    refused to publish weekend NFL/NCAAF before game day.
+    ARCHIVED / STALE: never.
+    """
+    st = (status or "").upper()
+    if st == "ARCHIVED":
+        return False
+    if is_stale_slate(start_time):
+        return False
+    if st == "PUBLISHED":
+        return True
+    if st == "DRAFT" and is_weekly_sport(sport) and slate_freshness(start_time) == "UPCOMING":
+        return True
+    return False
+
+
+# Back-compat alias used by older call sites.
+def is_optimizer_eligible_status(status: Optional[str], start_time: Optional[datetime], sport: Optional[str] = None) -> bool:
+    return is_runnable_slate(status, start_time, sport)
+
+
+def is_ai_matchable_slate(status: Optional[str], start_time: Optional[datetime], sport: Optional[str] = None) -> bool:
+    """Slates the assistant may bind in conversation.
+
+    PUBLISHED slates match even if they already locked or the date is past so
+    the assistant can report LOCKED/STALE honestly. DRAFT weekly upcoming
+    slates match because ingest used to leave weekend NFL/NCAAF unpublished.
+    """
+    st = (status or "").upper()
+    if st == "ARCHIVED":
+        return False
+    if st == "PUBLISHED":
+        return True
+    if st == "DRAFT" and is_weekly_sport(sport) and not is_stale_slate(start_time):
+        return True
+    return False

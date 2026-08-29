@@ -117,10 +117,17 @@ async def upload_slate(
     if slate_obj is None:
         raise HTTPException(400, "Slate parsing produced no metadata")
 
-    # A slate is optimizer-eligible only when it is CURRENT (today) — otherwise
-    # it is stored but never published to customers.
+    # CURRENT slates are published. UPCOMING weekly (NFL/NCAAF) slates are
+    # also published so weekend contests are selectable before game day.
+    # STALE slates stay DRAFT.
     freshness = result.fresh_status
-    initial_status = "PUBLISHED" if freshness == "CURRENT" else "DRAFT"
+    from dfs.freshness import is_auto_publishable
+    start_for_pub = slate_obj.start_time if slate_obj else None
+    initial_status = (
+        "PUBLISHED"
+        if is_auto_publishable(start_for_pub, result.sport)
+        else "DRAFT"
+    )
 
     db_slate = SlateDB(
         platform=platform, sport=slate_obj.sport,

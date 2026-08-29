@@ -19,8 +19,8 @@ async def list_published_slates(
     platform: str = None,
     sport: str = None,
 ):
-    """Customer: list published slates, optionally filtered."""
-    q = select(SlateDB).where(SlateDB.status == "PUBLISHED")
+    """Customer: list published (and live-eligible weekly draft) slates."""
+    q = select(SlateDB).where(SlateDB.status.in_(["PUBLISHED", "DRAFT"]))
     if platform:
         q = q.where(SlateDB.platform == platform.lower())
     if sport:
@@ -42,24 +42,43 @@ async def list_published_slates(
         )
         game_counts = {row[0]: row[1] for row in gc_rows}
 
-    def _is_current(s_start) -> bool:
-        from dfs.freshness import is_current_slate
+    from dfs.freshness import (
+        is_current_slate,
+        is_customer_visible_slate,
+        is_optimizer_eligible_status,
+        slate_freshness,
+    )
 
+    def _is_current(s_start) -> bool:
         return is_current_slate(s_start) if s_start else False
 
-    return wrap_data([{
-        "id": s.id,
-        "platform": s.platform,
-        "sport": s.sport,
-        "slate_name": s.slate_name,
-        "start_time": str(s.start_time) if s.start_time else None,
-        "slate_date": s.start_time.date().isoformat() if s.start_time else None,
-        "is_current": _is_current(s.start_time),
-        "game_count": game_counts.get(s.id, 0),
-        "player_count": s.player_count,
-        "status": s.status,
-        "data_source": s.data_source,
-    } for s in slates])
+    payload = []
+    for s in slates:
+        if not is_optimizer_eligible_status(s.status, s.start_time, s.sport):
+            continue
+        if not is_customer_visible_slate(s.start_time, s.sport):
+            continue
+        if not s.slate_name or not s.start_time:
+            continue
+        if (s.player_count or 0) <= 0:
+            continue
+        freshness = slate_freshness(s.start_time)
+        payload.append({
+            "id": s.id,
+            "platform": s.platform,
+            "sport": s.sport,
+            "slate_name": s.slate_name,
+            "start_time": str(s.start_time) if s.start_time else None,
+            "slate_date": s.start_time.date().isoformat() if s.start_time else None,
+            "is_current": _is_current(s.start_time),
+            "freshness": freshness,
+            "is_live_eligible": is_customer_visible_slate(s.start_time, s.sport),
+            "game_count": game_counts.get(s.id, 0),
+            "player_count": s.player_count,
+            "status": s.status,
+            "data_source": s.data_source,
+        })
+    return wrap_data(payload)
 
 
 @router.get("/slates/{slate_id}")
@@ -69,9 +88,12 @@ async def get_slate(
     db: AsyncSession = Depends(get_db),
 ):
     """Customer: get slate with player pool."""
-    result = await db.execute(select(SlateDB).where(SlateDB.id == slate_id, SlateDB.status == "PUBLISHED"))
+    result = await db.execute(select(SlateDB).where(SlateDB.id == slate_id))
     slate = result.scalars().first()
     if not slate:
+        raise HTTPException(404, "Slate not found")
+    from dfs.freshness import is_optimizer_eligible_status
+    if not is_optimizer_eligible_status(slate.status, slate.start_time, slate.sport):
         raise HTTPException(404, "Slate not found or not published")
 
     result = await db.execute(select(PlayerDB).where(PlayerDB.slate_id == slate_id))

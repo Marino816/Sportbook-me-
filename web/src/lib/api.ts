@@ -290,6 +290,8 @@ export interface DFSSlateSummary {
   start_time: string | null;
   slate_date: string | null;
   is_current: boolean;
+  freshness?: "CURRENT" | "UPCOMING" | "STALE" | string;
+  is_live_eligible?: boolean;
   game_count: number;
   player_count: number;
   status: string;
@@ -342,6 +344,8 @@ export interface LineupHistoryEntry {
   sport: string;
   platform: string;
   slate_id: number;
+  slate_name?: string | null;
+  slate_unavailable?: boolean;
   strategy: string;
   lineup_count: number;
   player_count: number;
@@ -350,6 +354,7 @@ export interface LineupHistoryEntry {
   data_mode: string;
   created_at: string;
   lineups: LineupHistoryLineup[];
+  archived?: boolean;
 }
 
 export interface LineupHistoryLineup {
@@ -368,8 +373,53 @@ export interface LineupHistoryPlayer {
   projected_fp: number;
 }
 
-export async function fetchLineupHistory(): Promise<ApiResponse<LineupHistoryEntry[]>> {
-  return apiFetch<LineupHistoryEntry[]>("/lineups/history");
+export async function fetchLineupHistory(includeArchived = false): Promise<ApiResponse<LineupHistoryEntry[]>> {
+  const qs = includeArchived ? "?include_archived=true" : "";
+  return apiFetch<LineupHistoryEntry[]>(`/lineups/history${qs}`);
+}
+
+export async function deleteLineupHistory(historyId: number): Promise<ApiResponse<{ ok: boolean }>> {
+  return apiFetch<{ ok: boolean }>(`/lineups/history/${historyId}`, { method: "DELETE" });
+}
+
+export async function saveLineupHistory(payload: {
+  sport: string;
+  platform: string;
+  slate_id: number | null;
+  strategy: string;
+  lineups: unknown[];
+}): Promise<ApiResponse<{ id: number; saved: boolean }>> {
+  return apiFetch<{ id: number; saved: boolean }>("/lineups/history", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export type AuthProviderStatus = {
+  enabled: boolean;
+  status: string;
+  reason?: string | null;
+};
+
+export async function fetchAuthProviders(): Promise<{
+  google: AuthProviderStatus;
+  apple: AuthProviderStatus;
+  password: AuthProviderStatus;
+  username_login: AuthProviderStatus;
+  password_reset: AuthProviderStatus;
+}> {
+  const res = await fetch(`${API_BASE_URL}/auth/providers`);
+  if (!res.ok) {
+    return {
+      google: { enabled: false, status: "pending" },
+      apple: { enabled: false, status: "pending" },
+      password: { enabled: true, status: "ready" },
+      username_login: { enabled: false, status: "pending" },
+      password_reset: { enabled: false, status: "pending" },
+    };
+  }
+  return res.json();
 }
 
 // ── Intelligence API ──────────────────────────────────────

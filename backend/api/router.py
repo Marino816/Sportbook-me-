@@ -77,16 +77,22 @@ async def run_optimizer(
     try:
         from dfs.db import DFSSlate as NativeSlate, DFSPlayer as NativePlayer
         native_result = await db.execute(
-            select(NativeSlate).where(NativeSlate.id == request.slate_id, NativeSlate.status == "PUBLISHED")
+            select(NativeSlate).where(NativeSlate.id == request.slate_id)
         )
         native_slate = native_result.scalars().first()
         if native_slate:
+            from dfs.freshness import is_stale_slate, is_optimizer_eligible_status
+
+            if not is_optimizer_eligible_status(
+                native_slate.status, native_slate.start_time, native_slate.sport
+            ):
+                raise HTTPException(404, "Slate not found or not published")
+
             # ── Server-side freshness gate ──
             # A stale (past-date) published slate must never generate or
             # save a lineup.  Reject it at the API layer so a client that
             # bypasses the frontend *is_current* filter cannot create
             # lineups from out-of-date salaries.
-            from dfs.freshness import is_stale_slate
 
             if is_stale_slate(native_slate.start_time):
                 slate_d = (
@@ -238,9 +244,12 @@ async def run_optimizer(
             if len(projections_list) < min_players:
                 raise HTTPException(status_code=400, detail=f"Not enough players in projection pool ({len(projections_list)}/{min_players} needed for {sport}.)")
 
-    # MLB uses the builder's platform-aware roster generator
-    if sport == "MLB":
-        from api.builder_routes import _generate_lineups, _normalize_platform, get_strategy as builder_strategy
+    # Sport/platform roster: MLB uses the MLB CP-SAT engine. NFL/NCAAF use
+    # the generic slot optimizer keyed by BOTH sport and platform.
+    from dfs.roster import UNIQUE_LINEUP_UNAVAILABLE, get_roster, uses_slot_optimizer
+
+    if sport == "MLB" or uses_slot_optimizer(sport):
+        from api.builder_routes import _normalize_platform
         settings = request.settings
         platform = _normalize_platform(settings.get("platform", "draftkings") if isinstance(settings, dict) else getattr(settings, 'platform', 'draftkings'))
         strategy = settings.get("strategy", "balanced") if isinstance(settings, dict) else getattr(settings, 'strategy', 'balanced')
@@ -260,6 +269,22 @@ async def run_optimizer(
             "max_exposure_pct": _sget("max_exposure_pct"),
             "min_unique_players": _sget("min_unique_players") or _sget("min_uniqueness"),
         }
+
+        roster = get_roster(sport, platform)
+        if uses_slot_optimizer(sport) and roster is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No roster template is configured for {sport} {platform}.",
+            )
+        if uses_slot_optimizer(sport) and roster is not None and roster.salary_cap is None and not constraints.get("max_salary"):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"FanDuel {sport} salary cap is not present in verified platform "
+                    "configuration. Optimization is blocked until a verified cap is configured. "
+                    f"({roster.salary_cap_source})"
+                ),
+            )
 
         # Apply customer "My Projection" overrides (keyed by player name)
         projection_overrides = _sget("projection_overrides", []) or []
@@ -281,11 +306,8 @@ async def run_optimizer(
                         pl["projected_fp"] = override_by_name[nm]
 
         pool = projections_list
-        from optimizer.mlb_optimizer import MLBOptimizer
 
         # ── Team-identity quarantine ──
-        # Players whose DFS team (Blue Collar) disagrees with their SGO team are
-        # excluded from optimization and reported.
         quarantined_from_router: list[dict] = []
         quarantined_ids: set[str] = set()
         for pl in projections_list:
@@ -302,12 +324,29 @@ async def run_optimizer(
         all_excludes.extend(quarantined_ids)
         all_excludes = list(set(all_excludes))
 
-        opt = MLBOptimizer(
-            pool, platform=platform, strategy=strategy,
-            locks=locks, excludes=all_excludes,
-            **(constraints),
-        )
+        if sport == "MLB":
+            from optimizer.mlb_optimizer import MLBOptimizer
+            opt = MLBOptimizer(
+                pool, platform=platform, strategy=strategy,
+                locks=locks, excludes=all_excludes,
+                **(constraints),
+            )
+        else:
+            from optimizer.slot_optimizer import SlotOptimizer
+            opt = SlotOptimizer(
+                pool, sport=sport, platform=platform, strategy=strategy,
+                locks=locks, excludes=all_excludes,
+                min_salary=constraints.get("min_salary"),
+                max_salary=constraints.get("max_salary"),
+                max_exposure_pct=constraints.get("max_exposure_pct"),
+                min_unique_players=constraints.get("min_unique_players"),
+            )
+
         lineups = opt.generate(count=requested_lineups, regenerate_from_ids=regenerate_from_ids)
+        if not lineups and regenerate_from_ids:
+            raise HTTPException(status_code=422, detail=UNIQUE_LINEUP_UNAVAILABLE)
+        if not lineups:
+            raise HTTPException(status_code=400, detail="Infeasible constraints. Could not generate any valid lineups.")
 
         # Merge quarantine reports
         all_quarantined = list(quarantined_from_router)
@@ -437,30 +476,85 @@ async def run_optimizer(
 async def list_lineup_history(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    include_archived: bool = False,
 ):
-    """List authenticated user's lineup history."""
+    """List authenticated user's lineup history.
+
+    Newest first. Older records stay in the database. The frontend exposes
+    two pages of recent history plus an optional Archived view.
+    """
     result = await db.execute(
         select(LineupHistory)
         .where(LineupHistory.user_id == user.id)
-        .where(LineupHistory.data_mode.notin_(["TRIAL_SCRAMBLED", "demo", "mock", "fake", "archived_legacy"]))
+        .where(LineupHistory.data_mode.notin_(["TRIAL_SCRAMBLED", "demo", "mock", "fake"]))
         .order_by(LineupHistory.created_at.desc())
-        .limit(50)
+        .limit(200)
     )
     rows = result.scalars().all()
-    return wrap_data([{
-        "id": r.id,
-        "sport": r.sport,
-        "platform": r.platform,
-        "slate_id": r.slate_id,
-        "strategy": r.strategy,
-        "lineup_count": r.lineup_count,
-        "player_count": r.player_count,
-        "total_salary": r.total_salary,
-        "projected_score": r.projected_score,
-        "data_mode": r.data_mode,
-        "created_at": str(r.created_at) if r.created_at else None,
-        "lineups": r.lineups_json or [],
-    } for r in rows])
+    slate_ids = {r.slate_id for r in rows if r.slate_id}
+    slate_names: dict[int, str] = {}
+    if slate_ids:
+        from dfs.db import DFSSlate as NativeSlate
+        sl = await db.execute(select(NativeSlate).where(NativeSlate.id.in_(slate_ids)))
+        for s in sl.scalars().all():
+            if s.slate_name:
+                slate_names[s.id] = s.slate_name
+
+    payload = []
+    for r in rows:
+        archived = (r.data_mode or "") == "archived_legacy"
+        if archived and not include_archived:
+            continue
+        sid = r.slate_id
+        slate_label = slate_names.get(sid) if sid else None
+        payload.append({
+            "id": r.id,
+            "sport": r.sport,
+            "platform": r.platform,
+            "slate_id": sid,
+            "slate_name": slate_label,
+            "slate_unavailable": bool(sid) and slate_label is None,
+            "strategy": r.strategy,
+            "lineup_count": r.lineup_count,
+            "player_count": r.player_count,
+            "total_salary": r.total_salary,
+            "projected_score": r.projected_score,
+            "data_mode": r.data_mode,
+            "created_at": str(r.created_at) if r.created_at else None,
+            "lineups": r.lineups_json or [],
+            "archived": archived,
+        })
+    return wrap_data(payload)
+
+
+@router.post("/lineups/history")
+async def save_lineup_history(
+    body: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Persist a generated lineup set the customer explicitly saved."""
+    lineups = body.get("lineups") or []
+    if not lineups:
+        raise HTTPException(400, "No lineups to save.")
+    first = lineups[0] if isinstance(lineups[0], dict) else {}
+    hist = LineupHistory(
+        user_id=user.id,
+        sport=body.get("sport") or "",
+        platform=body.get("platform") or "",
+        slate_id=body.get("slate_id"),
+        strategy=body.get("strategy") or "",
+        lineup_count=len(lineups),
+        player_count=len((first.get("players") or [])),
+        total_salary=int(first.get("total_salary") or 0),
+        projected_score=float(first.get("projected_score") or 0),
+        data_mode="native",
+        lineups_json=jsonable_encoder(lineups),
+    )
+    db.add(hist)
+    await db.commit()
+    await db.refresh(hist)
+    return wrap_data({"id": hist.id, "saved": True})
 
 
 @router.delete("/lineups/history/{history_id}")
@@ -481,5 +575,4 @@ async def delete_lineup_history(
         raise HTTPException(404, "History not found")
     await db.delete(row)
     await db.commit()
-    return {"ok": True}
-    return wrap_data({"status": "success", "message": "CSV builder ready."})
+    return wrap_data({"ok": True})

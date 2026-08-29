@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
-import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, fetchOptimalPct, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
+import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, fetchOptimalPct, saveLineupHistory, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
 import { Play, Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, X, ChevronDown, ChevronUp, BarChart3, Download, ArrowUpDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
@@ -12,23 +12,16 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { formatBookmakerName } from "@/lib/bookmakers";
 import { LastFive } from "@/lib/last-five";
 import { parseOptimizerHandoff } from "@/lib/ai-session";
+import { getRoster, slotEligible, slotLabel, UNIQUE_LINEUP_UNAVAILABLE } from "@/lib/dfs-roster";
 
 const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
 const PLATFORMS = ["draftkings", "fanduel"] as const;
 const STRATEGIES = ["balanced", "cash", "gpp", "aggressive"] as const;
-const DK_SLOTS = ["P", "P", "C", "1B", "2B", "3B", "SS", "OF", "OF", "OF"] as const;
-const FD_SLOTS = ["P", "C1B", "2B", "3B", "SS", "OF", "OF", "OF", "UTIL"] as const;
-const MLB_POSITIONS = ["ALL", "P", "C", "1B", "2B", "3B", "SS", "OF"] as const;
 
 type MainTab = "pool" | "saved" | "built";
 type SubTab = "all" | "excluded" | "liked";
 type SortField = "salary" | "fppg" | "optimal";
 type SortDir = "desc" | "asc";
-
-function liveClass(status: string): boolean {
-  const s = (status || "").toUpperCase();
-  return s === "LIVE" || s === "IN_PLAY" || s === "INPLAY";
-}
 
 function resolveTeamName(teamId: string, event: SBEvent): string {
   if (event.home_team?.team_id === teamId) return event.home_team.abbreviation || event.home_team.name;
@@ -96,17 +89,6 @@ function solverPlayerKeys(
   return Array.from(keys);
 }
 
-const SLOT_LABELS: Record<string, string> = { C1B: "C/1B", UTIL: "UTIL" };
-function slotLabel(s: string): string { return SLOT_LABELS[s] || s; }
-
-/** Determine if a player (with SGO or DFS position) is eligible for a roster slot. */
-function slotEligible(pos: string | undefined | null, slot: string): boolean {
-  const eligible = normalizePosForFilter(pos);
-  if (slot === "UTIL") return eligible.length > 0 && !eligible.every((p) => p === "P");
-  if (slot === "C1B") return eligible.some((p) => p === "C" || p === "1B");
-  return eligible.includes(slot);
-}
-
 // DFS → SGO team abbreviation reconciliation (canonical identity layer).
 const TEAM_ABBR_MAP: Record<string, string> = {
   ATH: "OAK", // Athletics (DFS "ATH" ↔ SGO "OAK")
@@ -143,6 +125,10 @@ export default function OptimizerPage() {
   const sport = ws.sport;
   const platform = ws.platform;
   const resolvedSlateId = ws.slateId;
+  const roster = useMemo(() => getRoster(sport, platform), [sport, platform]);
+  const regenFromRef = useRef<string[][] | null>(null);
+  const [historySaved, setHistorySaved] = useState(false);
+  const [uniqueLineupError, setUniqueLineupError] = useState<string | null>(null);
 
   // ── State ──
   const [bookmakerSource, setBookmakerSource] = useState<string>("Best Available");
@@ -198,26 +184,28 @@ export default function OptimizerPage() {
       setSlatesLoading(true);
       try {
         const res = await fetchDFSSlates(platform, sport);
-        const pub = (res?.data ?? []).filter((s: any) => s.status === "PUBLISHED");
-        // Only CURRENT slates are eligible for optimization.
-        // Stale (prior-date) slates are blocked by freshness protection
-        // so today's SGO games are never enriched onto an old slate.
-        const current = pub.filter((s: any) => s.is_current !== false);
+        const pub = (res?.data ?? []).filter((s: any) => {
+          if (s.freshness === "STALE") return false;
+          if (s.is_live_eligible === true) return true;
+          if (s.freshness === "UPCOMING") return sport === "NFL" || sport === "NCAAF";
+          if (s.freshness === "CURRENT" || s.is_current === true) return true;
+          return false;
+        });
         if (!cancelled) {
-          setSlates(current);
+          setSlates(pub);
           const urlSlate = typeof window !== "undefined"
             ? Number(new URLSearchParams(window.location.search).get("slate"))
             : NaN;
-          const urlOk = Number.isFinite(urlSlate) && current.some((s: any) => s.id === urlSlate);
-          const existingOk = ws.slateId != null && current.some((s: any) => s.id === ws.slateId);
+          const urlOk = Number.isFinite(urlSlate) && pub.some((s: any) => s.id === urlSlate);
+          const existingOk = ws.slateId != null && pub.some((s: any) => s.id === ws.slateId);
           if (urlOk) {
             ws.setSlateId(urlSlate);
           } else if (!existingOk) {
-            const main = current.find((s: any) => s.slate_name.toLowerCase().includes("main"));
-            const defaultId = main?.id ?? (current.length > 0 ? current[0].id : null);
+            const main = pub.find((s: any) => s.slate_name.toLowerCase().includes("main"));
+            const defaultId = main?.id ?? (pub.length > 0 ? pub[0].id : null);
             ws.setSlateId(defaultId);
           }
-          setHasStaleSlates(pub.length > current.length);
+          setHasStaleSlates((res?.data ?? []).some((s: any) => s.freshness === "STALE" || s.is_current === false));
         }
       } catch { if (!cancelled) { setSlates([]); ws.setSlateId(null); setHasStaleSlates(false); } }
       finally { if (!cancelled) setSlatesLoading(false); }
@@ -369,7 +357,11 @@ export default function OptimizerPage() {
           const dfsEligible = (dfs.eligible_positions || [dfs.position]).flatMap((ep) => normalizePosForFilter(ep));
           eligible = Array.from(new Set([...eligible, ...dfsEligible]));
         }
-        if (!eligible.includes(posFilter)) return false;
+        if (!eligible.includes(posFilter)) {
+          if (!((posFilter === "DST" || posFilter === "DEF") && eligible.some((p) => p === "DST" || p === "DEF"))) {
+            return false;
+          }
+        }
       }
       if (!playerSearch) return true;
       const q = playerSearch.toLowerCase();
@@ -406,8 +398,6 @@ export default function OptimizerPage() {
     });
     return sorted;
   }, [players, subTab, ws.excludedIds, ws.likedIds, posFilter, playerSearch, filteredEvents, dfsPlayers, projPool, optPctMap, sortField, sortDir]);
-
-  const upcomingEvents = events.filter((e) => !liveClass(e.status));
 
   // Slate integrity: bidirectional SGO↔DFS match rate scoped to this slate's games.
   // SGO only returns bettable players (~8 per game), NOT full rosters (~92 per game).
@@ -497,7 +487,7 @@ export default function OptimizerPage() {
     };
   }, [resolvedSlateId, dfsPlayers, players, events]);
 
-  const canGenerate = !slatesLoading && resolvedSlateId != null && filteredEvents.length > 0 && slateIntegrity.healthy;
+  const canGenerate = !slatesLoading && resolvedSlateId != null && dfsPlayers.length > 0 && slateIntegrity.healthy && Boolean(roster) && (roster?.salaryCap != null || maxSalaryOverride != null);
 
   // ── Game toggles ──
   const selectAllGames = useCallback(() => setExcludedGameIds(new Set()), []);
@@ -541,9 +531,14 @@ export default function OptimizerPage() {
         .map(([name, proj]) => ({ name, projected_fp: proj }))
         .filter((x) => x.name && x.projected_fp != null && !Number.isNaN(x.projected_fp));
       if (overrides.length > 0) setting.projection_overrides = overrides;
+      if (roster?.minUniqueDefault) setting.min_uniqueness = roster.minUniqueDefault;
+      const regen = regenFromRef.current;
+      if (regen && regen.length > 0) setting.regenerate_from_ids = regen;
       return runOptimizer(resolvedSlateId, setting);
     },
     onSuccess: (res: unknown) => {
+      regenFromRef.current = null;
+      setUniqueLineupError(null);
       try {
         if (!res || typeof res !== "object") { setLineups([]); return; }
         const r = res as Record<string, unknown>;
@@ -553,6 +548,8 @@ export default function OptimizerPage() {
         else if (typeof data === "object" && data !== null) {
           const inner = (data as Record<string, unknown>)?.lineups;
           setLineups(Array.isArray(inner) ? (inner as LineupResponse[]) : []);
+          setHistorySaved(Boolean((data as Record<string, unknown>)?.history_saved));
+          setSavedNote(Boolean((data as Record<string, unknown>)?.history_saved));
         } else setLineups([]);
 
         // Store projection pool (keyed by name for frontend matching)
@@ -570,14 +567,45 @@ export default function OptimizerPage() {
       setMainTab("built");
       setSelectedLineupIndex(0);
     },
-    onError: () => { setLineups([]); setLastGenMeta(null); },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("No additional unique lineup")) {
+        setUniqueLineupError(UNIQUE_LINEUP_UNAVAILABLE);
+      } else {
+        setUniqueLineupError(null);
+        setLineups([]);
+        setLastGenMeta(null);
+      }
+    },
   });
 
-  const clearLineups = useCallback(() => { setLineups([]); setLastGenMeta(null); setSavedNote(false); }, []);
-  const regenerate = useCallback(() => optimizeMutation.mutate(), [optimizeMutation]);
-  const markSaved = useCallback(() => setSavedNote(true), []);
+  const clearLineups = useCallback(() => { setLineups([]); setLastGenMeta(null); setSavedNote(false); setHistorySaved(false); setUniqueLineupError(null); }, []);
+  const regenerate = useCallback(() => {
+    regenFromRef.current = lineups.map((lu) =>
+      ((lu.players as any[]) || []).map((p) => String(p.id || p.name || "")).filter(Boolean)
+    );
+    setUniqueLineupError(null);
+    optimizeMutation.mutate();
+  }, [optimizeMutation, lineups]);
+  const markSaved = useCallback(async () => {
+    if (historySaved || savedNote) return;
+    if (!lineups.length) return;
+    try {
+      await saveLineupHistory({
+        sport,
+        platform,
+        slate_id: resolvedSlateId,
+        strategy,
+        lineups,
+      });
+      setHistorySaved(true);
+      setSavedNote(true);
+    } catch {
+      setSavedNote(false);
+    }
+  }, [historySaved, savedNote, lineups, sport, platform, resolvedSlateId, strategy]);
 
-  const slots = platform === "fanduel" ? FD_SLOTS : DK_SLOTS;
+  const slots = roster?.slots ?? [];
   const lockedPlayers = players.filter((p) => ws.lockedIds.includes(p.name));
 
   // Selected generated lineup (for right-side builder)
@@ -601,7 +629,7 @@ export default function OptimizerPage() {
       const dfs = matchDFS({ name: lp.name, team_id: lp.team_id, position: lp.position }, dfsPlayers);
       for (let i = 0; i < slots.length; i++) {
         if (used.has(i)) continue;
-        if (slotEligible(lp.position || (dfs?.position ?? ""), slots[i])) {
+        if (roster && slotEligible(lp.position || (dfs?.position ?? ""), slots[i], roster)) {
           rows[i] = { slot: slots[i], name: lp.name, salary: dfs?.salary || 0, proj: 0, opponent: opp, team: evt ? resolveTeamName(lp.team_id, evt) : "" };
           used.add(i);
           break;
@@ -609,24 +637,24 @@ export default function OptimizerPage() {
       }
     }
     return rows;
-  }, [selectedSlotPlayers, slots, lockedPlayers, filteredEvents, dfsPlayers]);
+  }, [selectedSlotPlayers, slots, lockedPlayers, filteredEvents, dfsPlayers, roster]);
 
   // Right-side metrics
   const builderMetrics = useMemo(() => {
     if (!selectedLineup) {
-      const cap = platform === "fanduel" ? 35000 : 50000;
+      const cap = roster?.salaryCap ?? 0;
       const lockedSal = lockedPlayers.reduce((s, lp) => {
         const dfs = matchDFS({ name: lp.name, team_id: lp.team_id, position: lp.position }, dfsPlayers);
         return s + (dfs?.salary || 0);
       }, 0);
       return { cap, remaining: cap - lockedSal, projFP: 0, value: "—", ownership: "N/A" };
     }
-    const cap = platform === "fanduel" ? 35000 : 50000;
+    const cap = roster?.salaryCap ?? selectedLineup.total_salary ?? 0;
     const rem = (selectedLineup as any).remaining_salary ?? (cap - selectedLineup.total_salary);
     const fp = selectedLineup.projected_score;
     const val = selectedLineup.total_salary > 0 ? (fp / (selectedLineup.total_salary / 1000)).toFixed(2) : "—";
     return { cap, remaining: rem, projFP: fp, value: val, ownership: "N/A" };
-  }, [selectedLineup, platform, lockedPlayers, dfsPlayers]);
+  }, [selectedLineup, roster, lockedPlayers, dfsPlayers]);
 
   return (
     <div style={{ background: "#0a0f24", minHeight: "100vh", color: "#f0f6fc" }}>
@@ -652,11 +680,11 @@ export default function OptimizerPage() {
       <div style={{ padding: "12px 24px", borderBottom: "1px solid #1e293b", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <Selector label="Sport" value={sport} options={[...SPORTS]} onChange={ws.setSport} />
-          <Selector label="Slate" value={resolvedSlateId == null ? "" : String(resolvedSlateId)} options={slates.map((s) => String(s.id))} onChange={(v) => ws.setSlateId(v ? Number(v) : null)} format={(v) => { const s = slates.find((x) => String(x.id) === v); return s ? `${s.slate_name} (${s.player_count})` : v; }} />
+          <Selector label="Slate" value={resolvedSlateId == null ? "" : String(resolvedSlateId)} options={slates.map((s) => String(s.id))} onChange={(v) => ws.setSlateId(v ? Number(v) : null)} format={(v) => { const s = slates.find((x) => String(x.id) === v); if (!s) return v; const t = s.start_time ? new Date(s.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""; return `${s.slate_name}${t ? ` · ${t}` : ""} (${s.player_count})`; }} />
           <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
           <span style={{ fontSize: 11, color: "#64748b" }}>
-            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players · SGO {${slateIntegrity.total} players, ${(slateIntegrity.matchRate * 100).toFixed(0)}% matched}` : slates.length === 0 ? `No current ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate is available yet` : "Select a slate"}
+            Slate: {slatesLoading ? "Loading..." : resolvedSlateId ? `${(new Set(dfsPlayers.map(p => p.team)).size / 2).toFixed(0)} Games · ${dfsPlayers.length} Players · SGO {${slateIntegrity.total} players, ${(slateIntegrity.matchRate * 100).toFixed(0)}% matched}` : slates.length === 0 ? `No published ${platform === "draftkings" ? "DraftKings" : "FanDuel"} ${sport} slate with lock time is available yet` : "Select a slate"}
           </span>
         </div>
         <button onClick={() => setShowStackingRules(!showStackingRules)} style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: showStackingRules ? "rgba(201,168,76,0.15)" : "#0a0f24", border: showStackingRules ? "1px solid #c9a84c" : "1px solid #1e293b", color: showStackingRules ? "#c9a84c" : "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
@@ -683,7 +711,11 @@ export default function OptimizerPage() {
         <button onClick={selectAllGames} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#94a3b8", cursor: "pointer" }}>SELECT ALL</button>
         <button onClick={removeAllGames} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "#1a1f33", border: "1px solid #1e293b", color: "#ef4444", cursor: "pointer" }}>REMOVE ALL</button>
         <div style={{ display: "flex", gap: 6, overflowX: "auto", flex: 1, paddingBottom: 4 }}>
-          {upcomingEvents.slice(0, 20).map((e) => {
+          {resolvedSlateId == null ? (
+            <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>Game chips load from the selected contest slate. SGO schedule alone is not a slate.</span>
+          ) : filteredEvents.length === 0 ? (
+            <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>No games attached to this slate yet.</span>
+          ) : filteredEvents.slice(0, 20).map((e) => {
             const excluded = excludedGameIds.has(e.id);
             return (
               <button key={e.id} onClick={() => toggleGame(e.id)}
@@ -718,7 +750,7 @@ export default function OptimizerPage() {
                 <span style={{ fontSize: 11, color: "#64748b" }}>{filteredPlayers.length} players</span>
               </div>
               <div style={{ display: "flex", padding: "6px 16px", gap: 4, borderBottom: "1px solid #1e293b", flexWrap: "wrap", alignItems: "center" }}>
-                {MLB_POSITIONS.map((pos) => (
+                {["ALL", ...(roster?.filterPositions ?? [])].map((pos) => (
                   <button key={pos} onClick={() => setPosFilter(pos)} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: posFilter === pos ? "rgba(201,168,76,0.15)" : "#1a1f33", border: posFilter === pos ? "1px solid #c9a84c" : "1px solid #1e293b", color: posFilter === pos ? "#c9a84c" : "#94a3b8", cursor: "pointer" }}>{pos}</button>
                 ))}
                 <div style={{ width: 1, height: 20, background: "#1e293b", margin: "0 4px" }} />
@@ -830,14 +862,15 @@ export default function OptimizerPage() {
           {mainTab === "built" && (
             <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
               {optimizeMutation.isPending ? <Center><Loader2 size={32} className="animate-spin" style={{ color: "#c9a84c" }} /><p style={{ color: "#94a3b8", marginTop: 8 }}>Running CP-SAT optimizer...</p></Center>
-              : optimizeMutation.isError ? <Center><p style={{ color: "#ef4444", fontWeight: 700 }}>{optimizeMutation.error instanceof Error ? optimizeMutation.error.message : "Optimization failed"}</p></Center>
-              : lineups.length === 0 ? <Center><p style={{ color: "#64748b" }}>No lineups yet. Click OPTIMIZE to generate.</p></Center>
+              : optimizeMutation.isError && !uniqueLineupError ? <Center><p style={{ color: "#ef4444", fontWeight: 700 }}>{optimizeMutation.error instanceof Error ? optimizeMutation.error.message : "Optimization failed"}</p></Center>
+              : lineups.length === 0 && !uniqueLineupError ? <Center><p style={{ color: "#64748b" }}>No lineups yet. Click OPTIMIZE to generate.</p></Center>
+              : uniqueLineupError && lineups.length === 0 ? <Center><p style={{ color: "#f87171", fontWeight: 700 }}>{uniqueLineupError}</p></Center>
               : (
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
                     <h2 style={{ fontSize: 16, fontWeight: 800, color: "#c9a84c", margin: 0 }}>Built Lineups ({lineups.length})</h2>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <MiniBtn icon={<Save size={13} />} label={savedNote ? "Saved ✓" : "Save"} onClick={markSaved} />
+                      <MiniBtn icon={<Save size={13} />} label={savedNote || historySaved ? "Saved ✓" : "Save Lineup"} onClick={() => { void markSaved(); }} />
                       <MiniBtn icon={<RefreshCw size={13} />} label="Regenerate" onClick={regenerate} disabled={optimizeMutation.isPending} />
                       <MiniBtn icon={<BarChart3 size={13} />} label="Simulate" onClick={() => { ws.setPendingLineups(lineups); router.push("/sims"); }} />
                       <MiniBtn icon={<Download size={13} />} label="Export" onClick={() => exportLineups(lineups, lastGenMeta)} />
@@ -845,6 +878,7 @@ export default function OptimizerPage() {
                       <MiniBtn icon={<List size={13} />} label="View Saved" onClick={() => router.push("/lineups")} />
                     </div>
                   </div>
+                  {uniqueLineupError && <p style={{ fontSize: 12, color: "#f87171", marginBottom: 12 }}>{uniqueLineupError}</p>}
                   {lastGenMeta && <p style={{ fontSize: 11, color: "#64748b", marginBottom: 12 }}>Platform: {lastGenMeta.platform === "draftkings" ? "DraftKings" : "FanDuel"} · Strategy: {lastGenMeta.strategy} · {lastGenMeta.gameCount} games</p>}
                   {lineups.map((l, i) => <LineupCard key={i} index={i} lineup={l} platform={lastGenMeta?.platform || platform} />)}
                 </>
@@ -879,11 +913,11 @@ export default function OptimizerPage() {
             </>
           )}
 
-          <SectionTitle>ROSTER · {platform === "fanduel" ? "FanDuel (9)" : "DraftKings (10)"}</SectionTitle>
+          <SectionTitle>ROSTER · {platform === "fanduel" ? "FanDuel" : "DraftKings"} ({slots.length || "—"})</SectionTitle>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {rosterRows.map((row, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, background: row.name ? "rgba(201,168,76,0.1)" : "#1a1f33", border: row.name ? "1px solid #c9a84c" : "1px solid #1e293b", minHeight: 40 }}>
-                <span style={{ width: 50, fontSize: 10, fontWeight: 800, color: "#c9a84c", textTransform: "uppercase" }}>{slotLabel(row.slot)}</span>
+                <span style={{ width: 50, fontSize: 10, fontWeight: 800, color: "#c9a84c", textTransform: "uppercase" }}>{slotLabel(row.slot, roster)}</span>
                 {row.name ? (
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: "#f0f6fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</div>
@@ -903,6 +937,11 @@ export default function OptimizerPage() {
           <button onClick={() => optimizeMutation.mutate()} disabled={!canGenerate || optimizeMutation.isPending} style={{ width: "100%", padding: "16px", borderRadius: 14, fontWeight: 900, fontSize: 16, textTransform: "uppercase", letterSpacing: 1, background: canGenerate ? "#c9a84c" : "#1e293b", color: canGenerate ? "#060b1a" : "#64748b", border: "none", cursor: canGenerate ? "pointer" : "not-allowed", boxShadow: canGenerate ? "0 4px 24px rgba(201,168,76,0.4)" : "none", marginTop: 8 }}>
             {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>OPTIMIZE</>}
           </button>
+          {roster && roster.salaryCap == null && maxSalaryOverride == null && (
+            <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, background: "rgba(201,168,76,0.06)", border: "1px solid rgba(201,168,76,0.18)", fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
+              {sport} {platform === "fanduel" ? "FanDuel" : "DraftKings"} salary cap is not in verified platform configuration. Optimization is blocked until a verified cap is configured.
+            </div>
+          )}
           {resolvedSlateId != null && !slateIntegrity.healthy && (
             <div style={{ marginTop: 12, padding: "14px 18px", borderRadius: 12, background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.2)", fontSize: 11 }}>
               <div style={{ fontWeight: 800, color: "#ef4444", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
@@ -923,10 +962,10 @@ export default function OptimizerPage() {
             <div style={{ marginTop: 12, padding: "16px 18px", borderRadius: 12, background: "rgba(201,168,76,0.04)", border: "1px solid rgba(201,168,76,0.12)", textAlign: "center" }}>
               <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>⏳</div>
               <div style={{ fontSize: 14, fontWeight: 800, color: "#c9a84c", marginBottom: 4 }}>
-                No Current {platform === "draftkings" ? "DraftKings" : "FanDuel"} Slate Available
+                No {platform === "draftkings" ? "DraftKings" : "FanDuel"} {sport} Slate Available
               </div>
               <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 2, lineHeight: 1.5 }}>
-                A current {platform === "draftkings" ? "DraftKings" : "FanDuel"} salary slate is required before optimization can run.
+                A published {platform === "draftkings" ? "DraftKings" : "FanDuel"} {sport} salary slate with a lock time is required before optimization can run.
               </div>
               {hasStaleSlates && (
                 <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>

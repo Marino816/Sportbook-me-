@@ -20,13 +20,13 @@ SUPPORTED_SPORTS = {"MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"}
 
 # Position validation sets per sport
 MLB_POS = {"P", "C", "1B", "2B", "3B", "SS", "OF", "DH"}
-NFL_POS = {"QB", "RB", "WR", "TE", "DST", "FLEX"}
+NFL_POS = {"QB", "RB", "WR", "TE", "DST", "DEF", "FLEX", "SFLX"}
 NBA_NCAA_POS = {"PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"}
 NHL_POS = {"G", "D", "W"}
 SPORT_POS = {
     "MLB": MLB_POS, "NFL": NFL_POS,
     "NBA": NBA_NCAA_POS, "NHL": NHL_POS,
-    "NCAAF": {"QB", "RB", "WR", "TE", "DST", "FLEX"},
+    "NCAAF": {"QB", "RB", "WR", "TE", "DST", "DEF", "FLEX", "SFLX"},
     "NCAAB": NBA_NCAA_POS,
 }
 

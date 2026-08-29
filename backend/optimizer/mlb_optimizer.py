@@ -341,9 +341,15 @@ class MLBOptimizer:
         # No-good constraints: prevent reproducing prior lineups
         prior_ids = prior_ids or []
         for prior_set in prior_ids:
-            prior_indices = [i for i in range(n) if self.players[i].get("id") in prior_set]
+            want = {str(x).strip().lower() for x in prior_set if x is not None and str(x).strip()}
+            prior_indices = []
+            for i in range(n):
+                pid = str(self.players[i].get("id", "") or "").strip().lower()
+                nm = (self.players[i].get("name") or "").strip().lower()
+                if (pid and pid in want) or (nm and nm in want):
+                    prior_indices.append(i)
             if prior_indices:
-                model.Add(sum(x[i] for i in prior_indices) <= total_slots - self.min_unique)
+                model.Add(sum(x[i] for i in prior_indices) <= total_slots - max(1, self.min_unique))
 
         # Solve
         solver = cp_model.CpSolver()
@@ -417,15 +423,19 @@ class MLBOptimizer:
         extra_prior_sets = []
         if regenerate_from_ids:
             for prior_set in regenerate_from_ids:
-                if prior_set:
-                    extra_prior_sets.append(set(prior_set))
+                keys = {str(x).strip().lower() for x in (prior_set or []) if x and str(x).strip()}
+                if keys:
+                    extra_prior_sets.append(keys)
 
         for i in range(count * 4):
             if len(lineups) >= count:
                 break
 
-            prior_sets = [{p.get("id") for p in lu["players"]} for lu in lineups]
-            prior_sets = extra_prior_sets + prior_sets  # regenerate constraints first
+            prior_sets = extra_prior_sets + [
+                {str(p.get("id", "")).strip().lower() for p in lu["players"] if p.get("id") is not None}
+                | {(p.get("name") or "").strip().lower() for p in lu["players"]}
+                for lu in lineups
+            ]
             seed = int(_time.time_ns() % 999999) + i * 7 + random.randint(0, 999)
             lineup = self.build_lineup(
                 forbidden_ids=set(),
@@ -443,6 +453,18 @@ class MLBOptimizer:
                     continue
 
             new_ids = {p.get("id") for p in lineup["players"]}
+            total_slots = self.config["player_count"]
+
+            def _overlap_count(prior: set) -> int:
+                n = 0
+                for p in lineup["players"]:
+                    keys = {str(p.get("id", "")).strip().lower(), (p.get("name") or "").strip().lower()}
+                    if keys & prior:
+                        n += 1
+                return n
+
+            if any(_overlap_count(prior) >= total_slots for prior in extra_prior_sets):
+                continue
 
             # Check uniqueness against all prior lineups
             ok = True

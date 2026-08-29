@@ -37,6 +37,7 @@ from assistant.session_state import (
     ConversationContext,
     SuggestedAction,
     merge_conversation_context,
+    absorb_slate_from_tool_results,
     render_session_note,
     build_suggested_actions,
     fill_tool_arguments,
@@ -245,6 +246,7 @@ async def ai_chat(
         slate_id=body.slate_id,
     )
     prefetched = await _prefetch_session_tools(body.message, session_ctx, db)
+    session_ctx = await absorb_slate_from_tool_results(session_ctx, prefetched, db)
 
     # 3. LLM client
     llm = get_llm()
@@ -314,12 +316,14 @@ async def ai_chat(
             # Execute each allowed tool once, recording the tool message pair.
             assistant_tool_calls = []
             tool_messages = []
+            round_payloads: list[tuple[str, dict]] = []
             for tc in result.tool_calls:
                 if tc.name not in ALLOWED_TOOLS:
                     continue  # never call a tool outside the allow-list
                 filled = fill_tool_arguments(tc.name, tc.arguments or {}, session_ctx)
                 tools_used.append(tc.name)
                 tool_result = await execute_tool(tc.name, filled, db)
+                round_payloads.append((tc.name, tool_result if isinstance(tool_result, dict) else {}))
                 assistant_tool_calls.append({
                     "id": tc.id,
                     "type": "function",
@@ -330,6 +334,9 @@ async def ai_chat(
                     "tool_call_id": tc.id,
                     "content": json.dumps(tool_result, default=str),
                 })
+
+            if round_payloads:
+                session_ctx = await absorb_slate_from_tool_results(session_ctx, round_payloads, db)
 
             if not assistant_tool_calls:
                 # No allowed tools were requested — stop with what we have.

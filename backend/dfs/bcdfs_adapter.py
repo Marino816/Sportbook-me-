@@ -458,12 +458,13 @@ async def sync_bc_to_db(
     stored in slate.reconciliation_report['bc_player_meta'] (JSON) so no
     destructive schema change is required.  They never write projected_fp.
 
-    auto_publish=True: all CURRENT slates are auto-published (same
-    behaviour as the CSV import gate).
+    auto_publish=True: CURRENT slates are auto-published, plus UPCOMING
+    weekly (NFL) slates so weekend contests are customer-visible before
+    game day. STALE slates stay DRAFT.
     """
     from sqlalchemy import select, delete
     from dfs.db import DFSSlate as DBSlate, DFSPlayer as DBPlayer
-    from dfs.freshness import is_current_slate
+    from dfs.freshness import is_auto_publishable
 
     report = BcSyncReport(
         sport=parse_result.sport,
@@ -490,7 +491,7 @@ async def sync_bc_to_db(
             existing_slate.player_count = cs.player_count
             existing_slate.version = (existing_slate.version or 1) + 1
             # Keep status unless admin overrides
-            if auto_publish and is_current_slate(cs.start_time):
+            if auto_publish and is_auto_publishable(cs.start_time, cs.sport):
                 if existing_slate.status not in ("PUBLISHED", "ARCHIVED"):
                     existing_slate.status = "PUBLISHED"
                     existing_slate.published_at = datetime.now(timezone.utc)
@@ -505,8 +506,8 @@ async def sync_bc_to_db(
                 start_time=cs.start_time,
                 player_count=cs.player_count,
                 data_source="blue_collar",
-                status="PUBLISHED" if (auto_publish and is_current_slate(cs.start_time)) else "DRAFT",
-                published_at=datetime.now(timezone.utc) if (auto_publish and is_current_slate(cs.start_time)) else None,
+                status="PUBLISHED" if (auto_publish and is_auto_publishable(cs.start_time, cs.sport)) else "DRAFT",
+                published_at=datetime.now(timezone.utc) if (auto_publish and is_auto_publishable(cs.start_time, cs.sport)) else None,
             )
             db.add(db_slate)
             await db.flush()  # get db_slate.id

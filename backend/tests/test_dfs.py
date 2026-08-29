@@ -102,6 +102,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from dfs.freshness import (
     slate_freshness, is_stale_slate, is_current_slate, slate_date_et,
+    is_customer_visible_slate, is_auto_publishable, is_optimizer_eligible_status,
 )
 
 
@@ -124,6 +125,12 @@ class TestFreshness:
         assert slate_freshness(future) == "UPCOMING"
         assert is_stale_slate(future) is False
         assert is_current_slate(future) is False
+        assert is_customer_visible_slate(future, "MLB") is False
+        assert is_customer_visible_slate(future, "NFL") is True
+        assert is_auto_publishable(future, "NCAAF") is True
+        assert is_optimizer_eligible_status("DRAFT", future, "NFL") is True
+        assert is_optimizer_eligible_status("DRAFT", future, "MLB") is False
+        assert is_optimizer_eligible_status("PUBLISHED", future, "MLB") is True
 
     def test_none_start_time_is_stale(self):
         """Missing start_time → STALE (cannot be proven current)."""

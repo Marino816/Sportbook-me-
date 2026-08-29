@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { getSafeReturnPath } from "@/lib/safe-return-path";
-import { Loader2, Mail, Lock, AlertCircle } from "lucide-react";
+import { fetchAuthProviders, type AuthProviderStatus } from "@/lib/api";
+import { Loader2, Lock, AlertCircle, UserRound } from "lucide-react";
+import { SBMEBackground } from "@/components/sbme-background";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,21 +16,38 @@ export default function LoginPage() {
   const destination = getSafeReturnPath(nextPath);
   const { login, isAuthenticated } = useAuth();
 
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [google, setGoogle] = useState<AuthProviderStatus>({ enabled: false, status: "pending" });
+  const [apple, setApple] = useState<AuthProviderStatus>({ enabled: false, status: "pending" });
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isAuthenticated) router.replace(destination);
   }, [destination, isAuthenticated, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAuthProviders().then((p) => {
+      if (cancelled) return;
+      setGoogle(p.google);
+      setApple(p.apple);
+    }).catch(() => { /* keep pending */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const trimmed = identifier.trim();
+    if (!trimmed.includes("@")) {
+      setError("Username login is not enabled yet. Sign in with the email on your account.");
+      return;
+    }
     setLoading(true);
     try {
-      await login(email, password);
+      await login(trimmed, password);
       router.push(destination);
     } catch (err: any) {
       setError(err.message || "Invalid credentials.");
@@ -38,50 +57,77 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, background: "#0a0f24" }}>
-      <div style={{ width: "100%", maxWidth: 420 }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <Link href="/">
-            <Image src="/logo.png" alt="SB ME DFS.AI" width={160} height={84} priority style={{ margin: "0 auto" }} />
-          </Link>
-          <h1 style={{ fontSize: 24, fontWeight: 900, color: "#f0f6fc", marginTop: 12 }}>Welcome Back</h1>
-          <p style={{ color: "#94a3b8", fontSize: 14, marginTop: 4 }}>Sign in to access your DFS tools</p>
-        </div>
+    <SBMEBackground variant="hero" className="sbme-login-page">
+      <div className="sbme-login-wrap">
+        <div className="sbme-login-card">
+          <div className="sbme-login-brand">
+            <Link href="/">
+              <Image src="/logo.png" alt="SB ME" width={140} height={74} priority />
+            </Link>
+            <h1>Welcome to SB ME</h1>
+          </div>
 
-        {error && (
-          <div style={{ marginBottom: 24, padding: 16, borderRadius: 14, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", display: "flex", alignItems: "center", gap: 12, fontSize: 14 }}>
-            <AlertCircle size={20} />{error}
-          </div>
-        )}
+          {error && (
+            <div className="sbme-login-error">
+              <AlertCircle size={18} />
+              <span>{error}</span>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} style={{ background: "#0a0f24", borderRadius: 20, border: "1px solid #1e293b", padding: 32, display: "flex", flexDirection: "column", gap: 20 }}>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: 8 }}>Email</label>
-            <div style={{ position: "relative" }}>
-              <Mail size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com"
-                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#060b1a", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
-            </div>
-          </div>
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", display: "block", marginBottom: 8 }}>Password</label>
-            <div style={{ position: "relative" }}>
-              <Lock size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
-              <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password"
-                style={{ width: "100%", padding: "12px 12px 12px 40px", borderRadius: 12, border: "1px solid #1e293b", background: "#060b1a", color: "#f0f6fc", fontSize: 14, outline: "none" }} />
-            </div>
-          </div>
-          <button type="submit" disabled={loading}
-            style={{ padding: "14px", borderRadius: 14, background: "#c9a84c", color: "#060b1a", border: "none", fontWeight: 800, fontSize: 15, textTransform: "uppercase", cursor: "pointer", boxShadow: "0 4px 20px rgba(201,168,76,0.3)" }}>
-            {loading ? <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> : "Sign In"}
+          <button type="button" className="sbme-login-oauth" disabled title={google.reason || "Google sign-in is pending provider configuration."}>
+            Continue with Google
+            <span>Pending — provider not configured</span>
           </button>
-        </form>
+          <button type="button" className="sbme-login-oauth" disabled title={apple.reason || "Apple sign-in is pending provider configuration."}>
+            Continue with Apple
+            <span>Pending — provider not configured</span>
+          </button>
 
-        <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 14, marginTop: 24 }}>
-          Don&apos;t have an account?{" "}
-          <Link href="/register" style={{ color: "#c9a84c", fontWeight: 700 }}>Create One</Link>
-        </p>
+          <div className="sbme-login-or"><span>or</span></div>
+
+          <form onSubmit={handleSubmit} className="sbme-login-form">
+            <label>
+              Username or Email
+              <div className="sbme-login-field">
+                <UserRound size={16} />
+                <input
+                  type="text"
+                  autoComplete="username"
+                  required
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="email or username"
+                />
+              </div>
+            </label>
+            <label>
+              Password
+              <div className="sbme-login-field">
+                <Lock size={16} />
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                />
+              </div>
+            </label>
+            <button type="submit" className="sbme-login-submit" disabled={loading}>
+              {loading ? <Loader2 size={18} className="animate-spin" /> : "Log In"}
+            </button>
+          </form>
+
+          <p className="sbme-login-forgot">
+            Forgot password? Password reset is not enabled yet. Contact support.
+          </p>
+          <p className="sbme-login-footer">
+            Don&apos;t have an account?{" "}
+            <Link href="/register">Create account</Link>
+          </p>
+        </div>
       </div>
-    </div>
+    </SBMEBackground>
   );
 }

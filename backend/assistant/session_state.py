@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dfs.name_normalize import fold_player_name, names_equal
 
 
+from dfs.roster import get_roster
+
 SALARY_CAPS = {"draftkings": 50000, "fanduel": 35000}
 
 SPORT_ALIASES = {
@@ -86,6 +88,11 @@ EXCLUDE_RE = re.compile(
     re.I,
 )
 CONTEST_RE = re.compile(r"\b(cash|gpp|tournament|single[\s-]?entry|nuclear)\b", re.I)
+# "slate id 29", "id 29", "slate #29" — do not capture times like "slate 6:40".
+SLATE_ID_RE = re.compile(
+    r"(?:slate\s*(?:id|#)\s*|id\s+#?\s*)(\d{1,6})\b|(?:slate\s+)(\d{2,6})\b(?!\s*:)",
+    re.I,
+)
 
 
 class PlayerRef(BaseModel):
@@ -199,6 +206,19 @@ def extract_player_names(message: str) -> list[str]:
     return out
 
 
+def extract_slate_id(message: str) -> Optional[int]:
+    """Parse an explicit slate id from the customer message. Never invent one."""
+    m = SLATE_ID_RE.search(message or "")
+    if not m:
+        return None
+    raw = m.group(1) or m.group(2)
+    try:
+        sid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return sid if sid > 0 else None
+
+
 def extract_excluded_names(message: str) -> list[str]:
     names: list[str] = []
     for m in EXCLUDE_RE.finditer(message or ""):
@@ -274,14 +294,30 @@ async def match_slate(
     platform: Optional[str] = None,
 ) -> Optional[Any]:
     from dfs.db import DFSSlate
+    from dfs.freshness import is_ai_matchable_slate
 
-    q = select(DFSSlate).where(DFSSlate.status == "PUBLISHED")
+    explicit_id = extract_slate_id(message)
+    if explicit_id:
+        row = (
+            await db.execute(select(DFSSlate).where(DFSSlate.id == explicit_id))
+        ).scalars().first()
+        if row and is_ai_matchable_slate(row.status, row.start_time, row.sport):
+            if sport and str(row.sport).upper() != str(sport).upper():
+                return None
+            if platform and str(row.platform).lower() != str(platform).lower():
+                return None
+            return row
+        return None
+
+    q = select(DFSSlate).where(DFSSlate.status.in_(["PUBLISHED", "DRAFT"]))
     if platform:
         q = q.where(DFSSlate.platform == platform.lower())
     if sport:
         q = q.where(DFSSlate.sport == sport.upper())
     q = q.order_by(DFSSlate.start_time.asc())
     rows = (await db.execute(q)).scalars().all()
+    from dfs.freshness import is_ai_matchable_slate
+    rows = [s for s in rows if is_ai_matchable_slate(s.status, s.start_time, s.sport)]
     if not rows:
         return None
 
@@ -309,7 +345,11 @@ def _upsert_player(bucket: list[PlayerRef], name: str) -> PlayerRef:
 
 
 def _apply_salary_cap(ctx: ConversationContext) -> None:
-    if ctx.platform:
+    roster = get_roster(ctx.sport, ctx.platform) if ctx.sport and ctx.platform else None
+    if roster and roster.salary_cap is not None:
+        ctx.salary_cap = roster.salary_cap
+    elif ctx.platform:
+        # MLB-era fallback only when sport is unknown.
         ctx.salary_cap = SALARY_CAPS.get(ctx.platform)
 
 
@@ -417,7 +457,7 @@ async def merge_conversation_context(
         ctx.sport = sport.upper()
     if platform and not ctx.platform:
         ctx.platform = _canon_platform(platform) or platform.lower()
-    if slate_id and not ctx.slate_id:
+    if slate_id:
         from dfs.db import DFSSlate
         row = (
             await db.execute(select(DFSSlate).where(DFSSlate.id == int(slate_id)))
@@ -480,6 +520,44 @@ async def merge_conversation_context(
 
     await _resolve_players_on_slate(db, ctx)
     _apply_salary_cap(ctx)
+    return ctx
+
+
+async def absorb_slate_from_tool_results(
+    ctx: ConversationContext,
+    tool_results: list[tuple[str, dict]],
+    db: AsyncSession,
+) -> ConversationContext:
+    """If session still has no slate_id, take a unique slate from tool output.
+
+    Never guess among multiple slates. Never invent names or times.
+    """
+    if ctx.slate_id:
+        return ctx
+    from dfs.db import DFSSlate
+
+    candidates: list[int] = []
+    for name, payload in tool_results or []:
+        if not isinstance(payload, dict):
+            continue
+        if name == "get_current_slates":
+            slates = payload.get("slates") or []
+            ids = [int(s["slate_id"]) for s in slates if isinstance(s, dict) and s.get("slate_id")]
+            if len(ids) == 1:
+                candidates.append(ids[0])
+        sid = payload.get("slate_id")
+        if isinstance(sid, int) and sid > 0:
+            candidates.append(sid)
+    uniq = list(dict.fromkeys(candidates))
+    if len(uniq) != 1:
+        return ctx
+    row = (
+        await db.execute(select(DFSSlate).where(DFSSlate.id == uniq[0]))
+    ).scalars().first()
+    if row:
+        apply_slate(ctx, row)
+        await _resolve_players_on_slate(db, ctx)
+        _apply_salary_cap(ctx)
     return ctx
 
 

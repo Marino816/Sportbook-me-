@@ -48,10 +48,12 @@ def _clean(value: Any) -> Any:
 
 
 async def _get_published_slate(db: AsyncSession, slate_id: int) -> Optional[DFSSlate]:
-    r = await db.execute(
-        select(DFSSlate).where(DFSSlate.id == slate_id, DFSSlate.status == "PUBLISHED")
-    )
-    return r.scalars().first()
+    from dfs.freshness import is_ai_matchable_slate
+    r = await db.execute(select(DFSSlate).where(DFSSlate.id == slate_id))
+    row = r.scalars().first()
+    if row and is_ai_matchable_slate(row.status, row.start_time, row.sport):
+        return row
+    return None
 
 
 # ── Tool: get_current_slates ───────────────────────────────────
@@ -62,7 +64,7 @@ async def get_current_slates(
     platform: Optional[str] = None,
 ) -> dict:
     """List currently published DFS slates, optionally filtered."""
-    q = select(DFSSlate).where(DFSSlate.status == "PUBLISHED")
+    q = select(DFSSlate).where(DFSSlate.status.in_(["PUBLISHED", "DRAFT"]))
     if platform:
         q = q.where(DFSSlate.platform == platform.lower())
     if sport:
@@ -72,9 +74,16 @@ async def get_current_slates(
     slates = r.scalars().all()
 
     from dfs.optimal_lock import is_slate_locked
+    from dfs.freshness import is_ai_matchable_slate, is_stale_slate, slate_freshness
 
     result = []
     for s in slates:
+        if not is_ai_matchable_slate(s.status, s.start_time, s.sport):
+            continue
+        if is_stale_slate(s.start_time):
+            continue
+        if not s.slate_name or not s.start_time:
+            continue
         start = s.start_time
         result.append({
             "slate_id": s.id,
@@ -84,6 +93,7 @@ async def get_current_slates(
             "start_time": start.isoformat() if start else None,
             "locked": is_slate_locked(start),
             "player_count": s.player_count or 0,
+            "freshness": slate_freshness(start),
         })
     return {"slates": result, "count": len(result)}
 

@@ -16,6 +16,7 @@ from assistant.session_state import (
     extract_player_names,
     is_optimizer_commit,
     merge_conversation_context,
+    extract_slate_id,
     render_session_note,
     fill_tool_arguments,
     build_optimizer_handoff_href,
@@ -98,6 +99,12 @@ class TestParse:
         assert "slate=42" in href
         assert "Yordan" in href
 
+    def test_extract_slate_id(self):
+        assert extract_slate_id("Use slate id 29") == 29
+        assert extract_slate_id("id 42") == 42
+        assert extract_slate_id("Use slate 6:40PM ET (Turbo)") is None
+        assert extract_slate_id("slate 29 please") == 29
+
 
 class TestMergeConversation:
     async def test_incremental_context_and_no_reask_note(self):
@@ -150,6 +157,15 @@ class TestMergeConversation:
             assert ctx.slate_id == 42
             assert ctx.platform == "draftkings"
             assert ctx.locked_players[0].name.lower().startswith("yordan")
+
+    async def test_explicit_slate_id_persists(self):
+        await _seed_slate()
+        async with _TestSession() as db:
+            ctx = ConversationContext(sport="MLB", platform="draftkings")
+            ctx = await merge_conversation_context(ctx, "Use slate id 42", db)
+            assert ctx.slate_id == 42
+            href = build_optimizer_handoff_href(ctx)
+            assert "slate=42" in href
 
     async def test_platform_change_keeps_sport_and_player(self):
         await _seed_slate()

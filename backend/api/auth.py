@@ -231,3 +231,46 @@ async def get_me(
         created_at=user.created_at or datetime.now(timezone.utc),
         plan=plan,
     )
+
+
+def _oauth_provider_status() -> dict:
+    """Report whether Google/Apple OAuth credentials are actually configured.
+
+    Do not enable a live login path until these env vars are present.
+    Username login is a separate identity upgrade (see report).
+    """
+    google_id = (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or "").strip()
+    google_secret = (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or "").strip()
+    apple_id = (os.getenv("APPLE_OAUTH_CLIENT_ID") or "").strip()
+    apple_secret = (os.getenv("APPLE_OAUTH_CLIENT_SECRET") or "").strip()
+    google_ready = bool(google_id and google_secret)
+    apple_ready = bool(apple_id and apple_secret)
+    return {
+        "google": {
+            "enabled": google_ready,
+            "status": "ready" if google_ready else "pending",
+            "reason": None if google_ready else "GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are not configured.",
+        },
+        "apple": {
+            "enabled": apple_ready,
+            "status": "ready" if apple_ready else "pending",
+            "reason": None if apple_ready else "APPLE_OAUTH_CLIENT_ID and APPLE_OAUTH_CLIENT_SECRET are not configured.",
+        },
+        "password": {"enabled": True, "status": "ready"},
+        "username_login": {
+            "enabled": False,
+            "status": "pending",
+            "reason": "users.username column is not in the schema yet. Login remains email + password.",
+        },
+        "password_reset": {
+            "enabled": False,
+            "status": "pending",
+            "reason": "Forgot-password mailer is not implemented.",
+        },
+    }
+
+
+@router.get("/providers")
+async def auth_providers():
+    """Public: which sign-in methods are actually available."""
+    return _oauth_provider_status()

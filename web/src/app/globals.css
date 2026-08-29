@@ -3631,3 +3631,154 @@ body {
   .sbme-parlay-sels { grid-template-columns: 1fr; }
   .sbme-parlay-books { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Login — cinematic stadium plate matching the landing hero */
+.sbme-login-page {
+  min-height: 100vh;
+  position: relative;
+}
+.sbme-login-wrap {
+  position: relative;
+  z-index: 2;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+}
+.sbme-login-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 32px 28px 28px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(12, 18, 40, 0.82), rgba(8, 12, 28, 0.88));
+  border: 1px solid rgba(201, 168, 76, 0.22);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px);
+}
+.sbme-login-brand {
+  text-align: center;
+  margin-bottom: 22px;
+}
+.sbme-login-brand h1 {
+  margin: 10px 0 0;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #f0f6fc;
+}
+.sbme-login-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  font-size: 13px;
+}
+.sbme-login-oauth {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(10, 15, 36, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: not-allowed;
+  text-align: center;
+}
+.sbme-login-oauth span {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.sbme-login-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.sbme-login-or::before,
+.sbme-login-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #1e293b;
+}
+.sbme-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.sbme-login-form label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sbme-login-field {
+  position: relative;
+  margin-top: 6px;
+}
+.sbme-login-field svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+}
+.sbme-login-field input {
+  width: 100%;
+  padding: 12px 12px 12px 40px;
+  border-radius: 12px;
+  border: 1px solid #1e293b;
+  background: rgba(6, 11, 26, 0.85);
+  color: #f0f6fc;
+  font-size: 14px;
+  outline: none;
+}
+.sbme-login-submit {
+  margin-top: 4px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #c9a84c;
+  color: #060b1a;
+  border: none;
+  font-weight: 800;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(201, 168, 76, 0.3);
+}
+.sbme-login-submit:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+.sbme-login-forgot,
+.sbme-login-footer {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  margin-top: 16px;
+}
+.sbme-login-forgot { margin-top: 18px; font-size: 12px; color: #64748b; }
+.sbme-login-footer a {
+  color: #c9a84c;
+  font-weight: 700;
+}
