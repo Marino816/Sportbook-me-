@@ -1,86 +1,198 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Database, Search, Lock, Ban, Heart, Send, Loader2, BarChart3, Layers, X } from "lucide-react";
-import { fetchDataHubSlate, fetchDFSSlates, runSims, type CanonicalPlayer, type DFSSlateSummary } from "@/lib/api";
+import {
+  Database,
+  Search,
+  Lock,
+  Ban,
+  Heart,
+  Send,
+  Loader2,
+  X,
+  Zap,
+  ChevronRight,
+} from "lucide-react";
+import {
+  fetchDataHubSlate,
+  fetchDFSSlates,
+  fetchOptimalPct,
+  type CanonicalPlayer,
+  type DFSSlateSummary,
+} from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import { PlayerAvatar, TeamLogo } from "@/lib/assets";
 import { LastFive } from "@/lib/last-five";
 import { AppShell } from "@/components/app-shell";
+import { buildOptimizerHandoffUrl } from "@/lib/ai-session";
+import {
+  formatSlateLockTime,
+  getSlateDisplayStatus,
+  normPlayerName,
+  platformLabel,
+  type SlateDisplayStatus,
+} from "@/lib/dfs-slate-status";
 
-const SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"];
-const PLATFORMS = ["draftkings", "fanduel"];
-const POSITIONS = ["ALL", "P", "C", "1B", "2B", "3B", "SS", "OF"];
+/** DFS sports with a real slate pipeline — verified in backend/dfs/import_service.py */
+const DFS_SPORTS = ["MLB", "NFL", "NBA", "NHL", "NCAAF", "NCAAB"] as const;
+const DFS_PLATFORMS = ["draftkings", "fanduel"] as const;
+const TABLE_LIMIT = 300;
 
-const navy = "#0a0f24";
-const cardBg = "#0a0f24";
-const gold = "#c9a84c";
-const border = "#1e293b";
-const textPrimary = "#f0f6fc";
-const textSecondary = "#94a3b8";
-const textMuted = "#64748b";
+function fmtNum(v: number | null | undefined, digits = 1): string {
+  return v == null ? "—" : v.toFixed(digits);
+}
+
+function fmtProj(p: CanonicalPlayer): string {
+  return p.projection_source === "UNAVAILABLE" ? "—" : p.projected_fp.toFixed(1);
+}
+
+function fmtValue(p: CanonicalPlayer): string {
+  if (p.projection_source === "UNAVAILABLE" || !p.salary) return "—";
+  return p.value.toFixed(2);
+}
+
+function statusPillClass(status: SlateDisplayStatus): string {
+  if (status === "UNLOCKED") return "sbme-dhub-pill sbme-dhub-pill--unlocked";
+  if (status === "LOCKED") return "sbme-dhub-pill sbme-dhub-pill--locked";
+  if (status === "UPCOMING") return "sbme-dhub-pill sbme-dhub-pill--upcoming";
+  return "sbme-dhub-pill sbme-dhub-pill--stale";
+}
 
 export default function DataHubPage() {
   const router = useRouter();
   const ws = useWorkspace();
 
   const [slates, setSlates] = useState<DFSSlateSummary[]>([]);
+  const [hasStaleSlates, setHasStaleSlates] = useState(false);
   const [players, setPlayers] = useState<CanonicalPlayer[]>([]);
-  const [meta, setMeta] = useState<any>(null);
+  const [meta, setMeta] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
-  const [simLoading, setSimLoading] = useState(false);
-  const [sims, setSims] = useState<Record<string, any>>({});
+  const [slatesLoading, setSlatesLoading] = useState(false);
+  const [optPctStatus, setOptPctStatus] = useState<string>("NOT_RUN");
+  const [optPctMap, setOptPctMap] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [teamFilter, setTeamFilter] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
-
   const [drawerPlayer, setDrawerPlayer] = useState<CanonicalPlayer | null>(null);
 
-  // Resolve slate on mount / sport+platform change
+  const selectedSlate = useMemo(
+    () => slates.find((s) => s.id === ws.slateId) ?? null,
+    [slates, ws.slateId],
+  );
+
+  const selectedStatus = selectedSlate ? getSlateDisplayStatus(selectedSlate) : null;
+
+  // Load published slates — preserve valid workspace selection (optimizer-aligned)
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setSlatesLoading(true);
       setError(null);
       try {
         const res = await fetchDFSSlates(ws.platform, ws.sport);
         const published = (res?.data ?? []).filter((s) => s.status === "PUBLISHED");
+        const current = published.filter((s) => s.is_current !== false);
         if (!cancelled) {
           setSlates(published);
-          const chosen = published[0]?.id ?? null;
-          if (chosen) ws.setSlateId(chosen);
-          else ws.setSlateId(null);
+          setHasStaleSlates(published.length > current.length);
+          const existingOk = ws.slateId != null && published.some((s) => s.id === ws.slateId);
+          if (!existingOk) {
+            const pool = current.length > 0 ? current : published;
+            const main = pool.find((s) => s.slate_name.toLowerCase().includes("main"));
+            const defaultId = main?.id ?? pool[0]?.id ?? null;
+            ws.setSlateId(defaultId);
+          }
         }
-      } catch (e: any) {
-        if (!cancelled) setError(e.message || "Failed to load slates");
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load slates");
+          setSlates([]);
+          setHasStaleSlates(false);
+        }
+      } finally {
+        if (!cancelled) setSlatesLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [ws.sport, ws.platform]);
 
-  // Load canonical pool
+  // Canonical player pool
   useEffect(() => {
-    if (!ws.slateId) { setPlayers([]); setMeta(null); return; }
+    if (!ws.slateId) {
+      setPlayers([]);
+      setMeta(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setError(null);
       try {
         const res = await fetchDataHubSlate(ws.slateId!, ws.platform);
         if (!cancelled) {
           setPlayers(res?.data?.players ?? []);
           setMeta(res?.data?.metadata ?? null);
-          setSims({});
         }
-      } catch (e: any) {
-        if (!cancelled) setError(e.message || "Failed to load data hub");
+      } catch (e: unknown) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load player pool");
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [ws.slateId, ws.platform]);
+
+  // Optimal% from cached background sim (same path as Optimizer)
+  useEffect(() => {
+    if (!ws.slateId) {
+      setOptPctStatus("NOT_RUN");
+      setOptPctMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchOptimalPct(ws.slateId!, ws.platform, ws.sport);
+        if (cancelled) return;
+        const status = res?.data?.status ?? "NOT_RUN";
+        setOptPctStatus(status);
+        if (status === "COMPLETE" && res?.data?.result?.players) {
+          const m: Record<string, number> = {};
+          for (const p of res.data.result.players) {
+            const nm = normPlayerName(p.name);
+            if (nm) m[nm] = p.optimal_pct;
+          }
+          setOptPctMap(m);
+        } else {
+          setOptPctMap({});
+        }
+      } catch {
+        if (!cancelled) {
+          setOptPctStatus("NOT_RUN");
+          setOptPctMap({});
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ws.slateId, ws.platform, ws.sport]);
+
+  const positionOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of players) {
+      if (p.roster_position) s.add(p.roster_position);
+    }
+    return ["ALL", ...Array.from(s).sort()];
+  }, [players]);
 
   const teamOptions = useMemo(() => {
     const s = new Set<string>();
@@ -100,193 +212,479 @@ export default function DataHubPage() {
     });
   }, [players, posFilter, teamFilter, search]);
 
-  const runSimsForPool = async () => {
-    if (!ws.slateId) return;
-    setSimLoading(true);
-    try {
-      const res = await runSims({ slate_id: ws.slateId, platform: ws.platform, n_sims: 2000 });
-      const map: Record<string, any> = {};
-      for (const sp of res?.data?.players ?? []) {
-        map[(sp.name || "").toLowerCase()] = sp;
-      }
-      setSims(map);
-    } catch (e: any) {
-      setError(e.message || "Simulation failed");
-    } finally {
-      setSimLoading(false);
-    }
-  };
+  const projectionCoverage = useMemo(() => {
+    if (!players.length) return null;
+    const withProj = players.filter((p) => p.projection_source !== "UNAVAILABLE").length;
+    return { withProj, total: players.length };
+  }, [players]);
 
-  const fmt = (v: number | null | undefined, digits = 1) => (v == null ? "N/A" : v.toFixed(digits));
+  const optimizerHref = buildOptimizerHandoffUrl({
+    sport: ws.sport,
+    platform: ws.platform,
+    slate_id: ws.slateId,
+    slate_name: selectedSlate?.slate_name ?? null,
+    locked_players: ws.lockedIds.map((name) => ({ name })),
+  });
+
+  const metaError = meta && typeof meta.error === "string" ? meta.error : null;
+  const generatedAt = meta?.generated_at ? String(meta.generated_at) : null;
 
   return (
     <AppShell>
-    <div style={{ color: textPrimary, minHeight: "100vh" }}>
-      {/* Header */}
-      <div style={{ padding: "16px 24px", borderBottom: `1px solid ${border}`, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-        <Database size={20} style={{ color: gold }} />
-        <h1 style={{ fontSize: 20, fontWeight: 900, color: gold, margin: 0 }}>DATA HUB</h1>
-        <span style={{ color: textMuted, fontSize: 12 }}>· Canonical SB DFS Player Model · DFS sports only (not soccer / full SGO catalog)</span>
-        <div style={{ flex: 1 }} />
-        <Select label="Sport" value={ws.sport} options={SPORTS} onChange={ws.setSport} />
-        <Select label="Platform" value={ws.platform} options={PLATFORMS} onChange={ws.setPlatform} format={(v) => (v === "draftkings" ? "DraftKings" : "FanDuel")} />
-        <Select label="Slate" value={ws.slateId == null ? "" : String(ws.slateId)} options={slates.map((s) => String(s.id))} format={(v) => { const s = slates.find((x) => String(x.id) === v); return s ? `${s.sport} ${s.slate_name}` : v; }} onChange={(v) => ws.setSlateId(v ? Number(v) : null)} />
-        <span style={{ color: textMuted, fontSize: 11 }}>{meta ? `Updated ${new Date(meta.generated_at).toLocaleTimeString()}` : "—"}</span>
-      </div>
+      <div className="sbme-dhub">
+        <header className="sbme-dhub-head">
+          <span className="sbme-dhub-mark">
+            <Database size={22} />
+          </span>
+          <div>
+            <h1>Data Hub</h1>
+            <p>
+              DFS slate, player-pool, projection, and metrics workspace for DraftKings and FanDuel.
+              Canonical SB ME player model — DFS sports only (MLB, NFL, NBA, NHL, NCAAF, NCAAB).
+            </p>
+          </div>
+        </header>
 
-      {/* Filters */}
-      <div style={{ padding: "10px 24px", borderBottom: `1px solid ${border}`, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-        {POSITIONS.map((pos) => (
-          <button key={pos} onClick={() => setPosFilter(pos)} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: posFilter === pos ? `${gold}20` : cardBg, border: posFilter === pos ? `1px solid ${gold}` : `1px solid ${border}`, color: posFilter === pos ? gold : textSecondary, cursor: "pointer" }}>{pos}</button>
-        ))}
-        <Select label="Team" value={teamFilter} options={["", ...teamOptions]} onChange={setTeamFilter} />
-        <div style={{ position: "relative", flex: 1, maxWidth: 260 }}>
-          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: textMuted }} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search players..." style={{ width: "100%", padding: "6px 10px 6px 30px", borderRadius: 8, fontSize: 12, background: cardBg, border: `1px solid ${border}`, color: textPrimary, outline: "none" }} />
+        <p className="sbme-dhub-kicker">Workspace Selection</p>
+        <div className="sbme-dhub-controls">
+          <div className="sbme-dhub-ctl">
+            <span className="sbme-dhub-ctl-step">1 · Sport</span>
+            <label className="sbme-dhub-ctl-label" htmlFor="dh-sport">DFS Sport</label>
+            <select
+              id="dh-sport"
+              className="sbme-dhub-select"
+              value={ws.sport}
+              onChange={(e) => ws.setSport(e.target.value)}
+            >
+              {DFS_SPORTS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div className="sbme-dhub-ctl">
+            <span className="sbme-dhub-ctl-step">2 · Platform</span>
+            <label className="sbme-dhub-ctl-label" htmlFor="dh-platform">Platform</label>
+            <select
+              id="dh-platform"
+              className="sbme-dhub-select"
+              value={ws.platform}
+              onChange={(e) => ws.setPlatform(e.target.value)}
+            >
+              {DFS_PLATFORMS.map((p) => (
+                <option key={p} value={p}>{platformLabel(p)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="sbme-dhub-ctl">
+            <span className="sbme-dhub-ctl-step">3 · Slate</span>
+            <label className="sbme-dhub-ctl-label" htmlFor="dh-slate">Active Slate</label>
+            <select
+              id="dh-slate"
+              className="sbme-dhub-select"
+              value={ws.slateId == null ? "" : String(ws.slateId)}
+              onChange={(e) => ws.setSlateId(e.target.value ? Number(e.target.value) : null)}
+              disabled={slatesLoading || slates.length === 0}
+            >
+              {slates.length === 0 ? (
+                <option value="">No slates available</option>
+              ) : (
+                slates.map((s) => (
+                  <option key={s.id} value={String(s.id)}>
+                    {s.slate_name} · {getSlateDisplayStatus(s)}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+          <div className="sbme-dhub-ctl">
+            <span className="sbme-dhub-ctl-step">4 · Analyze</span>
+            <label className="sbme-dhub-ctl-label">Next Step</label>
+            <button
+              type="button"
+              className="sbme-dhub-btn sbme-dhub-btn--gold"
+              style={{ width: "100%", marginTop: 2 }}
+              disabled={!ws.slateId}
+              onClick={() => router.push(optimizerHref)}
+            >
+              <Send size={14} /> Open Optimizer
+            </button>
+          </div>
         </div>
-        <button onClick={runSimsForPool} disabled={simLoading || !ws.slateId} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: `${gold}15`, border: `1px solid ${gold}50`, color: gold, cursor: simLoading ? "not-allowed" : "pointer" }}>
-          {simLoading ? <Loader2 size={14} className="animate-spin" /> : <BarChart3 size={14} />} Run Sims
-        </button>
-        <button onClick={() => router.push("/optimizer")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: gold, border: "none", color: navy, cursor: "pointer" }}>
-          <Send size={14} /> Optimizer
-        </button>
-      </div>
 
-      {error && <div style={{ padding: "12px 24px", color: "#ef4444", fontSize: 13 }}>{error}</div>}
-
-      {/* Table */}
-      <div style={{ padding: "0 24px 24px", overflowX: "auto" }}>
-        {loading ? (
-          <div style={{ textAlign: "center", padding: 60, color: textMuted }}><Loader2 size={28} className="animate-spin" style={{ margin: "0 auto" }} /></div>
-        ) : players.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 60, color: textMuted }}>No published slate for {ws.sport} ({ws.platform}). Upload a contest salary CSV to populate the Data Hub.</div>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${border}`, position: "sticky", top: 0, background: navy }}>
-                {["Player", "Pos", "Team", "Opp", "Salary", "SB Proj", "My Proj", "Value", "Own%", "Leverage", "Optimal%", "Ceiling", "Floor", "Status", ""].map((h) => (
-                  <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: textMuted, textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.slice(0, 300).map((p) => {
-                const sim = sims[(p.name || "").toLowerCase()];
-                const locked = ws.lockedIds.includes(p.name);
-                const excluded = ws.excludedIds.includes(p.name);
-                const liked = ws.likedIds.includes(p.name);
-                const myProj = ws.projOverrides[p.name];
-                return (
-                  <tr key={p.id} onClick={() => setDrawerPlayer(p)} style={{ borderBottom: `1px solid ${border}40`, cursor: "pointer", background: locked ? `${gold}10` : excluded ? "rgba(239,68,68,0.05)" : "transparent", opacity: excluded ? 0.5 : 1 }}>
-                    <td style={{ padding: "8px 10px", fontWeight: 700, color: textPrimary, display: "flex", alignItems: "center", gap: 8 }}>
-                      <PlayerAvatar player={{ name: p.name, player_id: p.id }} size={22} />
-                      {p.name}
-                    </td>
-                    <td style={{ padding: "8px 10px", color: gold, fontWeight: 700, textTransform: "uppercase", fontSize: 10 }}>{p.roster_position}</td>
-                    <td style={{ padding: "8px 10px", color: textSecondary }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <TeamLogo team={{ abbreviation: p.team, name: p.team }} size={16} />
-                        {p.team}
-                      </span>
-                    </td>
-                    <td style={{ padding: "8px 10px", color: textMuted }}>{p.opponent || "—"}</td>
-                    <td style={{ padding: "8px 10px", color: textSecondary }}>${p.salary.toLocaleString()}</td>
-                    <td style={{ padding: "8px 10px", color: p.projection_source === "UNAVAILABLE" ? textMuted : gold, fontWeight: 700 }}>{p.projection_source === "UNAVAILABLE" ? "N/A" : p.projected_fp.toFixed(1)}</td>
-                    <td style={{ padding: "8px 10px" }}>
-                      <input type="number" step="0.1" value={myProj ?? p.projected_fp} onChange={(e) => ws.setProjOverride(p.name, Number(e.target.value))} onClick={(e) => e.stopPropagation()} style={{ width: 56, padding: "4px 6px", borderRadius: 6, fontSize: 11, background: cardBg, border: `1px solid ${border}`, color: textPrimary, outline: "none" }} />
-                    </td>
-                    <td style={{ padding: "8px 10px", color: gold }}>{p.value.toFixed(2)}</td>
-                    <td style={{ padding: "8px 10px", color: textSecondary }}>{fmt(p.sbme_ownership_pct, 1)}%</td>
-                    <td style={{ padding: "8px 10px", color: (p.leverage ?? 0) > 0 ? "#4ade80" : "#f87171" }}>{fmt(p.leverage, 1)}</td>
-                    <td style={{ padding: "8px 10px", color: sim ? gold : textMuted }}>{sim ? `${sim.optimal_pct.toFixed(1)}%` : "N/A"}</td>
-                    <td style={{ padding: "8px 10px", color: textSecondary }}>{fmt(p.ceiling, 1)}</td>
-                    <td style={{ padding: "8px 10px", color: textMuted }}>{fmt(p.floor, 1)}</td>
-                    <td style={{ padding: "8px 10px", color: p.mapping_status === "MATCHED" ? "#4ade80" : textMuted, fontSize: 10 }}>{p.mapping_status || "UNMATCHED"}</td>
-                    <td style={{ padding: "8px 10px" }}>
-                      <div style={{ display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                        <IconBtn title="Lock" active={locked} onClick={() => ws.toggleLock(p.name)}><Lock size={13} /></IconBtn>
-                        <IconBtn title="Exclude" active={excluded} onClick={() => ws.toggleExclude(p.name)}><Ban size={13} /></IconBtn>
-                        <IconBtn title="Like" active={liked} onClick={() => ws.toggleLike(p.name)}><Heart size={13} /></IconBtn>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        {hasStaleSlates && (
+          <div className="sbme-dhub-banner sbme-dhub-banner--warn">
+            Prior-date slates are listed for reference. Current-day slates are preferred for live analysis.
+          </div>
         )}
+
+        {error && <div className="sbme-dhub-banner sbme-dhub-banner--err">{error}</div>}
+
+        {slatesLoading ? (
+          <div className="sbme-dhub-loading"><Loader2 size={24} className="animate-spin" /></div>
+        ) : slates.length === 0 ? (
+          <div className="sbme-dhub-empty">
+            <strong>No slate data available</strong>
+            No published {ws.sport} slates for {platformLabel(ws.platform)}. Upload a contest salary CSV to populate the Data Hub.
+          </div>
+        ) : (
+          <>
+            <p className="sbme-dhub-kicker">Slate Directory</p>
+            <div className="sbme-dhub-slate-dir">
+              <table className="sbme-dhub-slate-table">
+                <thead>
+                  <tr>
+                    <th>Slate</th>
+                    <th>Platform</th>
+                    <th>Lock / Start</th>
+                    <th>Games</th>
+                    <th>Players</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {slates.map((s) => {
+                    const st = getSlateDisplayStatus(s);
+                    const isSelected = s.id === ws.slateId;
+                    return (
+                      <tr
+                        key={s.id}
+                        className={`sbme-dhub-slate-row${isSelected ? " is-selected" : ""}${st === "STALE" ? " is-stale" : ""}`}
+                        onClick={() => ws.setSlateId(s.id)}
+                      >
+                        <td>
+                          <span className="sbme-dhub-gold">{s.slate_name}</span>
+                          <span className="sbme-dhub-muted" style={{ marginLeft: 6, fontSize: 10 }}>{s.sport}</span>
+                        </td>
+                        <td>{platformLabel(s.platform)}</td>
+                        <td>{formatSlateLockTime(s.start_time)}</td>
+                        <td>{s.game_count > 0 ? s.game_count : "—"}</td>
+                        <td>{s.player_count > 0 ? s.player_count : "—"}</td>
+                        <td><span className={statusPillClass(st)}>{st}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {selectedSlate && (
+          <section className="sbme-dhub-slate-intel">
+            <div>
+              <h2 className="sbme-dhub-slate-title">{selectedSlate.slate_name}</h2>
+              <p className="sbme-dhub-slate-sub">
+                {ws.sport} · {platformLabel(selectedSlate.platform)} · Locks {formatSlateLockTime(selectedSlate.start_time)}
+                {selectedStatus && (
+                  <> · <span className={statusPillClass(selectedStatus)}>{selectedStatus}</span></>
+                )}
+              </p>
+              <div className="sbme-dhub-stat-grid">
+                <div className="sbme-dhub-stat">
+                  <div className="sbme-dhub-stat-label">Games</div>
+                  <div className="sbme-dhub-stat-val">{selectedSlate.game_count > 0 ? selectedSlate.game_count : "—"}</div>
+                </div>
+                <div className="sbme-dhub-stat">
+                  <div className="sbme-dhub-stat-label">Players</div>
+                  <div className="sbme-dhub-stat-val">
+                    {players.length > 0 ? players.length : selectedSlate.player_count > 0 ? selectedSlate.player_count : "—"}
+                  </div>
+                </div>
+                <div className="sbme-dhub-stat">
+                  <div className="sbme-dhub-stat-label">SB Projections</div>
+                  <div className="sbme-dhub-stat-val">
+                    {projectionCoverage
+                      ? projectionCoverage.withProj === projectionCoverage.total
+                        ? `${projectionCoverage.withProj} / ${projectionCoverage.total}`
+                        : `${projectionCoverage.withProj} / ${projectionCoverage.total} (partial)`
+                      : loading ? "…" : "—"}
+                  </div>
+                </div>
+                <div className="sbme-dhub-stat">
+                  <div className="sbme-dhub-stat-label">Optimal%</div>
+                  <div className="sbme-dhub-stat-val">
+                    {optPctStatus === "COMPLETE" ? "Available"
+                      : optPctStatus === "LOCKED" ? "Locked slate"
+                      : optPctStatus === "RUNNING" || optPctStatus === "QUEUED" ? "Calculating…"
+                      : optPctStatus === "FAILED" ? "Unavailable"
+                      : "Not run"}
+                  </div>
+                </div>
+                <div className="sbme-dhub-stat">
+                  <div className="sbme-dhub-stat-label">Pool Updated</div>
+                  <div className="sbme-dhub-stat-val" style={{ fontSize: 11 }}>
+                    {generatedAt ? new Date(generatedAt).toLocaleTimeString() : "—"}
+                  </div>
+                </div>
+              </div>
+              {metaError && (
+                <p className="sbme-dhub-muted" style={{ fontSize: 11, marginTop: 10 }}>{metaError}</p>
+              )}
+            </div>
+            <div className="sbme-dhub-actions">
+              <button type="button" className="sbme-dhub-btn sbme-dhub-btn--gold" onClick={() => router.push(optimizerHref)}>
+                <Send size={14} /> Open Optimizer
+              </button>
+              <Link href="/ai" className="sbme-dhub-btn">
+                <Zap size={14} /> SB ME Intelligence
+              </Link>
+            </div>
+          </section>
+        )}
+
+        {ws.slateId && (
+          <>
+            <div className="sbme-dhub-toolbar">
+              {positionOptions.map((pos) => (
+                <button
+                  key={pos}
+                  type="button"
+                  className={`sbme-dhub-pos-chip${posFilter === pos ? " is-on" : ""}`}
+                  onClick={() => setPosFilter(pos)}
+                >
+                  {pos}
+                </button>
+              ))}
+              <select
+                className="sbme-dhub-select"
+                style={{ width: "auto", minWidth: 100 }}
+                value={teamFilter}
+                onChange={(e) => setTeamFilter(e.target.value)}
+              >
+                <option value="">All teams</option>
+                {teamOptions.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <div className="sbme-dhub-search">
+                <Search size={14} className="sbme-dhub-search-icon" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search players…"
+                />
+              </div>
+              <span className="sbme-dhub-count">
+                {filtered.length} player{filtered.length !== 1 ? "s" : ""}
+                {filtered.length > TABLE_LIMIT ? ` · showing ${TABLE_LIMIT}` : ""}
+              </span>
+            </div>
+
+            <div className="sbme-dhub-table-wrap">
+              {loading ? (
+                <div className="sbme-dhub-loading"><Loader2 size={28} className="animate-spin" /></div>
+              ) : players.length === 0 ? (
+                <div className="sbme-dhub-empty">
+                  <strong>No player pool</strong>
+                  {metaError
+                    ? metaError
+                    : "This slate has no published player data yet, or the pool is below the minimum size."}
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="sbme-dhub-empty">No players match the current filters.</div>
+              ) : (
+                <table className="sbme-dhub-table">
+                  <thead>
+                    <tr>
+                      {["Player", "Pos", "Team", "Opp", "Salary", "FPPG", "SB Proj", "My Proj", "Value", "SB Own%", "Lev", "Opt%", "Ceil", "Floor", "Map", ""].map((h) => (
+                        <th key={h || "act"}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.slice(0, TABLE_LIMIT).map((p) => {
+                      const locked = ws.lockedIds.includes(p.name);
+                      const excluded = ws.excludedIds.includes(p.name);
+                      const liked = ws.likedIds.includes(p.name);
+                      const myProj = ws.projOverrides[p.name];
+                      const optPct = optPctMap[normPlayerName(p.name)] ?? null;
+                      const hasProj = p.projection_source !== "UNAVAILABLE";
+                      return (
+                        <tr
+                          key={p.id}
+                          className={`${locked ? "is-locked" : ""}${excluded ? " is-excluded" : ""}`}
+                          onClick={() => setDrawerPlayer(p)}
+                        >
+                          <td>
+                            <div className="sbme-dhub-player">
+                              <PlayerAvatar player={{ name: p.name, player_id: p.id }} size={22} />
+                              {p.name}
+                              {liked && <Heart size={11} style={{ color: "#c9a84c", fill: "#c9a84c" }} />}
+                            </div>
+                          </td>
+                          <td className="sbme-dhub-gold" style={{ fontSize: 10, textTransform: "uppercase" }}>{p.roster_position || "—"}</td>
+                          <td>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <TeamLogo team={{ abbreviation: p.team, name: p.team }} size={16} />
+                              {p.team || "—"}
+                            </span>
+                          </td>
+                          <td className="sbme-dhub-muted">{p.opponent || "—"}</td>
+                          <td>{p.salary ? `$${p.salary.toLocaleString()}` : "—"}</td>
+                          <td className="sbme-dhub-muted">{p.fppg != null ? p.fppg.toFixed(1) : "—"}</td>
+                          <td className={hasProj ? "sbme-dhub-gold" : "sbme-dhub-na"}>{fmtProj(p)}</td>
+                          <td>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={myProj != null ? myProj : hasProj ? p.projected_fp : ""}
+                              placeholder={hasProj ? "" : "N/A"}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === "") return;
+                                const n = Number(v);
+                                if (Number.isFinite(n)) ws.setProjOverride(p.name, n);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                width: 52,
+                                padding: "3px 5px",
+                                borderRadius: 6,
+                                fontSize: 11,
+                                background: "rgba(10,15,36,0.9)",
+                                border: "1px solid rgba(30,41,59,0.95)",
+                                color: "#f0f6fc",
+                                outline: "none",
+                              }}
+                            />
+                          </td>
+                          <td className={hasProj ? "sbme-dhub-gold" : "sbme-dhub-na"}>{fmtValue(p)}</td>
+                          <td className="sbme-dhub-muted">{fmtNum(p.sbme_ownership_pct, 1)}{p.sbme_ownership_pct != null ? "%" : ""}</td>
+                          <td className={p.leverage == null ? "sbme-dhub-muted" : p.leverage > 0 ? "sbme-dhub-lev-up" : "sbme-dhub-lev-down"}>
+                            {fmtNum(p.leverage, 1)}
+                          </td>
+                          <td className={optPct != null ? "sbme-dhub-gold" : "sbme-dhub-na"}>
+                            {optPct != null
+                              ? `${optPct.toFixed(1)}%`
+                              : optPctStatus === "LOCKED"
+                                ? "—"
+                                : optPctStatus === "RUNNING" || optPctStatus === "QUEUED"
+                                  ? "…"
+                                  : "—"}
+                          </td>
+                          <td className="sbme-dhub-muted">{hasProj ? fmtNum(p.ceiling, 1) : "—"}</td>
+                          <td className="sbme-dhub-muted">{hasProj ? fmtNum(p.floor, 1) : "—"}</td>
+                          <td style={{ fontSize: 10, color: p.mapping_status === "MATCHED" ? "#4ade80" : "#64748b" }}>
+                            {p.mapping_status || "—"}
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                              <IconBtn title="Lock" active={locked} onClick={() => ws.toggleLock(p.name)}><Lock size={13} /></IconBtn>
+                              <IconBtn title="Exclude" active={excluded} onClick={() => ws.toggleExclude(p.name)}><Ban size={13} /></IconBtn>
+                              <IconBtn title="Like" active={liked} onClick={() => ws.toggleLike(p.name)}><Heart size={13} /></IconBtn>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </>
+        )}
+
+        {!ws.slateId && slates.length > 0 && (
+          <div className="sbme-dhub-empty">
+            <strong>Select a slate</strong>
+            Choose a sport, platform, and slate above to inspect the player pool and projections.
+          </div>
+        )}
+
+        <Link href="/ai" className="sbme-dhub-intel">
+          <span className="sbme-dhub-intel-icon"><Zap size={18} /></span>
+          <span className="sbme-dhub-intel-copy">
+            <span className="sbme-dhub-intel-title">SB ME Intelligence™</span>
+            <p>Ask about DFS slate metrics, projections, and market context — uses the canonical conversation context.</p>
+          </span>
+          <ChevronRight size={18} style={{ color: "#c9a84c", flexShrink: 0 }} />
+        </Link>
       </div>
 
-      {/* Intelligence Drawer */}
       {drawerPlayer && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 60, display: "flex", justifyContent: "flex-end" }} onClick={() => setDrawerPlayer(null)}>
-          <div style={{ width: 380, maxWidth: "90vw", background: cardBg, height: "100%", padding: 24, overflowY: "auto", borderLeft: `1px solid ${border}` }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, color: gold, margin: 0 }}>{drawerPlayer.name}</h2>
-              <button onClick={() => setDrawerPlayer(null)} style={{ background: "none", border: "none", color: textSecondary, cursor: "pointer" }}><X size={18} /></button>
+        <div className="sbme-dhub-drawer-backdrop" onClick={() => setDrawerPlayer(null)}>
+          <div className="sbme-dhub-drawer" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2>{drawerPlayer.name}</h2>
+              <button type="button" onClick={() => setDrawerPlayer(null)} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-              <Stat label="Team" value={`${drawerPlayer.team} vs ${drawerPlayer.opponent || "—"}`} />
-              <Stat label="Position" value={drawerPlayer.roster_position} />
-              <Stat label="Salary" value={`$${drawerPlayer.salary.toLocaleString()}`} />
-              <Stat label="SB Projection" value={drawerPlayer.projection_source === "UNAVAILABLE" ? "N/A" : drawerPlayer.projected_fp.toFixed(1)} />
-              <Stat label="Value" value={drawerPlayer.value.toFixed(2)} />
-              <Stat label="Ownership" value={`${fmt(drawerPlayer.sbme_ownership_pct, 1)}%`} />
-              <Stat label="Leverage" value={fmt(drawerPlayer.leverage, 1)} />
-              <Stat label="Ceiling / Floor" value={`${fmt(drawerPlayer.ceiling, 0)} / ${fmt(drawerPlayer.floor, 0)}`} />
-              <Stat label="Projection Source" value={drawerPlayer.projection_source} />
-              <Stat label="Game total (SB ME)" value={drawerPlayer.sbme_game_total != null ? String(drawerPlayer.sbme_game_total) : "N/A"} />
-              <Stat label="Implied team total (SB ME)" value={drawerPlayer.sbme_implied_team_total != null ? String(drawerPlayer.sbme_implied_team_total) : "N/A"} />
-              <Stat label="Hits O/U" value={drawerPlayer.sgo_prop_lines?.hits_line != null ? String(drawerPlayer.sgo_prop_lines.hits_line) : "N/A"} />
-              <Stat label="HR O/U" value={drawerPlayer.sgo_prop_lines?.hr_line != null ? String(drawerPlayer.sgo_prop_lines.hr_line) : "N/A"} />
-              <Stat label="K O/U" value={drawerPlayer.sgo_prop_lines?.strikeouts_line != null ? String(drawerPlayer.sgo_prop_lines.strikeouts_line) : "N/A"} />
+            <div className="sbme-dhub-drawer-grid">
+              <DrawerStat label="Matchup" value={`${drawerPlayer.team} vs ${drawerPlayer.opponent || "—"}`} />
+              <DrawerStat label="Position" value={drawerPlayer.roster_position || "—"} />
+              <DrawerStat label="Salary" value={drawerPlayer.salary ? `$${drawerPlayer.salary.toLocaleString()}` : "—"} />
+              <DrawerStat label="FPPG" value={drawerPlayer.fppg != null ? drawerPlayer.fppg.toFixed(1) : "—"} />
+              <DrawerStat label="SB Projection" value={fmtProj(drawerPlayer)} />
+              <DrawerStat label="Value" value={fmtValue(drawerPlayer)} />
+              <DrawerStat label="SB Own%" value={drawerPlayer.sbme_ownership_pct != null ? `${fmtNum(drawerPlayer.sbme_ownership_pct, 1)}%` : "—"} />
+              <DrawerStat label="Leverage" value={fmtNum(drawerPlayer.leverage, 1)} />
+              <DrawerStat label="Ceiling / Floor" value={drawerPlayer.projection_source !== "UNAVAILABLE" ? `${fmtNum(drawerPlayer.ceiling, 0)} / ${fmtNum(drawerPlayer.floor, 0)}` : "—"} />
+              <DrawerStat label="Projection Source" value={drawerPlayer.projection_source || "—"} />
+              <DrawerStat label="Game Total" value={drawerPlayer.sbme_game_total != null ? String(drawerPlayer.sbme_game_total) : "—"} />
+              <DrawerStat label="Implied Team Total" value={drawerPlayer.sbme_implied_team_total != null ? String(drawerPlayer.sbme_implied_team_total) : "—"} />
+              {drawerPlayer.sgo_prop_lines?.hits_line != null && (
+                <DrawerStat label="Hits O/U" value={String(drawerPlayer.sgo_prop_lines.hits_line)} />
+              )}
+              {drawerPlayer.sgo_prop_lines?.hr_line != null && (
+                <DrawerStat label="HR O/U" value={String(drawerPlayer.sgo_prop_lines.hr_line)} />
+              )}
+              {drawerPlayer.sgo_prop_lines?.strikeouts_line != null && (
+                <DrawerStat label="K O/U" value={String(drawerPlayer.sgo_prop_lines.strikeouts_line)} />
+              )}
             </div>
             {drawerPlayer.sbme_environment_note && (
-              <p style={{ fontSize: 10, color: textMuted, marginBottom: 12 }}>{drawerPlayer.sbme_environment_note}</p>
+              <p className="sbme-dhub-muted" style={{ fontSize: 10, marginBottom: 12 }}>{drawerPlayer.sbme_environment_note}</p>
             )}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
               <ActionBtn label={ws.lockedIds.includes(drawerPlayer.name) ? "Unlock" : "Lock"} icon={<Lock size={14} />} onClick={() => ws.toggleLock(drawerPlayer.name)} />
               <ActionBtn label={ws.excludedIds.includes(drawerPlayer.name) ? "Un-exclude" : "Exclude"} icon={<Ban size={14} />} onClick={() => ws.toggleExclude(drawerPlayer.name)} />
               <ActionBtn label={ws.likedIds.includes(drawerPlayer.name) ? "Unlike" : "Like"} icon={<Heart size={14} />} onClick={() => ws.toggleLike(drawerPlayer.name)} />
-              <ActionBtn label="Send to Optimizer" icon={<Send size={14} />} gold onClick={() => { ws.toggleLock(drawerPlayer.name); router.push("/optimizer"); }} />
+              <ActionBtn label="Open Optimizer" icon={<Send size={14} />} gold onClick={() => router.push(optimizerHref)} />
             </div>
-            <LastFive player={{ name: drawerPlayer.name, player_id: drawerPlayer.sgo_player_id || drawerPlayer.id, sgo_player_id: drawerPlayer.sgo_player_id, team: drawerPlayer.team, sport: ws.sport, slate_id: ws.slateId ?? undefined }} platform={ws.platform} />
+            <LastFive
+              player={{
+                name: drawerPlayer.name,
+                player_id: drawerPlayer.sgo_player_id || drawerPlayer.id,
+                sgo_player_id: drawerPlayer.sgo_player_id,
+                team: drawerPlayer.team,
+                sport: ws.sport,
+                slate_id: ws.slateId ?? undefined,
+              }}
+              platform={ws.platform}
+            />
           </div>
         </div>
       )}
-    </div>
     </AppShell>
-  );
-}
-
-function Select({ label, value, options, onChange, format }: { label: string; value: string; options: string[]; onChange: (v: string) => void; format?: (v: string) => string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: textMuted, textTransform: "uppercase" }}>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={{ padding: "7px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: cardBg, border: `1px solid ${border}`, color: gold, cursor: "pointer" }}>
-        {options.map((o) => <option key={o} value={o}>{format ? format(o) : o}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ padding: "10px 12px", borderRadius: 10, background: "#10162f", border: `1px solid ${border}` }}>
-      <div style={{ fontSize: 10, color: textMuted, textTransform: "uppercase", fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 800, color: textPrimary, marginTop: 2 }}>{value}</div>
-    </div>
   );
 }
 
 function IconBtn({ title, active, onClick, children }: { title: string; active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button title={title} onClick={onClick} style={{ padding: 4, borderRadius: 6, background: active ? `${gold}30` : "transparent", border: active ? `1px solid ${gold}` : "1px solid transparent", cursor: "pointer", color: active ? gold : textMuted, display: "flex" }}>{children}</button>
+    <button type="button" title={title} onClick={onClick} className={`sbme-dhub-icon-btn${active ? " is-on" : ""}`}>
+      {children}
+    </button>
+  );
+}
+
+function DrawerStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="sbme-dhub-drawer-stat">
+      <div className="sbme-dhub-drawer-stat-label">{label}</div>
+      <div className="sbme-dhub-drawer-stat-val">{value}</div>
+    </div>
   );
 }
 
 function ActionBtn({ label, icon, onClick, gold: isGold }: { label: string; icon: React.ReactNode; onClick: () => void; gold?: boolean }) {
   return (
-    <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 700, background: isGold ? gold : cardBg, border: isGold ? "none" : `1px solid ${border}`, color: isGold ? navy : textSecondary, cursor: "pointer" }}>{icon}{label}</button>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`sbme-dhub-btn${isGold ? " sbme-dhub-btn--gold" : ""}`}
+    >
+      {icon}{label}
+    </button>
   );
 }

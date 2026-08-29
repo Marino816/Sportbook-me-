@@ -7,7 +7,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/safe-return-path.test.mjs tests/api-base-url.test.mjs tests/batch5-product.test.mjs tests/ai-session.test.mjs tests/voice-input.test.mjs"
+    "test": "node --test tests/safe-return-path.test.mjs tests/api-base-url.test.mjs tests/batch5-product.test.mjs tests/ai-session.test.mjs tests/voice-input.test.mjs tests/dfs-slate-status.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.96.1",
