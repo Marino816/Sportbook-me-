@@ -769,39 +769,48 @@ export default function OptimizerPage() {
         <div className="sbme-opt-metric"><b>{selectedSlate?.data_source || "—"}</b><span>Data source</span></div>
       </div>
 
-      {resolvedSlateId == null && (
-        <div className="sbme-opt-banner" role="status">
-          <h3>NO ACTIVE DFS SLATE</h3>
-          <p>
-            No DFS slate currently available. No valid {platform === "draftkings" ? "DraftKings" : "FanDuel"} slate is currently available for this sport.
-            Upcoming games are schedule intelligence only. Optimization will activate when a valid DFS slate is available.
-          </p>
-        </div>
-      )}
-      {resolvedSlateId != null && (
-        <div className="sbme-opt-rail-wrap sbme-opt-rail-wrap--slate">
-          <div className="sbme-opt-rail-head">
-            <h2>SLATE GAMES</h2>
-            <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" className="sbme-opt-ghost" onClick={selectAllGames}>SELECT ALL</button>
-              <button type="button" className="sbme-opt-ghost" onClick={removeAllGames} style={{ color: "#ef4444" }}>REMOVE ALL</button>
+      <section className="sbme-opt-schedule" aria-label="Schedule intelligence">
+        {resolvedSlateId == null && (
+          <div className="sbme-opt-banner" role="status">
+            <h3>NO ACTIVE DFS SLATE</h3>
+            <p>
+              No DFS slate currently available. No valid {platform === "draftkings" ? "DraftKings" : "FanDuel"} slate is currently available for this sport.
+              Upcoming games are schedule intelligence only. Optimization will activate when a valid DFS slate is available.
+            </p>
+          </div>
+        )}
+        {resolvedSlateId != null && (
+          <div className="sbme-opt-rail-wrap sbme-opt-rail-wrap--slate">
+            <div className="sbme-opt-rail-head">
+              <h2>SLATE GAMES</h2>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button type="button" className="sbme-opt-ghost" onClick={selectAllGames}>SELECT ALL</button>
+                <button type="button" className="sbme-opt-ghost" onClick={removeAllGames} style={{ color: "#ef4444" }}>REMOVE ALL</button>
+              </div>
+            </div>
+            <div className="sbme-opt-rail">
+              {filteredEvents.length === 0 ? (
+                <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>No games attached to this slate yet. SGO schedule alone is not a slate.</span>
+              ) : filteredEvents.slice(0, 20).map((e) => {
+                const excluded = excludedGameIds.has(e.id);
+                return (
+                  <button type="button" key={e.id} onClick={() => toggleGame(e.id)} className={`sbme-opt-game${excluded ? " is-off" : ""}`}>
+                    {e.away_team?.abbreviation || "AWY"} @ {e.home_team?.abbreviation || "HOM"}
+                    <time>{e.start_time ? new Date(e.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</time>
+                  </button>
+                );
+              })}
             </div>
           </div>
-          <div className="sbme-opt-rail">
-            {filteredEvents.length === 0 ? (
-              <span style={{ fontSize: 11, color: "#64748b", padding: "8px 0" }}>No games attached to this slate yet. SGO schedule alone is not a slate.</span>
-            ) : filteredEvents.slice(0, 20).map((e) => {
-              const excluded = excludedGameIds.has(e.id);
-              return (
-                <button type="button" key={e.id} onClick={() => toggleGame(e.id)} className={`sbme-opt-game${excluded ? " is-off" : ""}`}>
-                  {e.away_team?.abbreviation || "AWY"} @ {e.home_team?.abbreviation || "HOM"}
-                  <time>{e.start_time ? new Date(e.start_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</time>
-                </button>
-              );
-            })}
+        )}
+        <div className="sbme-opt-rail-wrap sbme-opt-rail-wrap--sched">
+          <div className="sbme-opt-rail-head">
+            <h2>UPCOMING SCHEDULE</h2>
+            <p className="sbme-opt-rail-note">{SCHEDULE_INTEL_NOTE}</p>
           </div>
+          <ScheduleChips events={scheduleEvents} />
         </div>
-      )}
+      </section>
 
       <div className="sbme-opt-workspace">
         <section className="sbme-opt-pool" aria-label="Player pool">
@@ -1081,14 +1090,6 @@ export default function OptimizerPage() {
             </div>
           )}
         </aside>
-      </div>
-
-      <div className="sbme-opt-rail-wrap sbme-opt-rail-wrap--sched">
-        <div className="sbme-opt-rail-head">
-          <h2>UPCOMING SCHEDULE</h2>
-          <p className="sbme-opt-rail-note">{SCHEDULE_INTEL_NOTE}</p>
-        </div>
-        <ScheduleChips events={scheduleEvents} />
       </div>
 
       <div className="sbme-opt-lower">

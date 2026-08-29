@@ -4174,6 +4174,10 @@ body {
 }
 .sbme-opt-banner p { margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5; }
 
+.sbme-opt-schedule { min-width: 0; margin-bottom: 14px; }
+.sbme-opt-schedule .sbme-opt-banner { margin-bottom: 10px; }
+.sbme-opt-schedule .sbme-opt-rail-wrap { margin-bottom: 10px; }
+.sbme-opt-schedule .sbme-opt-rail-wrap:last-child { margin-bottom: 0; }
 .sbme-opt-rail-wrap { margin-bottom: 14px; }
 .sbme-opt-rail-wrap--sched {
   padding: 12px 14px 10px;
@@ -4521,11 +4525,11 @@ body {
 @media (max-width: 1100px) {
   .sbme-opt { display: flex; flex-direction: column; }
   .sbme-opt-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sbme-opt-schedule { order: 0; }
   .sbme-opt-workspace { grid-template-columns: 1fr; order: 1; }
   .sbme-opt-builder { position: static; order: -1; }
-  .sbme-opt-rail-wrap--slate { order: 2; }
-  .sbme-opt-rail-wrap--sched { order: 3; }
-  .sbme-opt-lower { grid-template-columns: 1fr; order: 4; }
+  .sbme-opt-pool { order: 0; }
+  .sbme-opt-lower { grid-template-columns: 1fr; order: 2; }
 }
 @media (max-width: 720px) {
   .sbme-opt { padding: 12px 12px 40px; }
