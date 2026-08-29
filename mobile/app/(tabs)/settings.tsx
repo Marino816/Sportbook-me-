@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert } from "react-native";
 import { router } from "expo-router";
-import { clearToken } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 
 export default function SettingsScreen() {
+  const { signOut } = useAuth();
   const [notifications, setNotifications] = useState(true);
   const [biometric, setBiometric] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
@@ -11,7 +12,7 @@ export default function SettingsScreen() {
   async function handleLogout() {
     Alert.alert("Sign Out", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: async () => { await clearToken(); router.replace("/"); } },
+      { text: "Sign Out", style: "destructive", onPress: async () => { await signOut(); router.replace("/"); } },
     ]);
   }
 

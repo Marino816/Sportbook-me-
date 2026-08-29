@@ -3,13 +3,11 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LogoText } from "../../components/Logo";
-import { getToken } from "../../lib/api";
-
-const API_URL = "https://sportbook-me-production.up.railway.app/api";
+import { getMe } from "../../lib/api";
 
 const ACTIONS = [
   { id: "best", icon: "sparkles", label: "Build Best\nLineup", route: "/(tabs)/optimizer" },
-  { id: "parlay", icon: "sword", label: "Parlay\nBuilder", route: "/(tabs)/market-tools/parlay" as any },
+  { id: "parlay", icon: "layers", label: "Parlay\nBuilder", route: "/(tabs)/market-tools/parlay" as any },
   { id: "cash", icon: "shield-checkmark", label: "Cash\nLineup", route: "/(tabs)/optimizer" },
   { id: "gpp", icon: "rocket", label: "GPP\nLineup", route: "/(tabs)/optimizer" },
   { id: "slate", icon: "analytics", label: "Slate\nSummary", route: "/(tabs)/optimizer" },
@@ -31,26 +29,19 @@ export default function DashboardScreen() {
 
   useFocusEffect(useCallback(() => {
     (async () => {
-      const token = await getToken();
-      if (!token) return;
       try {
-        const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
-        const data = await res.json();
-        setUser(data.data || data);
+        const data = await getMe();
+        setUser((data as any).data || data);
       } catch {}
     })();
   }, []));
 
   const onRefresh = async () => {
     setRefreshing(true);
-    const token = await getToken();
-    if (token) {
-      try {
-        const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
-        const data = await res.json();
-        setUser(data.data || data);
-      } catch {}
-    }
+    try {
+      const data = await getMe();
+      setUser((data as any).data || data);
+    } catch {}
     setRefreshing(false);
   };
 
@@ -97,7 +88,7 @@ export default function DashboardScreen() {
         <TouchableOpacity style={s.parlayCard} onPress={() => router.push("/(tabs)/market-tools/parlay" as any)}>
           <View style={s.parlayTop}>
             <View style={s.parlayIconWrap}>
-              <Ionicons name="sword" size={16} color="#c9a84c" />
+              <Ionicons name="layers" size={16} color="#c9a84c" />
             </View>
             <View style={{ flex: 1 }}><Text style={s.parlayTitle}>BUILD YOUR PARLAY</Text></View>
           </View>

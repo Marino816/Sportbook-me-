@@ -3,9 +3,14 @@
  * Uses the canonical backend endpoint POST /api/ai/chat (same as web).
  */
 
-import { getToken } from "./api";
+import { getApiUrl, getToken } from "./api";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://sportbook-me-production.up.railway.app/api";
+export interface AIPreferences {
+  preferred_sport: string;
+  preferred_contest: string;
+  risk_tolerance: string;
+  salary_utilization: string;
+}
 
 export interface AIChatContext {
   sport?: string | null;
@@ -46,7 +51,7 @@ export async function sendAIChat(
   context?: AIChatContext,
 ): Promise<AIMessage> {
   const token = await getToken();
-  const res = await fetch(`${API_URL}/ai/chat`, {
+  const res = await fetch(`${getApiUrl()}/ai/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({
@@ -76,7 +81,7 @@ export async function sendAIChat(
 // ── Strategy Mode (still backed by /assistant/strategy-mode) ──
 export async function setStrategyMode(mode: string) {
   const token = await getToken();
-  const res = await fetch(`${API_URL}/assistant/strategy-mode`, {
+  const res = await fetch(`${getApiUrl()}/assistant/strategy-mode`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ mode }),

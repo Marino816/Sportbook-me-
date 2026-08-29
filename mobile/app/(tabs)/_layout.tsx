@@ -1,7 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
+import { useAuth } from "../../lib/auth";
 
 export default function TabLayout() {
+  const { status } = useAuth();
+  if (status === "loading") return null;
+  if (status === "unauthenticated") return <Redirect href="/" />;
+
   return (
     <Tabs screenOptions={{
       headerStyle: { backgroundColor: "#060b1a" },

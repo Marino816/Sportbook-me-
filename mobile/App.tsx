@@ -1,3 +1,8 @@
+/**
+ * LEGACY / UNUSED prototype.
+ * The live application is Expo Router (`package.json` main: expo-router/entry, `mobile/app/**`).
+ * Do not import this file or `mobile/src/**` into the active app.
+ */
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';

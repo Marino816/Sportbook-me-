@@ -1,3 +1,7 @@
+/**
+ * LEGACY / UNUSED.
+ * Expo does not load this file. The live entry is `expo-router/entry` → `mobile/app/_layout.tsx`.
+ */
 import { registerRootComponent } from 'expo';
 
 import App from './App';

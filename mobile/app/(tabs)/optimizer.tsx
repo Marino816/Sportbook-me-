@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Alert, Modal } from "react-native";
-import { getToken } from "../../lib/api";
+import { getApiUrl, getToken } from "../../lib/api";
 
-const API_URL = "https://sportbook-me-production.up.railway.app/api";
+const API_URL = getApiUrl();
 
 export default function OptimizerScreen() {
   const [sport, setSport] = useState("mlb");

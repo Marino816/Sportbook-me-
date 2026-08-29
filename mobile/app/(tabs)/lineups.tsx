@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { getToken } from "../../lib/api";
+import { getApiUrl, getToken } from "../../lib/api";
 
-const API_URL = "https://sportbook-me-production.up.railway.app/api";
+const API_URL = getApiUrl();
 
 export default function LineupsScreen() {
   const [history, setHistory] = useState<any[]>([]);

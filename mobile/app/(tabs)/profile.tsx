@@ -1,22 +1,24 @@
 import { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { router } from "expo-router";
-import { getMe, clearToken } from "../../lib/api";
+import { getMe } from "../../lib/api";
+import { useAuth } from "../../lib/auth";
 
 export default function ProfileScreen() {
+  const { signOut } = useAuth();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      try { const r = await getMe(); setUser(r.data || r); } catch {} finally { setLoading(false); }
+      try { const r = await getMe(); setUser((r as any).data || r); } catch {} finally { setLoading(false); }
     })();
   }, []);
 
   async function handleLogout() {
     Alert.alert("Sign Out", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: async () => { await clearToken(); router.replace("/"); } },
+      { text: "Sign Out", style: "destructive", onPress: async () => { await signOut(); router.replace("/"); } },
     ]);
   }
 
