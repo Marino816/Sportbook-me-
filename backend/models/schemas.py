@@ -83,13 +83,19 @@ class LineupResponse(BaseModel):
 # ── Authentication schemas ──────────────────────────────────
 
 class UserRegisterRequest(BaseModel):
+    username: str
     email: str
     password: str
 
 
 class UserLoginRequest(BaseModel):
-    email: str
     password: str
+    identifier: Optional[str] = None
+    email: Optional[str] = None
+
+
+class UsernameClaimRequest(BaseModel):
+    username: str
 
 
 class TokenResponse(BaseModel):
@@ -98,6 +104,7 @@ class TokenResponse(BaseModel):
     plan: str = "Starter"
     email: str
     role: str = "user"
+    username: Optional[str] = None
 
 
 class UserResponse(BaseModel):
@@ -108,6 +115,7 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     plan: str = "Starter"
+    username: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

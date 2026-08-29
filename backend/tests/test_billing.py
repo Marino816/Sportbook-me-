@@ -49,7 +49,7 @@ async def client():
 
 
 async def _register_and_login(client, email):
-    await client.post("/api/auth/register", json={"email": email, "password": "securepass123"})
+    await client.post("/api/auth/register", json={"email": email, "username": "".join(ch for ch in email.split("@")[0] if ch.isalnum())[:24].ljust(3,"x"), "password": "securepass123"})
     res = await client.post("/api/auth/login", json={"email": email, "password": "securepass123"})
     return res.json()["access_token"]
 

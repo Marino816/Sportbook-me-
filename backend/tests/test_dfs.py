@@ -186,7 +186,7 @@ async def _opt_reset_db():
 
 
 async def _opt_login(client, email="fresh@test.com"):
-    await client.post("/api/auth/register", json={"email": email, "password": "securepass123"})
+    await client.post("/api/auth/register", json={"email": email, "username": "".join(ch for ch in email.split("@")[0] if ch.isalnum())[:24].ljust(3,"x"), "password": "securepass123"})
     r = await client.post("/api/auth/login", json={"email": email, "password": "securepass123"})
     return r.json()["access_token"]
 

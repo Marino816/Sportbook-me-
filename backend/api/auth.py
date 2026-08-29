@@ -11,18 +11,32 @@ Provides:
 import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from collections import defaultdict
+from time import time
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from identity import (
+    INVALID_LOGIN,
+    assign_username,
+    find_user_by_email,
+    find_user_for_login,
+    normalize_email,
+    username_format_ok,
+    username_is_taken,
+    validate_username,
+)
 from models.database import get_db
 from models.domain import User, Subscription
 from models.schemas import (
     UserRegisterRequest,
     UserLoginRequest,
+    UsernameClaimRequest,
     TokenResponse,
     UserResponse,
     MessageResponse,
@@ -115,105 +129,20 @@ async def require_admin(
 
 # ── Endpoints ────────────────────────────────────────────────
 
-@router.post("/register", response_model=TokenResponse)
-async def register(
-    body: UserRegisterRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Register a new user account."""
-    # Check for duplicate email
-    result = await db.execute(select(User).where(User.email == body.email))
-    existing = result.scalars().first()
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A user with this email already exists",
-        )
-
-    # Validate password length
-    if len(body.password) < 8:
+def _password_byte_errors(password: str) -> None:
+    if len(password) < 8:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Password must be at least 8 characters",
         )
-
-    # bcrypt has a hard limit of 72 bytes — validate based on UTF-8 byte
-    # length (not character count) so multibyte passwords are measured
-    # correctly, and reject early with a 422 instead of letting bcrypt
-    # raise a ValueError that would otherwise surface as a 500.
-    password_byte_length = len(body.password.encode("utf-8"))
-    if password_byte_length > 72:
+    if len(password.encode("utf-8")) > 72:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Password must not exceed 72 bytes when UTF-8 encoded",
         )
 
-    user = User(
-        email=body.email,
-        hashed_password=hash_password(body.password),
-        is_pro=False,
-        is_active=True,
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
 
-    token = create_access_token({"sub": str(user.id), "role": user.role})
-    return TokenResponse(
-        access_token=token,
-        plan="Starter",
-        email=user.email,
-        role=user.role,
-    )
-
-
-@router.post("/login", response_model=TokenResponse)
-async def login(
-    body: UserLoginRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Authenticate with email and password."""
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalars().first()
-
-    if user is None or not verify_password(body.password, user.hashed_password or ""):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is disabled",
-        )
-
-    token = create_access_token({"sub": str(user.id), "role": user.role})
-
-    # Determine plan name
-    plan = "Starter"
-    if user.active_subscription_id:
-        sub_result = await db.execute(
-            select(Subscription).where(Subscription.id == user.active_subscription_id)
-        )
-        sub = sub_result.scalars().first()
-        if sub:
-            plan = sub.plan_name
-
-    return TokenResponse(
-        access_token=token,
-        plan=plan,
-        email=user.email,
-        role=user.role,
-    )
-
-
-@router.get("/me", response_model=UserResponse)
-async def get_me(
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Return the current authenticated user's profile, including plan."""
+async def _plan_for_user(db: AsyncSession, user: User) -> str:
     plan = "Starter"
     if user.active_subscription_id:
         sub_result = await db.execute(
@@ -222,50 +151,193 @@ async def get_me(
         sub = sub_result.scalars().first()
         if sub and sub.plan_name:
             plan = sub.plan_name
+    return plan
+
+
+def token_response(user: User, plan: str) -> TokenResponse:
+    token = create_access_token({"sub": str(user.id), "role": user.role or "user"})
+    return TokenResponse(
+        access_token=token,
+        plan=plan,
+        email=user.email,
+        role=user.role or "user",
+        username=user.username,
+    )
+
+
+@router.post("/register", response_model=TokenResponse)
+async def register(
+    body: UserRegisterRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Register a new user account. Username, email, and password are required."""
+    username = validate_username(body.username)
+    email = normalize_email(body.email)
+    if not email or "@" not in email:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A valid email is required")
+
+    if await find_user_by_email(db, email) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this email already exists",
+        )
+    if await username_is_taken(db, username):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="That username is taken.")
+
+    _password_byte_errors(body.password)
+
+    user = User(
+        email=email,
+        username=username,
+        hashed_password=hash_password(body.password),
+        is_pro=False,
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return token_response(user, "Starter")
+
+
+@router.post("/login", response_model=TokenResponse)
+async def login(
+    body: UserLoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticate with username or email + password."""
+    identifier = (body.identifier or body.email or "").strip()
+    user = await find_user_for_login(db, identifier)
+    stored_hash = user.hashed_password if user is not None else None
+    if user is None or stored_hash is None or stored_hash == "":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=INVALID_LOGIN,
+        )
+    if not verify_password(body.password, stored_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=INVALID_LOGIN,
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled",
+        )
+
+    return token_response(user, await _plan_for_user(db, user))
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current authenticated user's profile, including plan."""
     return UserResponse(
         id=user.id,
         email=user.email,
+        username=user.username,
         role=user.role or "user",
         is_pro=bool(user.is_pro),
         is_active=bool(user.is_active),
         created_at=user.created_at or datetime.now(timezone.utc),
-        plan=plan,
+        plan=await _plan_for_user(db, user),
+    )
+
+
+@router.post("/username", response_model=UserResponse)
+async def claim_username(
+    body: UsernameClaimRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """One-time username creation for existing or OAuth accounts."""
+    await assign_username(db, user, body.username)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        username=user.username,
+        role=user.role or "user",
+        is_pro=bool(user.is_pro),
+        is_active=bool(user.is_active),
+        created_at=user.created_at or datetime.now(timezone.utc),
+        plan=await _plan_for_user(db, user),
+    )
+
+
+_username_checks: dict[str, list[float]] = defaultdict(list)
+
+
+@router.get("/username/available")
+async def username_available(
+    request: Request,
+    u: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """Rate-limited single-username check. Not a bulk enumeration endpoint."""
+    ip = request.client.host if request.client else "unknown"
+    now = time()
+    hits = [t for t in _username_checks[ip] if now - t < 60]
+    hits.append(now)
+    _username_checks[ip] = hits
+    if len(hits) > 20:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many username checks. Try again shortly.")
+
+    if not username_format_ok(u):
+        return {"available": False, "reason": "invalid"}
+    taken = await username_is_taken(db, u)
+    return {"available": not taken}
+
+
+def google_oauth_configured() -> bool:
+    return bool(
+        (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or "").strip()
+        and (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or "").strip()
+        and (os.getenv("GOOGLE_OAUTH_REDIRECT_URI") or "").strip()
+    )
+
+
+def apple_oauth_configured() -> bool:
+    return bool(
+        (os.getenv("APPLE_OAUTH_CLIENT_ID") or "").strip()
+        and (os.getenv("APPLE_OAUTH_TEAM_ID") or "").strip()
+        and (os.getenv("APPLE_OAUTH_KEY_ID") or "").strip()
+        and (os.getenv("APPLE_OAUTH_PRIVATE_KEY") or "").strip()
+        and (os.getenv("APPLE_OAUTH_REDIRECT_URI") or "").strip()
     )
 
 
 def _oauth_provider_status() -> dict:
-    """Report whether Google/Apple OAuth credentials are actually configured.
-
-    Do not enable a live login path until these env vars are present.
-    Username login is a separate identity upgrade (see report).
-    """
-    google_id = (os.getenv("GOOGLE_OAUTH_CLIENT_ID") or "").strip()
-    google_secret = (os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") or "").strip()
-    apple_id = (os.getenv("APPLE_OAUTH_CLIENT_ID") or "").strip()
-    apple_secret = (os.getenv("APPLE_OAUTH_CLIENT_SECRET") or "").strip()
-    google_ready = bool(google_id and google_secret)
-    apple_ready = bool(apple_id and apple_secret)
+    google_ready = google_oauth_configured()
+    apple_ready = apple_oauth_configured()
     return {
         "google": {
             "enabled": google_ready,
+            "configured": google_ready,
             "status": "ready" if google_ready else "pending",
-            "reason": None if google_ready else "GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are not configured.",
+            "reason": None if google_ready else (
+                "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, and "
+                "GOOGLE_OAUTH_REDIRECT_URI are not configured."
+            ),
         },
         "apple": {
             "enabled": apple_ready,
+            "configured": apple_ready,
             "status": "ready" if apple_ready else "pending",
-            "reason": None if apple_ready else "APPLE_OAUTH_CLIENT_ID and APPLE_OAUTH_CLIENT_SECRET are not configured.",
+            "reason": None if apple_ready else (
+                "APPLE_OAUTH_CLIENT_ID, APPLE_OAUTH_TEAM_ID, APPLE_OAUTH_KEY_ID, "
+                "APPLE_OAUTH_PRIVATE_KEY, and APPLE_OAUTH_REDIRECT_URI are not configured."
+            ),
         },
-        "password": {"enabled": True, "status": "ready"},
-        "username_login": {
-            "enabled": False,
-            "status": "pending",
-            "reason": "users.username column is not in the schema yet. Login remains email + password.",
-        },
+        "password": {"enabled": True, "configured": True, "status": "ready"},
+        "username_login": {"enabled": True, "configured": True, "status": "ready"},
         "password_reset": {
             "enabled": False,
+            "configured": False,
             "status": "pending",
-            "reason": "Forgot-password mailer is not implemented.",
+            "reason": "Forgot-password mailer is not configured.",
         },
     }
 

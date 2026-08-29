@@ -205,32 +205,67 @@ export interface AuthTokens {
   plan: string;
   email: string;
   role: string;
+  username?: string | null;
 }
 
-export async function register(email: string, password: string): Promise<AuthTokens> {
+function authErrorMessage(err: { detail?: unknown }, fallback: string): string {
+  const detail = err.detail;
+  if (typeof detail === "string") return detail;
+  return fallback;
+}
+
+export async function register(username: string, email: string, password: string): Promise<AuthTokens> {
   const res = await fetch(`${API_BASE_URL}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, email, password }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Registration failed" }));
-    throw new Error(err.detail || "Registration failed");
+    throw new Error(authErrorMessage(err, "Registration failed"));
   }
   return res.json();
 }
 
-export async function login(email: string, password: string): Promise<AuthTokens> {
+export async function login(identifier: string, password: string): Promise<AuthTokens> {
   const res = await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ identifier, email: identifier.includes("@") ? identifier : undefined, password }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Invalid credentials" }));
-    throw new Error(err.detail || "Invalid credentials");
+    const err = await res.json().catch(() => ({ detail: "Invalid username/email or password." }));
+    throw new Error(authErrorMessage(err, "Invalid username/email or password."));
   }
   return res.json();
+}
+
+export async function claimUsername(username: string): Promise<CurrentUser> {
+  const token = getStoredToken();
+  const res = await fetch(`${API_BASE_URL}/auth/username`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ username }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Could not save username" }));
+    throw new Error(authErrorMessage(err, "Could not save username"));
+  }
+  return unwrapCurrentUser(await res.json());
+}
+
+export async function checkUsernameAvailable(username: string): Promise<{ available: boolean; reason?: string }> {
+  const res = await fetch(`${API_BASE_URL}/auth/username/available?u=${encodeURIComponent(username)}`);
+  if (res.status === 429) return { available: false, reason: "rate_limited" };
+  if (!res.ok) return { available: false, reason: "invalid" };
+  return res.json();
+}
+
+export function oauthStartUrl(provider: "google" | "apple"): string {
+  return `${API_BASE_URL}/auth/oauth/${provider}/start`;
 }
 
 export interface CurrentUser {
@@ -240,6 +275,7 @@ export interface CurrentUser {
   is_pro?: boolean;
   is_active?: boolean;
   plan?: string;
+  username?: string | null;
 }
 
 function unwrapCurrentUser(body: unknown): CurrentUser {
@@ -263,6 +299,7 @@ function unwrapCurrentUser(body: unknown): CurrentUser {
     is_pro: Boolean(src.is_pro),
     is_active: src.is_active !== false,
     plan: typeof src.plan === "string" ? src.plan : "Starter",
+    username: typeof src.username === "string" ? src.username : null,
   };
 }
 
@@ -398,6 +435,7 @@ export async function saveLineupHistory(payload: {
 
 export type AuthProviderStatus = {
   enabled: boolean;
+  configured?: boolean;
   status: string;
   reason?: string | null;
 };

@@ -4,6 +4,7 @@ import { Link, router } from "expo-router";
 import { register } from "../lib/api";
 
 export default function RegisterScreen() {
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -11,7 +12,7 @@ export default function RegisterScreen() {
   async function handleRegister() {
     setLoading(true);
     try {
-      await register(email, password);
+      await register(username, email, password);
       Alert.alert("Account Created", "Please sign in.");
       router.replace("/");
     } catch (e: any) {
@@ -24,6 +25,7 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.container}>
       <Text style={s.title}>Create Account</Text>
+      <TextInput style={s.input} placeholder="Username" placeholderTextColor="#666" autoCapitalize="none" value={username} onChangeText={setUsername} />
       <TextInput style={s.input} placeholder="Email" placeholderTextColor="#666" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
       <TextInput style={s.input} placeholder="Password (8+ characters)" placeholderTextColor="#666" secureTextEntry value={password} onChangeText={setPassword} />
       <TouchableOpacity style={s.btn} onPress={handleRegister} disabled={loading}>

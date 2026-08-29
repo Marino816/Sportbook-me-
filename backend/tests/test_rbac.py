@@ -45,10 +45,15 @@ async def client():
         yield ac
 
 
+def _uname(email: str) -> str:
+    local = "".join(ch for ch in email.split("@")[0] if ch.isalnum() or ch in "._")
+    return (local if len(local) >= 3 else f"{local}user")[:24]
+
+
 async def _register_user(client, email, password="securepass123"):
     await client.post(
         "/api/auth/register",
-        json={"email": email, "password": password},
+        json={"email": email, "username": _uname(email), "password": password},
     )
 
 
@@ -166,7 +171,7 @@ class TestRegistrationDefaults:
     async def test_new_registration_is_user_role(self, client):
         res = await client.post(
             "/api/auth/register",
-            json={"email": "fresh@test.com", "password": "securepass123"},
+            json={"email": "fresh@test.com", "username": "fresh", "password": "securepass123"},
         )
         assert res.status_code == 200
         data = res.json()
@@ -190,7 +195,7 @@ class TestRegistrationDoesNotCreateAdmin:
         # Try to register with a role in the request body — should be ignored
         res = await client.post(
             "/api/auth/register",
-            json={"email": "hacker@test.com", "password": "securepass123", "role": "admin"},
+            json={"email": "hacker@test.com", "username": "hacker", "password": "securepass123", "role": "admin"},
         )
         assert res.status_code == 200
         assert res.json()["role"] == "user"  # Always defaults to user

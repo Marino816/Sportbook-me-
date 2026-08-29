@@ -48,15 +48,15 @@ test("optimizer uses roster templates and regenerate_from_ids", () => {
 });
 
 test("login page is cinematic and does not fake OAuth success", () => {
-  assert.match(login, /Welcome to SB ME/);
+  assert.match(login, /WELCOME TO SB ME/);
   assert.match(login, /SBMEBackground/);
   assert.match(login, /Continue with Google/);
   assert.match(login, /Continue with Apple/);
-  assert.match(login, /Pending — provider not configured/);
+  assert.match(login, /Coming soon/);
   assert.match(login, /Username or Email/);
   assert.match(login, /Forgot password/);
   assert.match(login, /Create account/);
-  assert.match(login, /Username login is not enabled yet/);
+  assert.doesNotMatch(login, /Username login is not enabled yet/);
 });
 
 test("lineups history is two pages with real open/duplicate/delete", () => {

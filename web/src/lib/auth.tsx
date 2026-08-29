@@ -20,6 +20,7 @@ import {
 interface AuthState {
   user: {
     email: string;
+    username: string | null;
     plan: string;
     isPro: boolean;
     role: string;
@@ -30,8 +31,10 @@ interface AuthState {
 
 interface AuthContextType extends AuthState {
   isAdmin: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
+  applyToken: (token: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
   logout: () => void;
 }
 
@@ -59,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setState({
           user: {
             email: user.email,
+            username: user.username || null,
             plan,
             isPro: Boolean(user.is_pro) || plan !== "Starter",
             role: user.role || "user",
@@ -74,12 +78,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const tokens: AuthTokens = await apiLogin(email, password);
+  const login = useCallback(async (identifier: string, password: string) => {
+    const tokens: AuthTokens = await apiLogin(identifier, password);
     storeToken(tokens.access_token);
     setState({
       user: {
         email: tokens.email,
+        username: tokens.username || null,
         plan: tokens.plan,
         isPro: tokens.plan !== "Starter",
         role: tokens.role || "user",
@@ -89,15 +94,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const register = useCallback(async (email: string, password: string) => {
-    const tokens: AuthTokens = await apiRegister(email, password);
+  const register = useCallback(async (username: string, email: string, password: string) => {
+    const tokens: AuthTokens = await apiRegister(username, email, password);
     storeToken(tokens.access_token);
     setState({
       user: {
         email: tokens.email,
+        username: tokens.username || username,
         plan: tokens.plan,
         isPro: false,
         role: tokens.role || "user",
+      },
+      isLoading: false,
+      isAuthenticated: true,
+    });
+  }, []);
+
+  const applyToken = useCallback(async (token: string) => {
+    storeToken(token);
+    const user = await fetchCurrentUser();
+    const plan = user.plan || "Starter";
+    setState({
+      user: {
+        email: user.email,
+        username: user.username || null,
+        plan,
+        isPro: Boolean(user.is_pro) || plan !== "Starter",
+        role: user.role || "user",
+      },
+      isLoading: false,
+      isAuthenticated: true,
+    });
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    const user = await fetchCurrentUser();
+    const plan = user.plan || "Starter";
+    setState({
+      user: {
+        email: user.email,
+        username: user.username || null,
+        plan,
+        isPro: Boolean(user.is_pro) || plan !== "Starter",
+        role: user.role || "user",
       },
       isLoading: false,
       isAuthenticated: true,
@@ -113,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ ...state, isAdmin, login, register, logout }}
+      value={{ ...state, isAdmin, login, register, applyToken, refreshUser, logout }}
     >
       {children}
     </AuthContext.Provider>

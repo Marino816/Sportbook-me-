@@ -6,9 +6,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { getSafeReturnPath } from "@/lib/safe-return-path";
-import { fetchAuthProviders, type AuthProviderStatus } from "@/lib/api";
+import { fetchAuthProviders, oauthStartUrl, type AuthProviderStatus } from "@/lib/api";
 import { Loader2, Lock, AlertCircle, UserRound } from "lucide-react";
 import { SBMEBackground } from "@/components/sbme-background";
+
+function providerReady(p: AuthProviderStatus): boolean {
+  return Boolean(p.configured ?? p.enabled);
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,8 +24,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [google, setGoogle] = useState<AuthProviderStatus>({ enabled: false, status: "pending" });
-  const [apple, setApple] = useState<AuthProviderStatus>({ enabled: false, status: "pending" });
+  const [google, setGoogle] = useState<AuthProviderStatus>({ enabled: false, configured: false, status: "pending" });
+  const [apple, setApple] = useState<AuthProviderStatus>({ enabled: false, configured: false, status: "pending" });
 
   useEffect(() => {
     if (isAuthenticated) router.replace(destination);
@@ -40,17 +44,12 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    const trimmed = identifier.trim();
-    if (!trimmed.includes("@")) {
-      setError("Username login is not enabled yet. Sign in with the email on your account.");
-      return;
-    }
     setLoading(true);
     try {
-      await login(trimmed, password);
+      await login(identifier.trim(), password);
       router.push(destination);
-    } catch (err: any) {
-      setError(err.message || "Invalid credentials.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Invalid username/email or password.");
     } finally {
       setLoading(false);
     }
@@ -64,7 +63,7 @@ export default function LoginPage() {
             <Link href="/">
               <Image src="/logo.png" alt="SB ME" width={140} height={74} priority />
             </Link>
-            <h1>Welcome to SB ME</h1>
+            <h1>WELCOME TO SB ME</h1>
           </div>
 
           {error && (
@@ -74,14 +73,18 @@ export default function LoginPage() {
             </div>
           )}
 
-          <button type="button" className="sbme-login-oauth" disabled title={google.reason || "Google sign-in is pending provider configuration."}>
-            Continue with Google
-            <span>Pending — provider not configured</span>
-          </button>
-          <button type="button" className="sbme-login-oauth" disabled title={apple.reason || "Apple sign-in is pending provider configuration."}>
-            Continue with Apple
-            <span>Pending — provider not configured</span>
-          </button>
+          <OAuthButton
+            label="Continue with Google"
+            ready={providerReady(google)}
+            reason={google.reason}
+            href={oauthStartUrl("google")}
+          />
+          <OAuthButton
+            label="Continue with Apple"
+            ready={providerReady(apple)}
+            reason={apple.reason}
+            href={oauthStartUrl("apple")}
+          />
 
           <div className="sbme-login-or"><span>or</span></div>
 
@@ -96,7 +99,7 @@ export default function LoginPage() {
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="email or username"
+                  placeholder="username or email"
                 />
               </div>
             </label>
@@ -115,12 +118,12 @@ export default function LoginPage() {
               </div>
             </label>
             <button type="submit" className="sbme-login-submit" disabled={loading}>
-              {loading ? <Loader2 size={18} className="animate-spin" /> : "Log In"}
+              {loading ? <Loader2 size={18} className="animate-spin" /> : "LOG IN"}
             </button>
           </form>
 
           <p className="sbme-login-forgot">
-            Forgot password? Password reset is not enabled yet. Contact support.
+            Forgot password? Password reset is unavailable until mail delivery is configured.
           </p>
           <p className="sbme-login-footer">
             Don&apos;t have an account?{" "}
@@ -129,5 +132,31 @@ export default function LoginPage() {
         </div>
       </div>
     </SBMEBackground>
+  );
+}
+
+function OAuthButton({
+  label,
+  ready,
+  reason,
+  href,
+}: {
+  label: string;
+  ready: boolean;
+  reason?: string | null;
+  href: string;
+}) {
+  if (ready) {
+    return (
+      <a className="sbme-login-oauth sbme-login-oauth--ready" href={href}>
+        {label}
+      </a>
+    );
+  }
+  return (
+    <button type="button" className="sbme-login-oauth" disabled title={reason || "Coming soon"}>
+      {label}
+      <span>Coming soon</span>
+    </button>
   );
 }

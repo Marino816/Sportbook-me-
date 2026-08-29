@@ -13,6 +13,7 @@ const PROTECTED_PATHS = [
   "/data-hub",
   "/lineups",
   "/market-tools",
+  "/onboarding",
   "/optimizer",
   "/profile",
   "/projections",

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from models.database import Base
@@ -7,6 +7,7 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=True)
     role = Column(String, default="user")  # "user" | "admin"
     is_pro = Column(Boolean, default=False)
@@ -17,6 +18,23 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     subscription = relationship("Subscription", foreign_keys=[active_subscription_id])
+    oauth_identities = relationship("UserOAuthIdentity", back_populates="user")
+
+
+class UserOAuthIdentity(Base):
+    """Durable Google / Apple subject binding. One user may link both providers."""
+    __tablename__ = "user_oauth_identities"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subject", name="uq_oauth_provider_subject"),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String, nullable=False)
+    provider_subject = Column(String, nullable=False)
+    provider_email = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", back_populates="oauth_identities")
 
 class Slate(Base):
     """A collection of games on a specific day for DFS."""

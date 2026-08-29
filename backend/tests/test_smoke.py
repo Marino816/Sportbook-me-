@@ -49,7 +49,7 @@ async def test_health_endpoint(client):
 async def test_register_smoke(client):
     r = await client.post(
         "/api/auth/register",
-        json={"email": "smoke@staging.test", "password": "stagingpass123"},
+        json={"username": "smoke", "email": "smoke@staging.test", "password": "stagingpass123"},
     )
     assert r.status_code == 200
     assert "access_token" in r.json()
@@ -59,11 +59,11 @@ async def test_register_smoke(client):
 async def test_register_duplicate_rejected(client):
     await client.post(
         "/api/auth/register",
-        json={"email": "dup@staging.test", "password": "stagingpass123"},
+        json={"username": "dup", "email": "dup@staging.test", "password": "stagingpass123"},
     )
     r = await client.post(
         "/api/auth/register",
-        json={"email": "dup@staging.test", "password": "another123"},
+        json={"username": "dup", "email": "dup@staging.test", "password": "another123"},
     )
     assert r.status_code == 409
 
@@ -72,11 +72,11 @@ async def test_register_duplicate_rejected(client):
 async def test_login_smoke(client):
     await client.post(
         "/api/auth/register",
-        json={"email": "login@staging.test", "password": "stagingpass123"},
+        json={"username": "login", "email": "login@staging.test", "password": "stagingpass123"},
     )
     r = await client.post(
         "/api/auth/login",
-        json={"email": "login@staging.test", "password": "stagingpass123"},
+        json={"username": "login", "email": "login@staging.test", "password": "stagingpass123"},
     )
     assert r.status_code == 200
     assert "access_token" in r.json()
@@ -86,7 +86,7 @@ async def test_login_smoke(client):
 async def test_login_invalid_rejected(client):
     r = await client.post(
         "/api/auth/login",
-        json={"email": "nobody@staging.test", "password": "wrong"},
+        json={"username": "nobody", "email": "nobody@staging.test", "password": "wrong"},
     )
     assert r.status_code == 401
 
@@ -95,11 +95,11 @@ async def test_login_invalid_rejected(client):
 async def test_me_endpoint(client):
     await client.post(
         "/api/auth/register",
-        json={"email": "me@staging.test", "password": "stagingpass123"},
+        json={"username": "meuser", "email": "me@staging.test", "password": "stagingpass123"},
     )
     login = await client.post(
         "/api/auth/login",
-        json={"email": "me@staging.test", "password": "stagingpass123"},
+        json={"username": "meuser", "email": "me@staging.test", "password": "stagingpass123"},
     )
     tok = login.json()["access_token"]
     r = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {tok}"})
@@ -124,11 +124,11 @@ async def test_logout_flow(client):
     # Register + login
     await client.post(
         "/api/auth/register",
-        json={"email": "logout@staging.test", "password": "stagingpass123"},
+        json={"username": "logout", "email": "logout@staging.test", "password": "stagingpass123"},
     )
     login = await client.post(
         "/api/auth/login",
-        json={"email": "logout@staging.test", "password": "stagingpass123"},
+        json={"username": "logout", "email": "logout@staging.test", "password": "stagingpass123"},
     )
     tok = login.json()["access_token"]
     # Verify token works
@@ -149,11 +149,11 @@ async def test_billing_status_protected(client):
 async def test_billing_status_with_auth(client):
     await client.post(
         "/api/auth/register",
-        json={"email": "bill@staging.test", "password": "stagingpass123"},
+        json={"username": "bill", "email": "bill@staging.test", "password": "stagingpass123"},
     )
     login = await client.post(
         "/api/auth/login",
-        json={"email": "bill@staging.test", "password": "stagingpass123"},
+        json={"username": "bill", "email": "bill@staging.test", "password": "stagingpass123"},
     )
     tok = login.json()["access_token"]
     r = await client.get("/api/billing/status", headers={"Authorization": f"Bearer {tok}"})
@@ -239,12 +239,12 @@ async def test_db_persistence(client):
     """Verify database writes persist across requests."""
     await client.post(
         "/api/auth/register",
-        json={"email": "persist@staging.test", "password": "stagingpass123"},
+        json={"username": "persist", "email": "persist@staging.test", "password": "stagingpass123"},
     )
     # Second request should detect duplicate
     r = await client.post(
         "/api/auth/register",
-        json={"email": "persist@staging.test", "password": "another123"},
+        json={"username": "persist", "email": "persist@staging.test", "password": "another123"},
     )
     assert r.status_code == 409  # Proves the first write persisted
 
