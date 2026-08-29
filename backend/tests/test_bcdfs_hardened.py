@@ -218,6 +218,14 @@ class TestDetermineState:
         r = BcParseResult(sport="NFL", platform="draftkings")
         assert _determine_state(r, EndpointState.ACTIVE) == EndpointState.OFFSZN
 
+    def test_empty_payload_retries_same_day_not_24h(self):
+        """Empty BC `{"slates":[]}` is often 'not posted yet', not true offseason."""
+        from dfs.bcdfs_scheduler import OFFSEASON_INTERVAL, EndpointStatus, EndpointState
+        assert OFFSEASON_INTERVAL == 3 * 3600
+        assert OFFSEASON_INTERVAL < 24 * 3600
+        status = EndpointStatus(sport="MLB", platform="draftkings", state=EndpointState.OFFSZN)
+        assert status.interval_seconds() == OFFSEASON_INTERVAL
+
     def test_active_future_slate(self):
         from dfs.bcdfs_adapter import BcParseResult
         from dfs.bcdfs_scheduler import _determine_state

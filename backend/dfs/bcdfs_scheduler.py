@@ -55,7 +55,10 @@ AUTO_BUDGET         = 130   # maximum automated requests/day
 # Polling intervals (seconds)
 ACTIVE_INTERVAL     = 45 * 60       # 45 min — in-season
 PRE_LOCK_INTERVAL   = 20 * 60       # 20 min — approaching lock
-OFFSEASON_INTERVAL  = 24 * 3600     # 24 hours — empty endpoints
+# Empty Blue Collar payloads (`{"slates":[]}`) are often "not posted yet"
+# (e.g. 4 AM ET before daily MLB slates appear), not true offseason.
+# A 24h wait blocked same-day MLB/NFL ingest after one empty fetch.
+OFFSEASON_INTERVAL  = 3 * 3600      # 3 hours — empty endpoints retry
 POST_LOCK_INTERVAL  = 6 * 3600      # 6 hours — all locked
 LOCK_WINDOW_SECONDS = 2 * 3600      # 2 hours
 
@@ -338,6 +341,10 @@ def get_scheduler_state() -> SchedulerState:
 
 def _determine_state(parse_result, prev_state: EndpointState) -> EndpointState:
     if not parse_result.slates:
+        logger.info(
+            "BC %s %s returned no slates — retry on offseason interval, not 24h lockout",
+            parse_result.sport, parse_result.platform,
+        )
         return EndpointState.OFFSZN
 
     now_utc = datetime.now(timezone.utc)
@@ -584,6 +591,7 @@ async def scheduler_tick(
         "tick": state.tick_count,
         "synced": len(reports),
         "auto_budget_remaining": _budget_remaining("auto", AUTO_BUDGET),
+        "auto_budget_limit": AUTO_BUDGET,
         "manual_budget_remaining": _budget_remaining("manual", MANUAL_RESERVE),
         "daily_requests_used": _get_counter(_today_key("budget:auto")) + _get_counter(_today_key("budget:manual")),
         "endpoints": reports,
