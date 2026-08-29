@@ -1,13 +1,22 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { TrendingUp, AlertTriangle, Search } from "lucide-react";
 import { useLiveScores, ScoreBadge, GameStatusBadge, gameState, type GameState } from "@/lib/live-scores";
 import { BookmakerLogo } from "@/lib/assets";
-import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { ROOKIE_LEAGUES } from "@/lib/sgo-leagues";
-import { filterEventsByStatus, filterMarkets, presentPeriodGroups, type LineMode, type PeriodGroup } from "@/lib/market-view";
-import { LeagueChips, StatusChips, LineModeChips, PeriodChips, LastUpdated, FairOddsMark, ConsensusMark } from "@/components/market-controls";
+import {
+  buildBookmakerRows,
+  filterEventsByStatus,
+  filterMarkets,
+  marketsForExpandedEvent,
+  presentPeriodGroups,
+  selectLiveOddsBoard,
+  twoPageWindow,
+  type LineMode,
+  type PeriodGroup,
+} from "@/lib/market-view";
+import { LeagueChips, StatusChips, LineModeChips, PeriodChips, LastUpdated, FairOddsMark, ConsensusMark, TwoPagePager } from "@/components/market-controls";
 
 const LEAGUES = ROOKIE_LEAGUES;
 type League = (typeof LEAGUES)[number]["leagueID"];
@@ -38,62 +47,6 @@ function formatTime(iso: string | null): string {
   }
 }
 
-interface MergedBookRow {
-  bookmaker: string;
-  available: boolean;
-  awayML: number | null;
-  homeML: number | null;
-  spread: number | null;
-  totalOver: number | null;
-  totalUnder: number | null;
-}
-
-/** Build per-bookmaker rows by merging across all market types for a single event. */
-function buildBookmakerRows(markets: SBMarket[]): MergedBookRow[] {
-  const marketMap = new Map<string, SBMarket>();
-  for (const m of markets) {
-    const key = `${m.bet_type}::${m.side}`;
-    if (!marketMap.has(key) || m.is_main_line) marketMap.set(key, m);
-  }
-
-  const awayMLMarket = marketMap.get("moneyline::away");
-  const homeMLMarket = marketMap.get("moneyline::home");
-  const spreadMarket = marketMap.get("spread::away") ?? marketMap.get("spread::home") ?? marketMap.get("spread::") ;
-  const totalOverMarket = marketMap.get("over_under::over") ?? marketMap.get("total::over");
-  const totalUnderMarket = marketMap.get("over_under::under") ?? marketMap.get("total::under");
-
-  // Collect all unique bookmakers
-  const bookmakerSet = new Set<string>();
-  for (const m of [awayMLMarket, homeMLMarket, spreadMarket, totalOverMarket, totalUnderMarket]) {
-    if (!m) continue;
-    for (const b of m.books) bookmakerSet.add(b.bookmaker);
-  }
-
-  const rows: MergedBookRow[] = [];
-  for (const bookmaker of bookmakerSet) {
-    const awayB = awayMLMarket?.books.find((b) => b.bookmaker === bookmaker);
-    const homeB = homeMLMarket?.books.find((b) => b.bookmaker === bookmaker);
-    const spreadB = spreadMarket?.books.find((b) => b.bookmaker === bookmaker);
-    const overB = totalOverMarket?.books.find((b) => b.bookmaker === bookmaker);
-    const underB = totalUnderMarket?.books.find((b) => b.bookmaker === bookmaker);
-
-    rows.push({
-      bookmaker,
-      available:
-        (awayB?.available ?? false) ||
-        (homeB?.available ?? false) ||
-        (spreadB?.available ?? false),
-      awayML: awayB?.moneyline ?? null,
-      homeML: homeB?.moneyline ?? null,
-      spread: spreadB?.spread ?? null,
-      totalOver: overB?.over_under ?? null,
-      totalUnder: underB?.over_under ?? null,
-    });
-  }
-
-  return rows;
-}
-
 export default function LiveOddsPage() {
   const [activeLeague, setActiveLeague] = useState<League>("MLB");
   const [search, setSearch] = useState("");
@@ -101,6 +54,7 @@ export default function LiveOddsPage() {
   const [status, setStatus] = useState<GameState | "ALL">("ALL");
   const [lineMode, setLineMode] = useState<LineMode>("main");
   const [period, setPeriod] = useState<PeriodGroup | "all">("full");
+  const [page, setPage] = useState(1);
 
   const { events, loading, error, lastFetch } = useLiveScores(activeLeague);
 
@@ -108,24 +62,22 @@ export default function LiveOddsPage() {
     setExpanded((prev) => ({ ...prev, [eventId]: !prev[eventId] }));
   };
 
-  const filtered = useMemo(() => {
-    const byStatus = filterEventsByStatus(events, status);
-    if (!search) return byStatus;
-    const q = search.toLowerCase();
-    return byStatus.filter((e) => {
-      const hn = e.home_team.name.toLowerCase();
-      const an = e.away_team.name.toLowerCase();
-      const ha = e.home_team.abbreviation.toLowerCase();
-      const aa = e.away_team.abbreviation.toLowerCase();
-      return hn.includes(q) || an.includes(q) || ha.includes(q) || aa.includes(q);
-    });
-  }, [events, search, status]);
+  const statusFiltered = useMemo(() => filterEventsByStatus(events, status), [events, status]);
+
+  const board = useMemo(
+    () => selectLiveOddsBoard(statusFiltered, { search, status }),
+    [statusFiltered, search, status],
+  );
 
   const periodOptions = useMemo(() => {
-    const all: SBMarket[] = [];
-    for (const e of filtered) all.push(...(e.markets || []));
-    return presentPeriodGroups(all);
-  }, [filtered]);
+    return presentPeriodGroups(statusFiltered.flatMap((e) => e.markets || []));
+  }, [statusFiltered]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [activeLeague, search, status, lineMode, period]);
+
+  const windowed = useMemo(() => twoPageWindow(board.items, page), [board.items, page]);
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
@@ -199,15 +151,25 @@ export default function LiveOddsPage() {
       {error && (
         <div style={{ textAlign: "center", padding: 40, color: "#ef4444" }}>{error}</div>
       )}
+      {!loading && !error && (board.hidden > 0 || board.searched) && board.items.length > 0 && (
+        <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 14px" }}>
+          {board.searched
+            ? board.hidden > 0
+              ? `Showing ${board.items.length} of ${board.total} loaded matches. Search is across the full loaded collection.`
+              : `Showing ${board.items.length} loaded match${board.items.length === 1 ? "" : "es"} across the full collection.`
+            : `Current/near-term board · ${board.hidden} additional loaded event${board.hidden === 1 ? "" : "s"} stay searchable (not shown as extra pages).`}
+        </p>
+      )}
 
       {/* Event cards */}
       <div style={{ display: "grid", gap: 12 }}>
-        {filtered.map((evt) => {
+        {windowed.items.map((evt) => {
           const live = gameState(evt) === "LIVE";
           const final = gameState(evt) === "FINAL";
           const isExpanded = expanded[evt.id];
-          const rows = buildBookmakerRows(filterMarkets(evt.markets, { lineMode, period }));
-          const mlHome = filterMarkets(evt.markets, { lineMode, period, betTypes: ["moneyline"] }).find((m) => m.side === "home");
+          const view = marketsForExpandedEvent(evt, { lineMode, period });
+          const rows = buildBookmakerRows(view.markets);
+          const mlHome = filterMarkets(view.markets, { lineMode: "all", period: "all", betTypes: ["moneyline"] }).find((m) => m.side === "home");
 
           // Compute best values across all bookmakers
           let bestAwayML = -Infinity;
@@ -320,6 +282,11 @@ export default function LiveOddsPage() {
                     <FairOddsMark value={mlHome?.fair_odds ?? null} />
                     <ConsensusMark value={mlHome?.book_odds ?? null} />
                   </div>
+                  {view.relaxedPeriod && rows.length > 0 && (
+                    <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 10 }}>
+                      No Full Game bookmaker prices for the current filters — showing other periods SportsGameOdds returned.
+                    </div>
+                  )}
                   {rows.length > 0 ? (
                     <div style={{ overflowX: "auto" }}>
                       <div
@@ -443,7 +410,9 @@ export default function LiveOddsPage() {
                     </div>
                   ) : (
                     <div style={{ textAlign: "center", padding: 24, color: "#64748b" }}>
-                      No bookmaker data available for this event.
+                      {view.providerEmpty
+                        ? "SportsGameOdds currently has no active bookmaker prices for this event."
+                        : "No bookmaker moneyline, spread, or total prices match the current view for this event."}
                     </div>
                   )}
                 </div>
@@ -453,10 +422,26 @@ export default function LiveOddsPage() {
         })}
       </div>
 
-      {!loading && filtered.length === 0 && (
+      {!loading && board.items.length > 0 && (
+        <TwoPagePager
+          page={windowed.page}
+          pages={windowed.pages}
+          total={windowed.total}
+          pageSize={windowed.pageSize}
+          onChange={setPage}
+        />
+      )}
+
+      {!loading && board.items.length === 0 && (
         <div style={{ textAlign: "center", padding: 60, color: "#64748b" }}>
           <AlertTriangle size={32} style={{ marginBottom: 12 }} />
-          <p>No events found for {activeLeague}.</p>
+          <p>
+            {search
+              ? `No loaded ${activeLeague} events match this search.`
+              : events.length > 0
+                ? `No live or near-term ${activeLeague} events in the default board. ${events.length} loaded event${events.length === 1 ? "" : "s"} remain searchable.`
+                : `No events found for ${activeLeague}.`}
+          </p>
         </div>
       )}
     </div>

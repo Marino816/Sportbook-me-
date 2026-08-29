@@ -1,39 +1,27 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Calculator, Scan, AlertTriangle, Info } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Calculator, Scan, AlertTriangle, Info, Search } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
-import type { SBEvent, SBMarket, SBBookLine } from "@/lib/sbevent";
 import { formatBookmakerName } from "@/lib/bookmakers";
 import { MARKET_TOOL_LEAGUES, leagueLabel } from "@/lib/sgo-leagues";
+import { filterOpportunities, scanArbitrage, americanToDecimal } from "@/lib/arbitrage";
+import { capCustomerList, twoPageWindow } from "@/lib/market-view";
+import { TwoPagePager } from "@/components/market-controls";
 
 const LEAGUES = MARKET_TOOL_LEAGUES;
 type League = (typeof LEAGUES)[number];
-
-interface ArbOpp {
-  event: string;
-  event_id: string;
-  home_book: string;
-  home_odds: number;
-  away_book: string;
-  away_odds: number;
-  arb_pct: number;
-  payout: number;
-  profit: number;
-}
 
 function fmtOdds(v: number | null | undefined): string {
   if (v == null) return "—";
   return v > 0 ? `+${v}` : `${v}`;
 }
 
-function americanToDecimal(am: number): number {
-  return am > 0 ? 1 + am / 100 : 1 + 100 / Math.abs(am);
-}
-
 export default function ArbitragePage() {
   const [tab, setTab] = useState<"scanner" | "calculator">("scanner");
   const [activeLeague, setActiveLeague] = useState<League>("MLB");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   // Calculator state
   const [oddsA, setOddsA] = useState("");
@@ -46,63 +34,18 @@ export default function ArbitragePage() {
   const { events, loading } = useEvents(activeLeague);
 
   // ── Scan for arbitrage from SBEvent.markets ──────────────
-  const opportunities = useMemo(() => {
-    const found: ArbOpp[] = [];
+  const opportunities = useMemo(() => scanArbitrage(events), [events]);
+  const filteredOpps = useMemo(
+    () => filterOpportunities(opportunities, { search, sport: activeLeague }),
+    [opportunities, search, activeLeague],
+  );
+  const rankedBoard = useMemo(() => capCustomerList(filteredOpps), [filteredOpps]);
 
-    for (const evt of events) {
-      const matchName = `${evt.away_team.abbreviation || "AWY"} @ ${evt.home_team.abbreviation || "HOM"}`;
+  useEffect(() => {
+    setPage(1);
+  }, [activeLeague, search]);
 
-      // Find moneyline markets
-      const homeML = (evt.markets || []).find(
-        (m) => m.bet_type === "moneyline" && m.side?.toLowerCase() === "home",
-      );
-      const awayML = (evt.markets || []).find(
-        (m) => m.bet_type === "moneyline" && m.side?.toLowerCase() === "away",
-      );
-      if (!homeML || !awayML) continue;
-
-      const homeBooks: SBBookLine[] = (homeML.books || []).filter(
-        (b) => b.available && b.moneyline != null,
-      );
-      const awayBooks: SBBookLine[] = (awayML.books || []).filter(
-        (b) => b.available && b.moneyline != null,
-      );
-
-      // Compare every pair of books across home/away for arb
-      for (const hb of homeBooks) {
-        for (const ab of awayBooks) {
-          // Skip same book (no cross-book arb on same bookmaker)
-          if (hb.bookmaker === ab.bookmaker) continue;
-
-          const decH = americanToDecimal(hb.moneyline!);
-          const decA = americanToDecimal(ab.moneyline!);
-          const implied = (1 / decH + 1 / decA) * 100;
-
-          if (implied < 100) {
-            const arb = 100 - implied;
-            const stake1 = (100 * (1 / decH)) / (implied / 100);
-            const stake2 = (100 * (1 / decA)) / (implied / 100);
-            const payout = Math.min(stake1 * decH, stake2 * decA);
-
-            found.push({
-              event: matchName,
-              event_id: evt.id,
-              home_book: hb.bookmaker,
-              home_odds: hb.moneyline!,
-              away_book: ab.bookmaker,
-              away_odds: ab.moneyline!,
-              arb_pct: Math.round(arb * 100) / 100,
-              payout: Math.round(payout * 100) / 100,
-              profit: Math.round((payout - 100) * 100) / 100,
-            });
-          }
-        }
-      }
-    }
-
-    found.sort((a, b) => b.arb_pct - a.arb_pct);
-    return found.slice(0, 30);
-  }, [events]);
+  const windowed = useMemo(() => twoPageWindow(rankedBoard.items, page), [rankedBoard.items, page]);
 
   // ── Manual calculator ─────────────────────────────────────
   const calculate = () => {
@@ -265,23 +208,50 @@ export default function ArbitragePage() {
             ))}
           </div>
 
+          <div style={{ position: "relative", marginBottom: 16, maxWidth: 280 }}>
+            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
+            <input
+              type="text"
+              placeholder="Search events or books..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "8px 14px 8px 32px",
+                borderRadius: 10,
+                fontSize: 13,
+                background: "#0a0f24",
+                border: "1px solid #1e293b",
+                color: "#f0f6fc",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+
           {loading && (
             <div style={{ textAlign: "center", padding: 40, color: "#94a3b8" }}>
               Loading {activeLeague} events...
             </div>
           )}
 
-          {!loading && opportunities.length === 0 && (
+          {!loading && filteredOpps.length === 0 && (
             <div style={{ textAlign: "center", padding: 60, color: "#64748b" }}>
               <AlertTriangle size={32} style={{ marginBottom: 12 }} />
               <p>No arbitrage opportunities found for {activeLeague}. Try another league.</p>
             </div>
           )}
+          {!loading && rankedBoard.hidden > 0 && (
+            <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 14px" }}>
+              Showing the strongest {rankedBoard.items.length} of {rankedBoard.total} valid opportunities.
+              {` ${rankedBoard.hidden} additional valid ${rankedBoard.hidden === 1 ? "opportunity is" : "opportunities are"} ranked below this board.`}
+            </p>
+          )}
 
           <div style={{ display: "grid", gap: 14 }}>
-            {opportunities.map((opp, i) => (
+            {windowed.items.map((opp) => (
               <div
-                key={i}
+                key={opp.key}
                 style={{
                   background: "#0a0f24",
                   borderRadius: 14,
@@ -299,6 +269,9 @@ export default function ArbitragePage() {
                 >
                   <span style={{ fontSize: 15, fontWeight: 700, color: "#f0f6fc" }}>
                     {opp.event}
+                    <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600, marginLeft: 8 }}>
+                      {opp.market}{opp.line != null ? ` ${opp.line}` : ""} · {opp.period || "game"}
+                    </span>
                   </span>
                   <span
                     style={{
@@ -341,6 +314,15 @@ export default function ArbitragePage() {
               </div>
             ))}
           </div>
+          {!loading && rankedBoard.items.length > 0 && (
+            <TwoPagePager
+              page={windowed.page}
+              pages={windowed.pages}
+              total={windowed.total}
+              pageSize={windowed.pageSize}
+              onChange={setPage}
+            />
+          )}
         </>
       )}
 

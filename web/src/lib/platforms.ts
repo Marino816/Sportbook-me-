@@ -5,7 +5,7 @@
  * that did not return a market.
  */
 
-import catalog from "./sbme-55-platforms.json";
+import catalog from "./sbme-55-platforms.json" with { type: "json" };
 
 export type PlatformRow = {
   id: string;
@@ -84,4 +84,17 @@ export function platformNameForSgoId(sgoId: string): string | null {
   const key = (sgoId || "").toLowerCase();
   const row = SBME_55_PLATFORMS.find((p) => p.sgo_ids.map((i) => i.toLowerCase()).includes(key));
   return row?.name ?? null;
+}
+
+/**
+ * Canonical catalog id for an SGO bookmaker id.
+ * Multiple SGO ids on the same catalog row (e.g. bookmakereu/bookmaker) collapse.
+ * Distinct catalog rows stay distinct (BetRivers vs SugarHouse).
+ * Returns empty string for the SGO "unknown" placeholder.
+ */
+export function canonicalBookmakerId(sgoId: string | null | undefined): string {
+  const key = (sgoId || "").trim().toLowerCase();
+  if (!key || key === "unknown") return "";
+  const row = SBME_55_PLATFORMS.find((p) => p.sgo_ids.map((i) => i.toLowerCase()).includes(key));
+  return row?.id ?? key;
 }

@@ -161,4 +161,38 @@ export function ConsensusMark({ value }: { value: number | null | undefined }) {
   );
 }
 
+export function TwoPagePager({
+  page,
+  pages,
+  total,
+  pageSize,
+  onChange,
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  pageSize: number;
+  onChange: (page: number) => void;
+}) {
+  if (total === 0) return null;
+  return (
+    <div className="sbme-pager" role="navigation" aria-label="Results pages">
+      <span className="sbme-pager-meta">
+        {total} result{total === 1 ? "" : "s"} · {pageSize}/page
+      </span>
+      <div className="sbme-pager-btns">
+        <button type="button" className="sbme-pager-btn" disabled={page <= 1} onClick={() => onChange(1)}>
+          Page 1
+        </button>
+        {pages > 1 && (
+          <button type="button" className="sbme-pager-btn" disabled={page >= 2} onClick={() => onChange(2)}>
+            Page 2
+          </button>
+        )}
+      </div>
+      <span className="sbme-pager-page">Showing page {page} of {pages}</span>
+    </div>
+  );
+}
+
 export { leagueLabel };

@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Building2, Search } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import Link from "next/link";
+import { Building2, Search, ChevronDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import { formatBookmakerName } from "@/lib/bookmakers";
 import {
@@ -14,8 +15,8 @@ import {
   SBME_55_PLATFORMS,
   type DirectoryLane,
 } from "@/lib/platforms";
-import { filterEventsByStatus, filterMarkets, presentPeriodGroups, type LineMode, type PeriodGroup } from "@/lib/market-view";
-import { LeagueChips, LineModeChips, PeriodChips, StatusChips, LastUpdated, FairOddsMark, ConsensusMark } from "@/components/market-controls";
+import { filterEventsByStatus, filterMarkets, presentPeriodGroups, twoPageWindow, type LineMode, type PeriodGroup } from "@/lib/market-view";
+import { LeagueChips, LineModeChips, PeriodChips, StatusChips, LastUpdated, FairOddsMark, ConsensusMark, TwoPagePager } from "@/components/market-controls";
 import { gameState, type GameState } from "@/lib/live-scores";
 import type { SBEvent, SBMarket } from "@/lib/sbevent";
 
@@ -56,6 +57,8 @@ export default function BookmakersPage() {
   const [eventQuery, setEventQuery] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogFilter, setCatalogFilter] = useState<CatalogFilter>("all");
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [marketsOpen, setMarketsOpen] = useState(false);
 
   const { events, loading, error, lastFetch } = useEvents(league);
   const mappingCounts = catalogMappingCounts();
@@ -116,6 +119,15 @@ export default function BookmakersPage() {
       return p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || ids.includes(q);
     });
   }, [catalogFilter, catalogQuery, classified, dataReady]);
+
+  useEffect(() => {
+    setCatalogPage(1);
+  }, [catalogQuery, catalogFilter]);
+
+  const catalogWindow = useMemo(
+    () => twoPageWindow(directory, catalogPage, 12, { allowDense: true }),
+    [directory, catalogPage],
+  );
 
   const compareRows = useMemo(() => {
     if (!filteredEvent) return [];
@@ -243,7 +255,7 @@ export default function BookmakersPage() {
           </label>
         </div>
         <p className="sbme-books-shown">
-          Showing {directory.length} of {mappingCounts.total}
+          Showing {catalogWindow.total} of {mappingCounts.total}
         </p>
         {directory.length === 0 ? (
           <div className="sbme-books-empty">
@@ -252,8 +264,9 @@ export default function BookmakersPage() {
               : "No platforms in the loaded catalog match this filter or search."}
           </div>
         ) : (
+          <>
           <div className="sbme-books-grid">
-            {directory.map((p) => {
+            {catalogWindow.items.map((p) => {
               const ids = (p.sgo_ids || []).filter(Boolean);
               const lane: CardLane = !catalogHasSgoMapping(p)
                 ? "mapping_needed"
@@ -295,21 +308,47 @@ export default function BookmakersPage() {
               );
             })}
           </div>
+          <TwoPagePager
+            page={catalogWindow.page}
+            pages={catalogWindow.pages}
+            total={catalogWindow.total}
+            pageSize={catalogWindow.pageSize}
+            onChange={setCatalogPage}
+          />
+          </>
         )}
       </section>
 
-      <section className="sbme-books-markets">
+      <section className="sbme-books-markets sbme-books-markets--compact">
         <div className="sbme-books-markets-head">
           <div>
             <p className="sbme-books-kicker">LOADED MARKETS</p>
-            <h2>Available book comparison</h2>
+            <h2>Live Odds workspace</h2>
             <p>
-              Prices appear only for books that returned this market on the selected event.
-              Missing books are not filled in.
+              {dataReady
+                ? `${events.length} ${league} event${events.length === 1 ? "" : "s"} loaded · ${classified.counts.mapped_to_sgo} catalog books observed in this view.`
+                : "Market coverage for this league loads with Live Odds."}
+              {" "}Book comparison lives on Live Odds so this page stays a platform directory.
             </p>
           </div>
           <LastUpdated fetchedAt={lastFetch ?? undefined} />
         </div>
+        <div className="sbme-books-cta-row">
+          <Link href="/market-tools/live-odds" className="sbme-books-cta">
+            Open Live Odds
+          </Link>
+          <button
+            type="button"
+            className="sbme-books-toggle"
+            aria-expanded={marketsOpen}
+            onClick={() => setMarketsOpen((v) => !v)}
+          >
+            <ChevronDown size={14} style={{ transform: marketsOpen ? "rotate(180deg)" : undefined }} />
+            {marketsOpen ? "Hide compact comparison" : "Compare one loaded event"}
+          </button>
+        </div>
+        {marketsOpen && (
+          <div className="sbme-books-compact-compare">
 
         <div className="sbme-books-controls">
           <LeagueChips value={league} onChange={(id) => { setLeague(id); setEventId(null); }} />
@@ -420,6 +459,8 @@ export default function BookmakersPage() {
             <p className="sbme-books-board-note">
               Bookmaker Price is the sportsbook line. Fair Odds and Consensus appear only when SportsGameOdds returned fairOdds / bookOdds. SB ME does not accept or place wagers.
             </p>
+          </div>
+        )}
           </div>
         )}
       </section>

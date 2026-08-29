@@ -68,6 +68,7 @@ def test_period_filtering_full_game_vs_first_half():
     assert is_full_game_period("game")
     assert is_full_game_period("")
     assert is_full_game_period("ft")
+    assert is_full_game_period("reg")
     assert not is_full_game_period("1h")
     assert not is_full_game_period("1q")
 
@@ -234,6 +235,34 @@ def test_from_sdk_maps_alt_lines_book_odds_fair_odds_open_close():
     consensus = extract_nested_consensus(payload)
     assert consensus["source"] == "nested_v2_events"
     assert payload["results"] is None
+
+
+def test_odd_level_is_main_line_inherited_when_books_omit_flag():
+    odds = {
+        "points-home-game-ml-home": SimpleNamespace(
+            stat_entity_id="home",
+            player_id="",
+            period_id="game",
+            stat_id="points",
+            bet_type_id="ml",
+            market_name="Home ML",
+            is_main_line=True,
+            fair_odds="-120",
+            book_odds="-118",
+            by_bookmaker={
+                "draftkings": SimpleNamespace(
+                    bookmaker_id="draftkings",
+                    available=True,
+                    odds="-120",
+                    is_main_line=None,
+                ),
+            },
+        ),
+    }
+    payload = _sb_event_to_dict(from_sdk_event(_sdk_event(odds=odds)))
+    ml = payload["markets"][0]
+    assert ml["is_main_line"] is True
+    assert ml["books"][0]["is_main_line"] is True
 
 
 def test_current_vs_finalized_status_and_results():

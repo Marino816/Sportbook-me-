@@ -233,7 +233,7 @@ def _sb_event_to_dict(evt: SBEvent) -> dict:
             "player_id": m.player_id, "player_name": m.player_name,
             "stat_entity_id": m.stat_entity_id, "stat_id": m.stat_id,
             "period_id": m.period_id,
-            "is_main_line": any(b.is_main_line for b in m.books) if m.books else False,
+            "is_main_line": bool(m.is_main_line or any(b.is_main_line for b in m.books)),
             "fair_odds": m.fair_odds, "fair_spread": m.fair_spread,
             "fair_over_under": m.fair_over_under,
             "book_odds": m.book_odds, "book_spread": m.book_spread,

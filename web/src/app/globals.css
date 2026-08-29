@@ -3837,3 +3837,71 @@ body {
   color: #64748b;
 }
 .sbme-login-hint--ok { color: #86efac; }
+
+.sbme-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding: 10px 4px 4px;
+}
+.sbme-pager-meta,
+.sbme-pager-page {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8b9cb3;
+}
+.sbme-pager-btns { display: flex; gap: 8px; }
+.sbme-pager-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #0a0f24;
+  border: 1px solid #1e293b;
+  color: #94a3b8;
+}
+.sbme-pager-btn:disabled {
+  border-color: #c9a84c;
+  color: #c9a84c;
+  background: rgba(201, 168, 76, 0.1);
+  cursor: default;
+}
+.sbme-books-markets--compact { margin-top: 16px; }
+.sbme-books-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 4px 0 12px;
+}
+.sbme-books-cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #060b1a;
+  background: #c9a84c;
+  text-decoration: none;
+}
+.sbme-books-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  background: #0a0f24;
+  border: 1px solid #1e293b;
+  cursor: pointer;
+}
+.sbme-books-compact-compare { margin-top: 8px; }

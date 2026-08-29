@@ -54,7 +54,7 @@ LEAGUE_ALIASES: dict[str, str] = {
     "INTERNATIONAL": "INTERNATIONAL_SOCCER",
 }
 
-FULL_GAME_PERIODS = frozenset({"", "game", "ft", "full", "regulation"})
+FULL_GAME_PERIODS = frozenset({"", "game", "ft", "full", "regulation", "reg"})
 
 # SGO playerIDs end with _{leagueID}. Include every Rookie league suffix.
 SGO_ID_SPORT_SUFFIXES: tuple[str, ...] = tuple(f"_{lid}" for lid in ROOKIE_LEAGUE_IDS)

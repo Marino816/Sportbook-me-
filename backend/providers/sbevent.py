@@ -62,6 +62,7 @@ class SBMarket:
     book_odds: Optional[int] = None
     book_spread: Optional[float] = None
     book_over_under: Optional[float] = None
+    is_main_line: bool = False
     books: list[SBBookLine] = field(default_factory=list)
 
 
@@ -214,17 +215,19 @@ def from_sdk_event(sdk_event) -> SBEvent:
                 side = parts[-1] if parts else ""
 
             books = []
+            odd_is_main = bool(_attr(o, "is_main_line", "isMainLine"))
             by_book = _attr(o, "by_bookmaker", "byBookmaker") or {}
             if by_book:
                 for bk_id, bk in by_book.items():
                     bookmaker_set.add(_attr(bk, "bookmaker_id", "bookmakerID") or bk_id)
+                    book_main = _attr(bk, "is_main_line", "isMainLine")
                     books.append(SBBookLine(
                         bookmaker=_attr(bk, "bookmaker_id", "bookmakerID") or bk_id,
                         available=_attr(bk, "available") if _attr(bk, "available") is not None else True,
                         moneyline=parse_american(_attr(bk, "odds")),
                         spread=parse_float(_attr(bk, "spread")),
                         over_under=parse_float(_attr(bk, "over_under", "overUnder")),
-                        is_main_line=bool(_attr(bk, "is_main_line", "isMainLine")),
+                        is_main_line=bool(book_main) if book_main is not None else odd_is_main,
                         last_updated=str(_attr(bk, "last_updated_at", "lastUpdatedAt")) if _attr(bk, "last_updated_at", "lastUpdatedAt") else None,
                         opening_odds=parse_american(_attr(bk, "opening_odds", "openOdds", "openingOdds")),
                         opening_spread=parse_float(_attr(bk, "opening_spread", "openSpread", "openingSpread")),
@@ -250,6 +253,7 @@ def from_sdk_event(sdk_event) -> SBEvent:
                 book_odds=parse_american(_attr(o, "book_odds", "bookOdds")),
                 book_spread=parse_float(_attr(o, "book_spread", "bookSpread")),
                 book_over_under=parse_float(_attr(o, "book_over_under", "bookOverUnder")),
+                is_main_line=odd_is_main or any(b.is_main_line for b in books),
                 books=books,
             ))
 
