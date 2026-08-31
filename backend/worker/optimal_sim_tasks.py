@@ -83,9 +83,11 @@ async def _load_pool_from_snapshot(platform, sport, slate_id, inputs_hash):
 
 
 async def _build_pool_live(db_session_factory, platform, sport, slate_id):
-    """Build canonical pool from live DB + SGO (backward-compat path)."""
+    """Build canonical pool from live DB + cached SGO (no worker-side SGO HTTP)."""
     async with db_session_factory() as db:
-        pool, _ = await build_canonical_pool(db, slate_id, platform=platform, with_ownership=True)
+        pool, _ = await build_canonical_pool(
+            db, slate_id, platform=platform, with_ownership=True, sgo_allow_fetch=False,
+        )
     return pool
 
 
@@ -99,7 +101,7 @@ async def _run_sim_async(platform, sport, slate_id, n_sims, seed, timeout,
       - Simulate exactly that snapshot version
 
     Without inputs_hash:
-      - Build canonical pool live (backward compat)
+      - Build canonical pool from DB + cached/LKG SGO (no worker HTTP)
       - Cache-hit check before expensive sim
     """
     # Re-assert backend root on sys.path (Celery prefork child fix)
@@ -192,7 +194,8 @@ def run_optimal_sim(self, platform="draftkings", sport="MLB",
     When inputs_hash is provided: loads the pre-captured snapshot from
     Redis (deterministic mode — no live SGO re-fetch).
 
-    Without inputs_hash: builds canonical pool live (backward compat).
+    Without inputs_hash: builds canonical pool from DB + cached/LKG SGO
+    (no worker-side SportsGameOdds HTTP).
     """
     if not _try_acquire_lock(platform, sport, slate_id):
         return {"skipped": True, "reason": "already_running"}

@@ -58,6 +58,8 @@ async def build_canonical_pool(
     slate_id: int,
     platform: str = "draftkings",
     with_ownership: bool = True,
+    *,
+    sgo_allow_fetch: bool = True,
 ) -> tuple[list[dict], dict]:
     """
     Build the canonical SB DFS player pool for a published slate.
@@ -114,7 +116,9 @@ async def build_canonical_pool(
     # with current/upcoming SGO market data).
     slate_date = slate.start_time.date().isoformat() if slate.start_time else None
     try:
-        sgo_intel = await build_sgo_intelligence(sport, projections_list, event_date=slate_date)
+        sgo_intel = await build_sgo_intelligence(
+            sport, projections_list, event_date=slate_date, allow_fetch=sgo_allow_fetch,
+        )
         projs = compute_projections(sport, projections_list, sgo_intelligence=sgo_intel)
         pool = apply_projection_policy(projections_to_pool(projs))
         from projection.native import count_projected_players

@@ -154,7 +154,13 @@ def _market_to_prop_key(market_name: str, stat_id: str) -> Optional[str]:
     return None
 
 
-async def build_sgo_intelligence(sport: str, dfs_players: list[dict], event_date: Optional[str] = None) -> dict[str, dict]:
+async def build_sgo_intelligence(
+    sport: str,
+    dfs_players: list[dict],
+    event_date: Optional[str] = None,
+    *,
+    allow_fetch: bool = True,
+) -> dict[str, dict]:
     """
     Build a sgo_intelligence dict keyed by DFS player ID.
 
@@ -163,13 +169,16 @@ async def build_sgo_intelligence(sport: str, dfs_players: list[dict], event_date
     from fair_over_under lines. Falls back to a live SDK fetch on cache miss
     so /optimize never silently degrades to the 0.01 placeholder.
 
+    Celery / background workers must pass allow_fetch=False so they reuse
+    live cache + LKG and never issue a duplicate /v2/events request.
+
     Returns {dfs_player_id: {"props": {"hits": 1.2, ...}, "fantasyScore": ...}}
     """
     sport_upper = sport.upper()
 
     from providers.nested_events import load_cached_or_fetch_events
 
-    events = await load_cached_or_fetch_events(sport_upper, allow_fetch=True)
+    events = await load_cached_or_fetch_events(sport_upper, allow_fetch=allow_fetch)
 
     if not events or not isinstance(events, list):
         return {}
