@@ -11,6 +11,10 @@ from typing import Any, Optional
 
 # Rookie update frequency is ~3 minutes. Nested event cache TTL matches that.
 NESTED_EVENT_TTL_SECONDS = 180
+# Last-known-good payload after a successful nested fetch. Used only when the
+# live 180s key has expired and upstream errors (e.g. 429) or returns empty.
+# Never written on empty/error. Does not replace DFS stale/current gates.
+LKG_EVENT_TTL_SECONDS = 6 * 3600
 
 # Confirmed 17 enabled Rookie leagues (live /v2/leagues/, 2026-08-28).
 ROOKIE_LEAGUES: tuple[dict[str, str], ...] = (

@@ -7,21 +7,17 @@ are not used here.
 
 from __future__ import annotations
 
-import logging
 from statistics import median
 from typing import Optional
 
 from dfs.name_normalize import fold_player_name
 from dfs.team_normalize import normalize_team_abbr, teams_equivalent
 from providers.sgo_rookie import (
-    NESTED_EVENT_TTL_SECONDS,
     ROOKIE_LEAGUE_IDS,
     SGO_ID_SPORT_SUFFIXES,
     is_full_game_period,
     normalize_league_id,
 )
-
-logger = logging.getLogger(__name__)
 
 RESEARCH_PROP_MAP = (
     ("hits", "hits_line"),
@@ -68,33 +64,18 @@ def _median(values: list[float]) -> Optional[float]:
 
 
 def load_cached_events(league: str) -> list[dict]:
-    """Redis-only. Never hits SGO. Empty list on miss."""
-    from api.sgo_data import _rget
+    """Live Redis only (180s). Never hits SGO. Empty list on miss."""
+    from api.sgo_data import _live_events
 
-    data = _rget(f"sgo:v2:sbevents:{normalize_league_id(league)}")
-    return data if isinstance(data, list) else []
+    return _live_events(normalize_league_id(league))
 
 
 async def load_cached_or_fetch_events(league: str, *, allow_fetch: bool = True) -> list[dict]:
-    """Return nested SBEvent dicts. Writes Redis on live fetch so later callers share it."""
-    league_u = normalize_league_id(league)
-    cached = load_cached_events(league_u)
-    if cached:
-        return cached
-    if not allow_fetch:
-        return []
-    try:
-        from api.sgo_data import _canonical_event_provider, _sb_event_to_dict, _rset, _clear_obsolete_event_model_keys
+    """Return nested SBEvent dicts. Live cache → fetch → last-known-good."""
+    from api.sgo_data import load_canonical_sb_events
 
-        sb_events = await _canonical_event_provider().get_sb_events(league_u)
-        events = [_sb_event_to_dict(e) for e in (sb_events or [])]
-        if events:
-            _clear_obsolete_event_model_keys(league_u)
-            _rset(f"sgo:v2:sbevents:{league_u}", events, ttl=NESTED_EVENT_TTL_SECONDS)
-        return events
-    except Exception as exc:
-        logger.warning("Nested SGO event fetch failed for %s: %s", league_u, exc)
-        return []
+    events, _source = await load_canonical_sb_events(league, allow_fetch=allow_fetch)
+    return events
 
 
 def find_event_by_id(events: list[dict], event_id: str) -> Optional[dict]:
@@ -110,8 +91,15 @@ def find_event_by_id(events: list[dict], event_id: str) -> Optional[dict]:
 
 
 def find_cached_event(event_id: str, leagues: Optional[list[str]] = None) -> Optional[dict]:
-    for lg in leagues or list(ROOKIE_LEAGUE_IDS):
+    from api.sgo_data import _lkg_events
+
+    search = leagues or list(ROOKIE_LEAGUE_IDS)
+    for lg in search:
         found = find_event_by_id(load_cached_events(lg), event_id)
+        if found:
+            return found
+    for lg in search:
+        found = find_event_by_id(_lkg_events(normalize_league_id(lg)), event_id)
         if found:
             return found
     return None

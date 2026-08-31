@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -19,7 +21,11 @@ from providers.event_parser import (
     build_player_props_list,
 )
 from providers.sbevent import SBEvent
-from providers.sgo_rookie import NESTED_EVENT_TTL_SECONDS, normalize_league_id
+from providers.sgo_rookie import (
+    LKG_EVENT_TTL_SECONDS,
+    NESTED_EVENT_TTL_SECONDS,
+    normalize_league_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +55,99 @@ def _rset(key: str, data, ttl: int = NESTED_EVENT_TTL_SECONDS):
         r.setex(key, ttl, json.dumps(data, default=str).encode())
     except Exception:
         pass
+
+
+def _live_events_key(league: str) -> str:
+    return f"sgo:v2:sbevents:{league}"
+
+
+def _lkg_events_key(league: str) -> str:
+    return f"sgo:v2:sbevents:{league}:lkg"
+
+
+def _live_events(league: str) -> list:
+    data = _rget(_live_events_key(league))
+    return data if isinstance(data, list) and data else []
+
+
+def _lkg_events(league: str) -> list:
+    data = _rget(_lkg_events_key(league))
+    return data if isinstance(data, list) and data else []
+
+
+def _store_live_and_lkg(league: str, events_list: list) -> None:
+    """Write live TTL plus LKG. Never called with an empty payload."""
+    _rset(_live_events_key(league), events_list, ttl=NESTED_EVENT_TTL_SECONDS)
+    _rset(_lkg_events_key(league), events_list, ttl=LKG_EVENT_TTL_SECONDS)
+
+
+_fetch_locks: dict[str, asyncio.Lock] = {}
+_fetch_fail_until: dict[str, float] = {}
+_FETCH_WAIT_SECONDS = 8.0
+_FETCH_FAIL_COOLDOWN_SECONDS = 20.0
+
+
+async def load_canonical_sb_events(league: str, *, allow_fetch: bool = True) -> tuple[list, str]:
+    """Canonical nested events for every SGO consumer.
+
+    Order: live Redis (180s) → single-flight upstream → last-known-good.
+    Empty or error responses never overwrite LKG. Returns (events, source)
+    where source is cached | sportsgameodds | lkg.
+    """
+    league_u = normalize_league_id(league)
+    live = _live_events(league_u)
+    if live:
+        return live, "cached"
+    if not allow_fetch:
+        lkg = _lkg_events(league_u)
+        return (lkg, "lkg") if lkg else ([], "sportsgameodds")
+
+    lock = _fetch_locks.setdefault(league_u, asyncio.Lock())
+    acquired = False
+    try:
+        acquired = await asyncio.wait_for(lock.acquire(), timeout=_FETCH_WAIT_SECONDS)
+    except asyncio.TimeoutError:
+        lkg = _lkg_events(league_u)
+        if lkg:
+            logger.warning("SGO fetch in-flight for %s; serving LKG", league_u)
+            return lkg, "lkg"
+        return [], "sportsgameodds"
+
+    try:
+        live = _live_events(league_u)
+        if live:
+            return live, "cached"
+        now = time.monotonic()
+        if now < _fetch_fail_until.get(league_u, 0):
+            lkg = _lkg_events(league_u)
+            if lkg:
+                return lkg, "lkg"
+            return [], "sportsgameodds"
+        try:
+            sb_events = await _canonical_event_provider().get_sb_events(league_u)
+        except Exception as exc:
+            logger.error("Official SGO SDK event fetch failed for %s: %s", league_u, exc)
+            _fetch_fail_until[league_u] = now + _FETCH_FAIL_COOLDOWN_SECONDS
+            lkg = _lkg_events(league_u)
+            if lkg:
+                logger.warning("Serving LKG canonical events for %s after fetch error", league_u)
+                return lkg, "lkg"
+            return [], "sportsgameodds"
+        if not sb_events:
+            _fetch_fail_until[league_u] = now + _FETCH_FAIL_COOLDOWN_SECONDS
+            lkg = _lkg_events(league_u)
+            if lkg:
+                logger.warning("Serving LKG canonical events for %s after empty upstream", league_u)
+                return lkg, "lkg"
+            return [], "sportsgameodds"
+        events_list = [_sb_event_to_dict(event) for event in sb_events]
+        _clear_obsolete_event_model_keys(league_u)
+        _store_live_and_lkg(league_u, events_list)
+        _fetch_fail_until.pop(league_u, None)
+        return events_list, "sportsgameodds"
+    finally:
+        if acquired:
+            lock.release()
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -266,29 +365,8 @@ async def get_events(
     user: User = Depends(get_current_user),
 ):
     """Canonical SDK Event → SBEvent JSON array for every SGO consumer."""
-    normalized_league = normalize_league_id(league)
-    cache_key = f"sgo:v2:sbevents:{normalized_league}"
-    cached = _rget(cache_key)
-    if isinstance(cached, list) and cached:
-        return wrap_data(cached, source="cached")
-
-    try:
-        # Do not enter SGOIntegration here: it initializes the legacy raw-event
-        # provider. This route is intentionally SDK → SBEvent → JSON only.
-        sb_events = await _canonical_event_provider().get_sb_events(normalized_league)
-    except Exception as exc:
-        logger.error("Official SGO SDK event fetch failed for %s: %s", normalized_league, exc)
-        # Never replace a previously valid canonical cache entry with an error.
-        return wrap_data([], source="sportsgameodds")
-
-    if not sb_events:
-        # An empty upstream response is not cacheable and cannot overwrite LKG data.
-        return wrap_data([], source="sportsgameodds")
-
-    events_list = [_sb_event_to_dict(event) for event in sb_events]
-    _clear_obsolete_event_model_keys(normalized_league)
-    _rset(cache_key, events_list, ttl=NESTED_EVENT_TTL_SECONDS)
-    return wrap_data(events_list, source="sportsgameodds")
+    events_list, source = await load_canonical_sb_events(league)
+    return wrap_data(events_list, source=source)
 
 
 @router.get("/events/{event_id}/odds")

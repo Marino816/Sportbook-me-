@@ -15,6 +15,7 @@ from providers.nested_events import (
 )
 from providers.sbevent import from_sdk_event
 from providers.sgo_rookie import (
+    LKG_EVENT_TTL_SECONDS,
     NESTED_EVENT_TTL_SECONDS,
     ROOKIE_LEAGUE_IDS,
     SOCCER_LEAGUE_IDS,
@@ -28,6 +29,7 @@ from providers.sgo_rookie import (
 
 def test_cache_ttl_is_three_minutes():
     assert NESTED_EVENT_TTL_SECONDS == 180
+    assert LKG_EVENT_TTL_SECONDS == 6 * 3600
 
 
 def test_all_seventeen_rookie_league_ids():
@@ -286,8 +288,7 @@ async def test_nested_fetch_writes_180s_ttl(monkeypatch):
     captured = {}
 
     def fake_rset(key, data, ttl=None):
-        captured["key"] = key
-        captured["ttl"] = ttl
+        captured.setdefault("calls", []).append((key, ttl, len(data) if isinstance(data, list) else 0))
 
     class Provider:
         async def get_sb_events(self, league):
@@ -301,8 +302,8 @@ async def test_nested_fetch_writes_180s_ttl(monkeypatch):
     from providers.nested_events import load_cached_or_fetch_events
     events = await load_cached_or_fetch_events("MLB")
     assert events
-    assert captured["ttl"] == 180
-    assert captured["key"] == "sgo:v2:sbevents:MLB"
+    assert captured["calls"][0] == ("sgo:v2:sbevents:MLB", 180, 1)
+    assert captured["calls"][1] == ("sgo:v2:sbevents:MLB:lkg", 6 * 3600, 1)
 
 
 @pytest.mark.asyncio

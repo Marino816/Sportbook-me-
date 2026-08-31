@@ -156,6 +156,17 @@ class TestFreshness:
         today = datetime.now(ZoneInfo("America/New_York"))
         assert is_stale_slate(today) is False
 
+    def test_aug31_late_et_slate_not_stale_across_utc_date_line(self, monkeypatch):
+        """10:10 PM ET Aug 31 is Sep 1 02:10 UTC — still CURRENT on Aug 31 ET."""
+        from datetime import date
+
+        monkeypatch.setattr("dfs.freshness._today_et", lambda: date(2026, 8, 31))
+        start = datetime(2026, 9, 1, 2, 10, tzinfo=timezone.utc)
+        assert slate_date_et(start) == date(2026, 8, 31)
+        assert is_current_slate(start) is True
+        assert is_stale_slate(start) is False
+        assert slate_freshness(start) == "CURRENT"
+
 
 # ── Optimizer endpoint stale-slate gate ──────────────────────
 
