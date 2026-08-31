@@ -25,7 +25,11 @@ class SdkSgoProvider:
     def __init__(self, api_key: Optional[str] = None):
         from sports_odds_api import AsyncSportsGameOdds
         key = api_key or os.environ.get("SPORTSGAMEODDS_API_KEY", "")
-        self._client = AsyncSportsGameOdds(api_key_header=key)
+        # Stainless default max_retries=2 immediately retries 429s and
+        # multiplies rate-limit pressure. The httpx adapter already refuses
+        # to retry-storm; the SDK client matches that policy. Event consumers
+        # must go through load_canonical_sb_events for cache/LKG/cooldown.
+        self._client = AsyncSportsGameOdds(api_key_header=key, max_retries=0)
 
     async def _get_events(
         self,

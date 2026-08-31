@@ -172,25 +172,34 @@ def merge_reconciliation_report(existing, stats: dict) -> dict:
 
 
 async def load_sgo_player_dicts(sport: str) -> list[dict]:
-    """Best-effort SGO player list for reconciliation (name + team abbreviation)."""
+    """Best-effort SGO player list for reconciliation (name + team abbreviation).
+
+    Uses the canonical nested-event loader so BC sync cannot bypass
+    live cache / LKG / single-flight / 429 cooldown.
+    """
     players: list[dict] = []
     try:
-        from providers.sdk_provider import SdkSgoProvider
-        events = await SdkSgoProvider().get_sb_events(sport)
+        from api.sgo_data import load_canonical_sb_events
+
+        events, _source = await load_canonical_sb_events(sport)
         for evt in events or []:
-            home = getattr(evt, "home_team", None)
-            away = getattr(evt, "away_team", None)
-            home_id = getattr(home, "team_id", "") or ""
-            away_id = getattr(away, "team_id", "") or ""
-            home_abbr = normalize_team_abbr(getattr(home, "abbreviation", "") or "")
-            away_abbr = normalize_team_abbr(getattr(away, "abbreviation", "") or "")
-            for sp in getattr(evt, "players", None) or []:
-                pid = getattr(sp, "player_id", None) or getattr(sp, "id", None)
-                name = getattr(sp, "name", "") or ""
+            if not isinstance(evt, dict):
+                continue
+            home = evt.get("home_team") if isinstance(evt.get("home_team"), dict) else {}
+            away = evt.get("away_team") if isinstance(evt.get("away_team"), dict) else {}
+            home_id = home.get("team_id") or ""
+            away_id = away.get("team_id") or ""
+            home_abbr = normalize_team_abbr(home.get("abbreviation") or "")
+            away_abbr = normalize_team_abbr(away.get("abbreviation") or "")
+            for sp in evt.get("players") or []:
+                if not isinstance(sp, dict):
+                    continue
+                pid = sp.get("player_id") or sp.get("id")
+                name = sp.get("name") or ""
                 if not pid or not name:
                     continue
-                team_id = getattr(sp, "team_id", "") or ""
-                if team_id and away_id and team_id.upper() == str(away_id).upper():
+                team_id = sp.get("team_id") or ""
+                if team_id and away_id and str(team_id).upper() == str(away_id).upper():
                     team = away_abbr
                 else:
                     team = home_abbr
@@ -200,7 +209,7 @@ async def load_sgo_player_dicts(sport: str) -> list[dict]:
                     "name": name,
                     "team": team,
                     "teamAbbrev": team,
-                    "position": getattr(sp, "position", "") or "",
+                    "position": sp.get("position") or "",
                 })
     except Exception as e:
         logger.warning("SGO player load for reconciliation failed: %s", e)

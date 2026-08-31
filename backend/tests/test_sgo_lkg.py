@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ import pytest
 
 from api.sgo_data import load_canonical_sb_events
 from dfs.freshness import is_current_slate, is_stale_slate, slate_date_et
+from dfs.reconciliation import load_sgo_player_dicts
 from projection.sgo_intelligence import _event_date_matches
 from providers.sbevent import from_sdk_event
 
@@ -253,3 +255,134 @@ class TestNoFakeSlatesFromSgo:
         assert set(written) == {"sgo:v2:sbevents:MLB", "sgo:v2:sbevents:MLB:lkg"}
         assert all(k.startswith("sgo:v2:sbevents:") for k in written)
         assert "dfs_slates" not in store
+
+
+class TestSingleFlightAndCooldown:
+    @pytest.mark.asyncio
+    async def test_concurrent_same_league_one_upstream_call(self, monkeypatch):
+        store = _install_redis(monkeypatch, {})
+        started = asyncio.Event()
+        release = asyncio.Event()
+        calls = {"n": 0}
+
+        async def slow(league):
+            calls["n"] += 1
+            started.set()
+            await release.wait()
+            return [from_sdk_event(_sdk_event())]
+
+        monkeypatch.setattr(
+            "api.sgo_data._canonical_event_provider",
+            lambda: SimpleNamespace(get_sb_events=slow),
+        )
+
+        async def _run():
+            t1 = asyncio.create_task(load_canonical_sb_events("MLB"))
+            await started.wait()
+            t2 = asyncio.create_task(load_canonical_sb_events("MLB"))
+            await asyncio.sleep(0.05)
+            release.set()
+            return await asyncio.gather(t1, t2)
+
+        (e1, s1), (e2, s2) = await _run()
+        assert calls["n"] == 1
+        assert e1 and e2
+        assert s1 == "sportsgameodds"
+        assert s2 == "cached"
+
+    @pytest.mark.asyncio
+    async def test_429_cooldown_blocks_immediate_repeat(self, monkeypatch):
+        _install_redis(monkeypatch, {})
+        fetch = AsyncMock(side_effect=RuntimeError("Error code: 429"))
+        monkeypatch.setattr(
+            "api.sgo_data._canonical_event_provider",
+            lambda: SimpleNamespace(get_sb_events=fetch),
+        )
+        first, src1 = await load_canonical_sb_events("MLB")
+        second, src2 = await load_canonical_sb_events("MLB")
+        assert first == [] and second == []
+        assert src1 == "sportsgameodds" and src2 == "sportsgameodds"
+        assert fetch.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_lkg_served_during_cooldown(self, monkeypatch):
+        _install_redis(monkeypatch, {"sgo:v2:sbevents:MLB:lkg": list(LKG_MLB_AUG31)})
+        fetch = AsyncMock(side_effect=RuntimeError("Error code: 429"))
+        monkeypatch.setattr(
+            "api.sgo_data._canonical_event_provider",
+            lambda: SimpleNamespace(get_sb_events=fetch),
+        )
+        first, src1 = await load_canonical_sb_events("MLB")
+        second, src2 = await load_canonical_sb_events("MLB")
+        assert src1 == "lkg" and src2 == "lkg"
+        assert first[0]["id"] == "mlb-aug31-late"
+        assert second[0]["id"] == "mlb-aug31-late"
+        assert fetch.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_leagues_isolated_on_429(self, monkeypatch):
+        store = _install_redis(monkeypatch, {})
+        calls = []
+
+        async def by_league(league):
+            calls.append(league)
+            if league == "MLB":
+                raise RuntimeError("Error code: 429")
+            return [from_sdk_event(_sdk_event())]
+
+        monkeypatch.setattr(
+            "api.sgo_data._canonical_event_provider",
+            lambda: SimpleNamespace(get_sb_events=by_league),
+        )
+        mlb, mlb_src = await load_canonical_sb_events("MLB")
+        nfl, nfl_src = await load_canonical_sb_events("NFL")
+        assert mlb == [] and mlb_src == "sportsgameodds"
+        assert nfl and nfl_src == "sportsgameodds"
+        assert calls == ["MLB", "NFL"]
+        assert "sgo:v2:sbevents:NFL:lkg" in store
+        assert "sgo:v2:sbevents:MLB:lkg" not in store
+
+
+class TestReconciliationUsesCanonical:
+    def test_reconciliation_source_does_not_call_sdk_directly(self):
+        src = inspect.getsource(load_sgo_player_dicts)
+        assert "SdkSgoProvider" not in src
+        assert "load_canonical_sb_events" in src
+
+    def test_bc_sync_loads_sgo_once_per_sport_not_per_slate(self):
+        from dfs.bcdfs_adapter import sync_bc_to_db
+
+        src = inspect.getsource(sync_bc_to_db)
+        assert src.count("await load_sgo_player_dicts") == 1
+        load_at = src.find("load_sgo_player_dicts")
+        first_loop = src.find("for cs in parse_result.slates:")
+        recon_loop = src.find("for cs in parse_result.slates:", load_at)
+        assert first_loop != -1 and load_at != -1 and recon_loop != -1
+        assert first_loop < load_at < recon_loop
+
+    @pytest.mark.asyncio
+    async def test_reconciliation_reuses_canonical_cache(self, monkeypatch):
+        _install_redis(monkeypatch, {"sgo:v2:sbevents:MLB": list(LKG_MLB_AUG31)})
+        fetch = AsyncMock(side_effect=AssertionError("reconciliation must not hit SGO directly"))
+        monkeypatch.setattr(
+            "api.sgo_data._canonical_event_provider",
+            lambda: SimpleNamespace(get_sb_events=fetch),
+        )
+        players = await load_sgo_player_dicts("MLB")
+        assert players[0]["playerID"] == "JOSE_RAMIREZ_1_MLB"
+        assert players[0]["team"] == "CLE"
+        fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reconciliation_second_sport_sync_does_not_duplicate_mlb(self, monkeypatch):
+        store = _install_redis(monkeypatch, {})
+        fetch = AsyncMock(return_value=[from_sdk_event(_sdk_event())])
+        monkeypatch.setattr(
+            "api.sgo_data._canonical_event_provider",
+            lambda: SimpleNamespace(get_sb_events=fetch),
+        )
+        first = await load_sgo_player_dicts("MLB")
+        second = await load_sgo_player_dicts("MLB")
+        assert first and second
+        fetch.assert_awaited_once()
+        assert store["sgo:v2:sbevents:MLB:lkg"]

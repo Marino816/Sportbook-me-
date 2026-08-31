@@ -601,12 +601,25 @@ async def sync_bc_to_db(
         report_base["bc_player_meta"] = prev_meta
         db_slate.reconciliation_report = report_base
 
-        # Reconcile to SGO/internal IDs when a player pool is available.
+    sgo_players: list[dict] = []
+    if parse_result.slates:
         try:
-            from dfs.reconciliation import load_sgo_player_dicts, reconcile_db_players, merge_reconciliation_report
+            from dfs.reconciliation import load_sgo_player_dicts
             sgo_players = await load_sgo_player_dicts(parse_result.sport)
-            if sgo_players:
-                await db.flush()
+        except Exception as rec_err:
+            logger.warning("BC player reconciliation skipped: %s", rec_err)
+
+    if sgo_players:
+        from dfs.reconciliation import reconcile_db_players, merge_reconciliation_report
+        try:
+            await db.flush()
+            for cs in parse_result.slates:
+                result = await db.execute(
+                    select(DBSlate).where(DBSlate.external_slate_id == cs.slate_id)
+                )
+                db_slate = result.scalars().first()
+                if db_slate is None:
+                    continue
                 mapped = await db.execute(
                     select(DBPlayer).where(DBPlayer.slate_id == db_slate.id)
                 )

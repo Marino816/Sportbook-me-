@@ -161,21 +161,28 @@ async def run_optimizer(
                     # quarantine layer can reject BC/SGO team mismatches.
                     try:
                         slate_team_abbrs = {np_row.team.upper() for np_row in native_players if np_row.team}
-                        from providers.sdk_provider import SdkSgoProvider
-                        sgo_events = await SdkSgoProvider().get_sb_events(sport)
+                        from api.sgo_data import load_canonical_sb_events
+                        sgo_events, _sgo_source = await load_canonical_sb_events(sport)
                         # Normalise function for fuzzy name matching
                         import unicodedata as _ucd, re as _re
                         def _nf(n):
                             return _re.sub(r'[^a-z0-9]', '', _ucd.normalize('NFD', (n or '').lower()))
                         sgo_lookup: dict[str, tuple[str, str]] = {}  # norm_name → (team_abbr, event_id)
                         for evt in sgo_events:
-                            ha = (evt.home_team.abbreviation or "").upper()
-                            aa = (evt.away_team.abbreviation or "").upper()
+                            if not isinstance(evt, dict):
+                                continue
+                            home = evt.get("home_team") if isinstance(evt.get("home_team"), dict) else {}
+                            away = evt.get("away_team") if isinstance(evt.get("away_team"), dict) else {}
+                            ha = (home.get("abbreviation") or "").upper()
+                            aa = (away.get("abbreviation") or "").upper()
                             if ha in slate_team_abbrs and aa in slate_team_abbrs:
-                                for sp in evt.players:
-                                    nm = _nf(sp.name)
-                                    team = aa if (sp.team_id or "").upper() == (evt.away_team.team_id or "").upper() else ha
-                                    sgo_lookup[nm] = (team, evt.id)
+                                away_id = (away.get("team_id") or "").upper()
+                                for sp in evt.get("players") or []:
+                                    if not isinstance(sp, dict):
+                                        continue
+                                    nm = _nf(sp.get("name"))
+                                    team = aa if (sp.get("team_id") or "").upper() == away_id else ha
+                                    sgo_lookup[nm] = (team, evt.get("id"))
                         enriched = 0
                         for pl in projections_list:
                             nm = _nf(pl.get("name", ""))

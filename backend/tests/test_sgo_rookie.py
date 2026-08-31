@@ -366,3 +366,16 @@ async def test_dedicated_urls_are_not_callable():
     for method in ("get_odds", "get_player_props", "get_fair_odds", "get_consensus", "get_scores"):
         with pytest.raises(RuntimeError, match="not used"):
             await getattr(provider, method)("evt")
+
+
+def test_sdk_client_disables_immediate_429_retries(monkeypatch):
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr("sports_odds_api.AsyncSportsGameOdds", FakeClient)
+    from providers.sdk_provider import SdkSgoProvider
+    SdkSgoProvider(api_key="x")
+    assert captured.get("max_retries") == 0
