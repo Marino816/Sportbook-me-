@@ -108,7 +108,7 @@ async def optimal_pct(
     """
     import dfs.optimal_cache as ocache
     from dfs.optimal_lock import is_slate_locked, slate_lock_status
-    from models.domain import DFSSlate
+    from dfs.db import DFSSlate
     from sqlalchemy import select
 
     # ── Lock-time eligibility check ──
@@ -118,26 +118,38 @@ async def optimal_pct(
     if slate is None:
         return wrap_data({"slate_id": slate_id, "status": "UNKNOWN"}, source="native")
 
+    # Cache keys are platform-lower + sport-upper (worker stores slate.platform / slate.sport).
+    plat = (platform or slate.platform or "draftkings").lower()
+    sp = (sport or slate.sport or "MLB").upper()
+
     lock_status = slate_lock_status(slate.start_time)
     if is_slate_locked(slate.start_time):
         return wrap_data({
             "slate_id": slate_id,
-            "platform": platform,
-            "sport": sport,
+            "platform": plat,
+            "sport": sp,
             "status": "LOCKED",
             "lock_status": lock_status.value,
             "note": "Optimal% is not available for locked/in-progress slates",
         }, source="native")
 
-    status = ocache.get_status(platform, sport, slate_id)
+    status = ocache.get_status(plat, sp, slate_id)
+    if status == ocache.STATUS_NOT_RUN:
+        slate_plat = (slate.platform or plat).lower()
+        slate_sp = (slate.sport or sp).upper()
+        if slate_plat != plat or slate_sp != sp:
+            alt = ocache.get_status(slate_plat, slate_sp, slate_id)
+            if alt != ocache.STATUS_NOT_RUN:
+                plat, sp, status = slate_plat, slate_sp, alt
+
     result = None
     if status == ocache.STATUS_COMPLETE:
-        result = ocache.get_result(platform, sport, slate_id)
+        result = ocache.get_result(plat, sp, slate_id)
 
     return wrap_data({
         "slate_id": slate_id,
-        "platform": platform,
-        "sport": sport,
+        "platform": plat,
+        "sport": sp,
         "status": status,
         "lock_status": lock_status.value,
         "result": result,

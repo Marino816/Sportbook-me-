@@ -59,3 +59,38 @@ test("optimizer v2 places schedule intelligence above the workspace", () => {
   assert.match(css, /\.sbme-opt-pool \{ order: 0; \}/);
   assert.match(css, /\.sbme-opt-lower \{ grid-template-columns: 1fr; order: 2; \}/);
 });
+
+test("desktop Live Lineup Builder is capped so Player Pool can show all columns", () => {
+  const desktop = css.match(/\.sbme-opt-workspace \{\n  display: grid;\n[\s\S]*?grid-template-columns: ([^;]+);/);
+  assert.ok(desktop, "desktop workspace grid exists");
+  assert.equal(desktop[1].trim(), "minmax(0, 1fr) minmax(260px, 280px)");
+  assert.match(css, /minmax\(260px, 280px\)/);
+  assert.doesNotMatch(css, /minmax\(280px, 0\.9fr\)/);
+  for (const col of ["Team", "Opp", "Start", "Pos", "Player", "Salary", "BC Proj", "SB Proj", "My Proj", "Value", "SB OWN%", "LEV", "OPT%", "CEIL", "FLOOR", "PROPS", "Action"]) {
+    assert.match(optimizer, new RegExp(col.replace("%", "\\%")));
+  }
+});
+
+test("strategy change applies immediately and refreshes strategy-dependent results", () => {
+  assert.match(optimizer, /STRATEGIES = \["balanced", "cash", "gpp", "aggressive"\]/);
+  assert.match(optimizer, /onChange=\{applyStrategy\}/);
+  assert.match(optimizer, /optimizeMutation\.mutate\(\{ strategy: next \}\)/);
+  assert.match(optimizer, /strategy: appliedStrategy/);
+  assert.match(optimizer, /setLineups\(\[\]\)/);
+  assert.doesNotMatch(optimizer, /onChange=\{setStrategy\}/);
+  assert.match(optimizer, /ws\.setSport|sport/);
+  assert.match(optimizer, /lockedIds/);
+  assert.match(optimizer, /likedIds/);
+  assert.match(optimizer, /excludedIds/);
+  assert.doesNotMatch(optimizer, /window\.location\.reload/);
+});
+
+test("OPT% uses /api/optimal-pct and polls until COMPLETE", () => {
+  assert.match(optimizer, /fetchOptimalPct/);
+  assert.match(optimizer, /mapOptimalPctResponse/);
+  assert.match(optimizer, /lookupOptimalPct/);
+  assert.match(optimizer, /QUEUED/);
+  assert.match(optimizer, /RUNNING/);
+  assert.match(optimizer, /setTimeout\(load, POLL_MS\)/);
+  assert.doesNotMatch(optimizer, /optPctMap\[normName\(p\.name\)\] \?\? .*ownership/);
+});

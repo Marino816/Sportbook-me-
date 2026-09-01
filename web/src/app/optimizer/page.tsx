@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, fetchOptimalPct, saveLineupHistory, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
+import { lookupOptimalPct, mapOptimalPctResponse } from "@/lib/optimal-pct";
 import { Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, BarChart3, Download, ArrowUpDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
@@ -148,6 +149,8 @@ export default function OptimizerPage() {
   // ── State ──
   const [bookmakerSource, setBookmakerSource] = useState<string>("Best Available");
   const [strategy, setStrategy] = useState<string>("balanced");
+  const strategyRef = useRef(strategy);
+  strategyRef.current = strategy;
   const [lineupCount, setLineupCount] = useState(4);
   const { events, loading: sgoLoading, lastFetch } = useEvents(sport);
 
@@ -269,31 +272,28 @@ export default function OptimizerPage() {
     return () => { cancelled = true; };
   }, [resolvedSlateId, platform]);
 
-  // Optimal% — poll cached background simulation result
+  // Optimal% — poll cached background simulation result from GET /api/optimal-pct
   useEffect(() => {
     if (!resolvedSlateId) { setOptPctStatus("NOT_RUN"); setOptPctMap({}); return; }
     let cancelled = false;
-    (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const POLL_MS = 5000;
+    async function load() {
       try {
-        const res = await fetchOptimalPct(resolvedSlateId, platform, sport);
+        const res = await fetchOptimalPct(resolvedSlateId!, platform, sport);
         if (cancelled) return;
-        const status = res?.data?.status ?? "NOT_RUN";
-        setOptPctStatus(status);
-        if (status === "COMPLETE" && res?.data?.result?.players) {
-          const m: Record<string, number> = {};
-          for (const p of res.data.result.players) {
-            const nm = normName(p.name);
-            if (nm) m[nm] = p.optimal_pct;
-          }
-          setOptPctMap(m);
-        } else {
-          setOptPctMap({});
+        const mapped = mapOptimalPctResponse(res);
+        setOptPctStatus(mapped.status);
+        setOptPctMap(mapped.map);
+        if (mapped.status === "QUEUED" || mapped.status === "RUNNING") {
+          timer = setTimeout(load, POLL_MS);
         }
       } catch {
         if (!cancelled) { setOptPctStatus("NOT_RUN"); setOptPctMap({}); }
       }
-    })();
-    return () => { cancelled = true; };
+    }
+    load();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [resolvedSlateId, platform, sport]);
 
   useEffect(() => { setPlayerSearch(""); setPosFilter("ALL"); setLineups([]); setLastGenMeta(null); }, [sport, platform]);
@@ -391,8 +391,8 @@ export default function OptimizerPage() {
         return sortDir === "desc" ? salB - salA : salA - salB;
       }
       if (sortField === "optimal") {
-        const optA = optPctMap[normName(a.name)] ?? null;
-        const optB = optPctMap[normName(b.name)] ?? null;
+        const optA = lookupOptimalPct(optPctMap, [a.name, dfsA?.name, dfsA?.player_id]);
+        const optB = lookupOptimalPct(optPctMap, [b.name, dfsB?.name, dfsB?.player_id]);
         if (optA == null && optB == null) return 0;
         if (optA == null) return 1;
         if (optB == null) return -1;
@@ -521,10 +521,12 @@ export default function OptimizerPage() {
 
   // ── Optimize ──
   const optimizeMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: (vars?: { strategy?: string }) => {
       if (resolvedSlateId == null) throw new Error(`No ${platform === "draftkings" ? "DraftKings" : "FanDuel"} contest salary data.`);
+      const appliedStrategy = vars?.strategy ?? strategyRef.current;
+      strategyRef.current = appliedStrategy;
       const setting: any = {
-        sport, platform, strategy, num_lineups: lineupCount,
+        sport, platform, strategy: appliedStrategy, num_lineups: lineupCount,
         locked_player_ids: solverPlayerKeys(ws.lockedIds, dfsPlayers),
         excluded_player_ids: solverPlayerKeys(ws.excludedIds, dfsPlayers),
       };
@@ -571,7 +573,7 @@ export default function OptimizerPage() {
           setProjPool(poolMap);
         } else { setProjPool({}); }
       } catch { setLineups([]); setProjPool({}); }
-      setLastGenMeta({ sport, platform, strategy, gameCount: dfsPlayers.length > 0 ? (new Set(dfsPlayers.map(p => p.team)).size / 2) : 0 });
+      setLastGenMeta({ sport, platform, strategy: strategyRef.current, gameCount: dfsPlayers.length > 0 ? (new Set(dfsPlayers.map(p => p.team)).size / 2) : 0 });
       setMainTab("built");
       setSelectedLineupIndex(0);
     },
@@ -587,6 +589,19 @@ export default function OptimizerPage() {
     },
   });
 
+  const applyStrategy = useCallback((next: string) => {
+    if (next === strategyRef.current) return;
+    setStrategy(next);
+    strategyRef.current = next;
+    setUniqueLineupError(null);
+    const stale = lineups.length > 0;
+    setLineups([]);
+    setLastGenMeta(null);
+    setSelectedLineupIndex(0);
+    if (stale && canGenerate) {
+      optimizeMutation.mutate({ strategy: next });
+    }
+  }, [lineups.length, canGenerate, optimizeMutation]);
   const clearLineups = useCallback(() => { setLineups([]); setLastGenMeta(null); setSavedNote(false); setHistorySaved(false); setUniqueLineupError(null); }, []);
   const regenerate = useCallback(() => {
     regenFromRef.current = lineups.map((lu) =>
@@ -755,7 +770,7 @@ export default function OptimizerPage() {
             <Selector label="Bookmaker" value={bookmakerSource} options={["Best Available", "Book Consensus", ...bookmakers]} onChange={setBookmakerSource} format={(v) => (v === "Best Available" || v === "Book Consensus" ? v : formatBookmakerName(v))} />
           </div>
           <div style={{ marginTop: 8 }}>
-            <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={setStrategy} />
+            <Selector label="Strategy" value={strategy} options={[...STRATEGIES]} onChange={applyStrategy} />
           </div>
         </div>
       </div>
@@ -901,7 +916,7 @@ export default function OptimizerPage() {
                         const leverage = canon?.leverage ?? null;
                         const ceiling = canon?.ceiling ?? null;
                         const floor = canon?.floor ?? null;
-                        const optPct = optPctMap[normName(p.name)] ?? null;
+                        const optPct = lookupOptimalPct(optPctMap, [p.name, dfs?.name, dfs?.player_id, canon?.id, canon?.dfs_player_id]);
                         const rowClass = [isLocked ? "is-locked" : "", isLiked ? "is-liked" : "", isExcluded ? "is-excluded" : ""].filter(Boolean).join(" ");
                         return (
                           <tr key={p.player_id} className={rowClass || undefined}>

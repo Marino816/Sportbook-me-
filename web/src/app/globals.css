@@ -4255,7 +4255,8 @@ body {
 
 .sbme-opt-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.9fr);
+  /* Cap the Live Lineup Builder so Player Pool can show OPT%/CEIL/FLOOR/PROPS/Action. */
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 280px);
   gap: 14px;
   align-items: start;
   min-width: 0;
