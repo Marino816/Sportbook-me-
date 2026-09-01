@@ -544,7 +544,7 @@ export async function fetchOptimalPct(
     platform,
     sport,
   });
-  return apiFetch<any>(`/optimal-pct?${params.toString()}`);
+  return apiFetch<any>(`/optimal-pct?${params.toString()}`, { cache: "no-store" });
 }
 
 export interface SimPlayer {

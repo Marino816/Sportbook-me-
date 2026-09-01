@@ -89,8 +89,9 @@ test("OPT% uses /api/optimal-pct and polls until COMPLETE", () => {
   assert.match(optimizer, /fetchOptimalPct/);
   assert.match(optimizer, /mapOptimalPctResponse/);
   assert.match(optimizer, /lookupOptimalPct/);
+  assert.match(optimizer, /formatOptPctCell/);
   assert.match(optimizer, /QUEUED/);
   assert.match(optimizer, /RUNNING/);
-  assert.match(optimizer, /setTimeout\(load, POLL_MS\)/);
+  assert.match(optimizer, /setInterval\(load, POLL_MS\)/);
   assert.doesNotMatch(optimizer, /optPctMap\[normName\(p\.name\)\] \?\? .*ownership/);
 });

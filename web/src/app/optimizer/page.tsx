@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, fetchOptimalPct, saveLineupHistory, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
-import { lookupOptimalPct, mapOptimalPctResponse } from "@/lib/optimal-pct";
+import { formatOptPctCell, lookupOptimalPct, mapOptimalPctResponse } from "@/lib/optimal-pct";
 import { Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, BarChart3, Download, ArrowUpDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
@@ -272,12 +272,14 @@ export default function OptimizerPage() {
     return () => { cancelled = true; };
   }, [resolvedSlateId, platform]);
 
-  // Optimal% — poll cached background simulation result from GET /api/optimal-pct
+  // Optimal% — poll cached background simulation result from GET /api/optimal-pct.
+  // Interval is armed synchronously so an in-flight fetch cannot drop the poll chain.
   useEffect(() => {
     if (!resolvedSlateId) { setOptPctStatus("NOT_RUN"); setOptPctMap({}); return; }
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
     const POLL_MS = 5000;
+    const PENDING = new Set(["QUEUED", "RUNNING"]);
     async function load() {
       try {
         const res = await fetchOptimalPct(resolvedSlateId!, platform, sport);
@@ -285,15 +287,24 @@ export default function OptimizerPage() {
         const mapped = mapOptimalPctResponse(res);
         setOptPctStatus(mapped.status);
         setOptPctMap(mapped.map);
-        if (mapped.status === "QUEUED" || mapped.status === "RUNNING") {
-          timer = setTimeout(load, POLL_MS);
+        if (!PENDING.has(mapped.status) && intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
         }
       } catch {
-        if (!cancelled) { setOptPctStatus("NOT_RUN"); setOptPctMap({}); }
+        if (!cancelled) {
+          setOptPctStatus("NOT_RUN");
+          setOptPctMap({});
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+        }
       }
     }
     load();
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    intervalId = setInterval(load, POLL_MS);
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
   }, [resolvedSlateId, platform, sport]);
 
   useEffect(() => { setPlayerSearch(""); setPosFilter("ALL"); setLineups([]); setLastGenMeta(null); }, [sport, platform]);
@@ -944,7 +955,7 @@ export default function OptimizerPage() {
                             <Td style={{ color: value !== "—" ? "#c9a84c" : "#64748b", fontWeight: value !== "—" ? 700 : 400 }}>{value}</Td>
                             <Td style={{ color: ownPct != null ? "#94a3b8" : "#64748b" }}>{ownPct != null ? `${ownPct.toFixed(1)}%` : "N/A"}</Td>
                             <Td style={{ color: leverage != null ? (leverage > 0 ? "#4ade80" : "#f87171") : "#64748b" }}>{leverage != null ? leverage.toFixed(1) : "N/A"}</Td>
-                            <Td style={{ color: optPct != null ? "#c9a84c" : "#64748b", fontWeight: optPct != null ? 700 : 400 }}>{optPct != null ? `${optPct.toFixed(1)}%` : optPctStatus === "LOCKED" ? "—" : optPctStatus === "COMPLETE" ? "—" : optPctStatus === "RUNNING" || optPctStatus === "QUEUED" ? "Calculating…" : "—"}</Td>
+                            <Td style={{ color: optPct != null ? "#c9a84c" : "#64748b", fontWeight: optPct != null ? 700 : 400 }}>{formatOptPctCell(optPct, optPctStatus)}</Td>
                             <Td style={{ color: ceiling != null ? "#94a3b8" : "#64748b" }}>{ceiling != null ? ceiling.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: floor != null ? "#94a3b8" : "#64748b" }}>{floor != null ? floor.toFixed(1) : "N/A"}</Td>
                             <Td style={{ color: mCount ? "#c9a84c" : "#64748b" }}>{mCount || "—"}</Td>

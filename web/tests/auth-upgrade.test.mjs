@@ -57,3 +57,27 @@ test("username helper enforces public handle rules", () => {
   assert.match(css, /sbme-login-card/);
   assert.match(css, /sbme-login-oauth--ready/);
 });
+
+function navAccountLabel(user) {
+  const u = (user?.username || "").trim();
+  if (u) return u;
+  return (user?.email || "").trim();
+}
+
+test("navbar prefers authenticated username over email", () => {
+  const topnav = readFileSync(join(root, "src/components/TopNav.tsx"), "utf8");
+  assert.match(topnav, /navAccountLabel\(user\)/);
+  assert.match(username, /export function navAccountLabel/);
+  assert.doesNotMatch(topnav, /sbme-nav-email\}>\{user\.email\}/);
+  assert.equal(navAccountLabel({ username: "sbmega", email: "qa@sportbookme.ai" }), "sbmega");
+  assert.notEqual(navAccountLabel({ username: "sbmega", email: "qa@sportbookme.ai" }), "qa@sportbookme.ai");
+  assert.match(profile, /user\?\.email/);
+  assert.match(profile, /user\.username/);
+});
+
+test("navbar falls back to email when username is absent", () => {
+  assert.equal(navAccountLabel({ username: null, email: "qa@sportbookme.ai" }), "qa@sportbookme.ai");
+  assert.equal(navAccountLabel({ username: "   ", email: "qa@sportbookme.ai" }), "qa@sportbookme.ai");
+  assert.equal(navAccountLabel({ email: "qa@sportbookme.ai" }), "qa@sportbookme.ai");
+  assert.equal(navAccountLabel(null), "");
+});

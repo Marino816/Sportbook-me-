@@ -8,6 +8,7 @@ import {
   Database, BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { navAccountLabel } from "@/lib/username";
 import { Suspense } from "react";
 
 const TABS = [
@@ -67,7 +68,7 @@ function TopNavInner() {
           {isAuthenticated && user ? (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div className="sbme-nav-account">
-                <span className="sbme-nav-email">{user.email}</span>
+                <span className="sbme-nav-email">{navAccountLabel(user)}</span>
                 <span className="sbme-nav-plan">{user.plan || "Free"} Plan</span>
               </div>
               <button onClick={() => { logout(); router.push("/login"); }}
