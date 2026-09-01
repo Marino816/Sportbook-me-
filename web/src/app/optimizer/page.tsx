@@ -608,7 +608,7 @@ export default function OptimizerPage() {
       ((lu.players as any[]) || []).map((p) => String(p.id || p.name || "")).filter(Boolean)
     );
     setUniqueLineupError(null);
-    optimizeMutation.mutate();
+    optimizeMutation.mutate({ strategy });
   }, [optimizeMutation, lineups]);
   const markSaved = useCallback(async () => {
     if (historySaved || savedNote) return;
@@ -1063,7 +1063,7 @@ export default function OptimizerPage() {
             <input type="range" min={1} max={50} value={lineupCount} onChange={(e) => setLineupCount(+e.target.value)} aria-label="Lineup count" style={{ flex: 1, accentColor: "#c9a84c" }} />
             <span style={{ fontSize: 14, fontWeight: 800, color: "#c9a84c", minWidth: 24, textAlign: "center" }}>{lineupCount}</span>
           </div>
-          <button type="button" className="sbme-opt-cmd" onClick={() => optimizeMutation.mutate()} disabled={!canGenerate || optimizeMutation.isPending}>
+          <button type="button" className="sbme-opt-cmd" onClick={() => optimizeMutation.mutate({ strategy })} disabled={!canGenerate || optimizeMutation.isPending}>
             {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>BUILD OPTIMAL LINEUP</>}
           </button>
           {roster && roster.salaryCap == null && maxSalaryOverride == null && (
