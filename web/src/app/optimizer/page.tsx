@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { fetchDFSSlates, fetchDFSSlate, runOptimizer, fetchDataHubSlate, fetchOptimalPct, saveLineupHistory, type LineupResponse, type DFSSlatePlayer, type DFSSlateSummary, type CanonicalPlayer } from "@/lib/api";
 import { formatOptPctCell, lookupOptimalPct, mapOptimalPctResponse } from "@/lib/optimal-pct";
+import { extractOptimizerLineups, optimizerGenerationNote, requestedNumLineups } from "@/lib/optimizer-results";
 import { Loader2, Search, Save, RefreshCw, Trash2, List, Lock, Ban, Heart, BarChart3, Download, ArrowUpDown } from "lucide-react";
 import { useEvents } from "@/lib/use-events";
 import type { SBEvent, SBPlayer, SBMarket } from "@/lib/sbevent";
@@ -144,6 +145,7 @@ export default function OptimizerPage() {
   const roster = useMemo(() => getRoster(sport, platform), [sport, platform]);
   const regenFromRef = useRef<string[][] | null>(null);
   const [historySaved, setHistorySaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [uniqueLineupError, setUniqueLineupError] = useState<string | null>(null);
 
   // ── State ──
@@ -178,7 +180,7 @@ export default function OptimizerPage() {
   const [maxSalaryOverride, setMaxSalaryOverride] = useState<number | undefined>();
   const [globalMaxExposure, setGlobalMaxExposure] = useState<number | undefined>();
   const [savedNote, setSavedNote] = useState(false);
-  const [lastGenMeta, setLastGenMeta] = useState<{ sport: string; platform: string; strategy: string; gameCount: number } | null>(null);
+  const [lastGenMeta, setLastGenMeta] = useState<{ sport: string; platform: string; strategy: string; gameCount: number; generationWarning?: string | null } | null>(null);
   const [selectedLineupIndex, setSelectedLineupIndex] = useState(0);
   const [projPool, setProjPool] = useState<Record<string, { projected_fp: number; salary: number; position: string; team: string; opponent: string; projection_source: string }>>({});
   const handoffApplied = useRef(false);
@@ -532,12 +534,13 @@ export default function OptimizerPage() {
 
   // ── Optimize ──
   const optimizeMutation = useMutation({
-    mutationFn: (vars?: { strategy?: string }) => {
+    mutationFn: (vars?: { strategy?: string; num_lineups?: number }) => {
       if (resolvedSlateId == null) throw new Error(`No ${platform === "draftkings" ? "DraftKings" : "FanDuel"} contest salary data.`);
       const appliedStrategy = vars?.strategy ?? strategyRef.current;
       strategyRef.current = appliedStrategy;
+      const numLineups = requestedNumLineups(vars?.num_lineups ?? lineupCount);
       const setting: any = {
-        sport, platform, strategy: appliedStrategy, num_lineups: lineupCount,
+        sport, platform, strategy: appliedStrategy, num_lineups: numLineups,
         locked_player_ids: solverPlayerKeys(ws.lockedIds, dfsPlayers),
         excluded_player_ids: solverPlayerKeys(ws.excludedIds, dfsPlayers),
       };
@@ -560,21 +563,22 @@ export default function OptimizerPage() {
     onSuccess: (res: unknown) => {
       regenFromRef.current = null;
       setUniqueLineupError(null);
+      setSaveError(null);
       try {
         if (!res || typeof res !== "object") { setLineups([]); return; }
         const r = res as Record<string, unknown>;
         const data = r?.data;
-        if (!data) { setLineups([]); return; }
-        if (Array.isArray(data)) setLineups(data as LineupResponse[]);
-        else if (typeof data === "object" && data !== null) {
-          const inner = (data as Record<string, unknown>)?.lineups;
-          setLineups(Array.isArray(inner) ? (inner as LineupResponse[]) : []);
+        const extracted = extractOptimizerLineups(res);
+        setLineups(extracted as LineupResponse[]);
+        if (data && typeof data === "object" && !Array.isArray(data)) {
           setHistorySaved(Boolean((data as Record<string, unknown>)?.history_saved));
           setSavedNote(Boolean((data as Record<string, unknown>)?.history_saved));
-        } else setLineups([]);
+        }
 
         // Store projection pool (keyed by name for frontend matching)
-        const pool = (data as Record<string, unknown>)?.pool;
+        const pool = (data && typeof data === "object" && !Array.isArray(data))
+          ? (data as Record<string, unknown>)?.pool
+          : undefined;
         if (Array.isArray(pool)) {
           const poolMap: Record<string, any> = {};
           for (const p of pool) {
@@ -583,8 +587,13 @@ export default function OptimizerPage() {
           }
           setProjPool(poolMap);
         } else { setProjPool({}); }
-      } catch { setLineups([]); setProjPool({}); }
-      setLastGenMeta({ sport, platform, strategy: strategyRef.current, gameCount: dfsPlayers.length > 0 ? (new Set(dfsPlayers.map(p => p.team)).size / 2) : 0 });
+        const warn = optimizerGenerationNote(res, extracted.length);
+        setLastGenMeta({
+          sport, platform, strategy: strategyRef.current,
+          gameCount: dfsPlayers.length > 0 ? (new Set(dfsPlayers.map(p => p.team)).size / 2) : 0,
+          generationWarning: warn,
+        });
+      } catch { setLineups([]); setProjPool({}); setLastGenMeta({ sport, platform, strategy: strategyRef.current, gameCount: 0 }); }
       setMainTab("built");
       setSelectedLineupIndex(0);
     },
@@ -610,32 +619,41 @@ export default function OptimizerPage() {
     setLastGenMeta(null);
     setSelectedLineupIndex(0);
     if (stale && canGenerate) {
-      optimizeMutation.mutate({ strategy: next });
+      optimizeMutation.mutate({ strategy: next, num_lineups: lineupCount });
     }
-  }, [lineups.length, canGenerate, optimizeMutation]);
-  const clearLineups = useCallback(() => { setLineups([]); setLastGenMeta(null); setSavedNote(false); setHistorySaved(false); setUniqueLineupError(null); }, []);
+  }, [lineups.length, canGenerate, optimizeMutation, lineupCount]);
+  const clearLineups = useCallback(() => { setLineups([]); setLastGenMeta(null); setSavedNote(false); setHistorySaved(false); setSaveError(null); setUniqueLineupError(null); }, []);
   const regenerate = useCallback(() => {
     regenFromRef.current = lineups.map((lu) =>
       ((lu.players as any[]) || []).map((p) => String(p.id || p.name || "")).filter(Boolean)
     );
     setUniqueLineupError(null);
-    optimizeMutation.mutate({ strategy });
-  }, [optimizeMutation, lineups]);
+    optimizeMutation.mutate({ strategy, num_lineups: lineupCount });
+  }, [optimizeMutation, lineups, strategy, lineupCount]);
   const markSaved = useCallback(async () => {
     if (historySaved || savedNote) return;
     if (!lineups.length) return;
+    setSaveError(null);
     try {
-      await saveLineupHistory({
+      const res = await saveLineupHistory({
         sport,
         platform,
         slate_id: resolvedSlateId,
         strategy,
         lineups,
       });
+      if (!res?.data?.saved) {
+        setHistorySaved(false);
+        setSavedNote(false);
+        setSaveError("Could not save lineup.");
+        return;
+      }
       setHistorySaved(true);
       setSavedNote(true);
-    } catch {
+    } catch (err) {
+      setHistorySaved(false);
       setSavedNote(false);
+      setSaveError(err instanceof Error ? err.message : "Could not save lineup.");
     }
   }, [historySaved, savedNote, lineups, sport, platform, resolvedSlateId, strategy]);
 
@@ -1001,6 +1019,8 @@ export default function OptimizerPage() {
                     </div>
                   </div>
                   {uniqueLineupError && <p style={{ fontSize: 12, color: "#f87171", marginBottom: 12 }}>{uniqueLineupError}</p>}
+                  {saveError && <p style={{ fontSize: 12, color: "#f87171", marginBottom: 12 }}>{saveError}</p>}
+                  {lastGenMeta?.generationWarning && <p style={{ fontSize: 12, color: "#f87171", marginBottom: 12 }}>{lastGenMeta.generationWarning}</p>}
                   {lastGenMeta && <p style={{ fontSize: 11, color: "#64748b", marginBottom: 12 }}>Platform: {lastGenMeta.platform === "draftkings" ? "DraftKings" : "FanDuel"} · Strategy: {lastGenMeta.strategy} · {lastGenMeta.gameCount} games</p>}
                   {lineups.map((l, i) => <LineupCard key={i} index={i} lineup={l} platform={lastGenMeta?.platform || platform} />)}
                 </>
@@ -1074,7 +1094,7 @@ export default function OptimizerPage() {
             <input type="range" min={1} max={50} value={lineupCount} onChange={(e) => setLineupCount(+e.target.value)} aria-label="Lineup count" style={{ flex: 1, accentColor: "#c9a84c" }} />
             <span style={{ fontSize: 14, fontWeight: 800, color: "#c9a84c", minWidth: 24, textAlign: "center" }}>{lineupCount}</span>
           </div>
-          <button type="button" className="sbme-opt-cmd" onClick={() => optimizeMutation.mutate({ strategy })} disabled={!canGenerate || optimizeMutation.isPending}>
+          <button type="button" className="sbme-opt-cmd" onClick={() => optimizeMutation.mutate({ strategy, num_lineups: lineupCount })} disabled={!canGenerate || optimizeMutation.isPending}>
             {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>BUILD OPTIMAL LINEUP</>}
           </button>
           {roster && roster.salaryCap == null && maxSalaryOverride == null && (

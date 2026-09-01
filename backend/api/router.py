@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 import logging
 
 from models.database import get_db
-from models.schemas import LineupRequest, LineupResponse, ProjectionSchema
+from models.schemas import LineupRequest, LineupResponse, ProjectionSchema, LineupHistorySaveRequest
 from models.domain import Projection, LineupHistory, Player, User, Subscription
 from optimizer.core import DFSOptimizer
 from api.utils import wrap_data
@@ -17,6 +17,40 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def num_lineups_from_settings(settings) -> int:
+    """Read the customer-requested lineup count from OptimizerSettings or a dict."""
+    raw = None
+    if isinstance(settings, dict):
+        raw = settings.get("num_lineups")
+        if raw is None:
+            raw = settings.get("lineup_count")
+    elif settings is not None:
+        raw = getattr(settings, "num_lineups", None)
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        n = 1
+    return max(1, n)
+
+
+def lineup_history_from_save(user_id: int, body: LineupHistorySaveRequest) -> LineupHistory:
+    lineups = body.lineups or []
+    first = lineups[0] if lineups and isinstance(lineups[0], dict) else {}
+    return LineupHistory(
+        user_id=user_id,
+        sport=body.sport or "",
+        platform=body.platform or "",
+        slate_id=body.slate_id,
+        strategy=body.strategy or "",
+        lineup_count=len(lineups),
+        player_count=len((first.get("players") or [])),
+        total_salary=int(first.get("total_salary") or 0),
+        projected_score=float(first.get("projected_score") or 0),
+        data_mode="native",
+        lineups_json=jsonable_encoder(lineups),
+    )
 
 @router.get("/projections/{slate_id}")
 async def get_slate_projections(slate_id: int, db: AsyncSession = Depends(get_db)):
@@ -62,7 +96,7 @@ async def run_optimizer(
         elif sub and sub.plan_name == "Pro Arena":
             max_lineups = 20
             
-    requested_lineups = request.settings.get("num_lineups", 1) if isinstance(request.settings, dict) else getattr(request.settings, 'num_lineups', 1)
+    requested_lineups = num_lineups_from_settings(request.settings)
     
     if requested_lineups > max_lineups:
         raise HTTPException(
@@ -536,28 +570,14 @@ async def list_lineup_history(
 
 @router.post("/lineups/history")
 async def save_lineup_history(
-    body: dict,
+    body: LineupHistorySaveRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Persist a generated lineup set the customer explicitly saved."""
-    lineups = body.get("lineups") or []
-    if not lineups:
+    if not body.lineups:
         raise HTTPException(400, "No lineups to save.")
-    first = lineups[0] if isinstance(lineups[0], dict) else {}
-    hist = LineupHistory(
-        user_id=user.id,
-        sport=body.get("sport") or "",
-        platform=body.get("platform") or "",
-        slate_id=body.get("slate_id"),
-        strategy=body.get("strategy") or "",
-        lineup_count=len(lineups),
-        player_count=len((first.get("players") or [])),
-        total_salary=int(first.get("total_salary") or 0),
-        projected_score=float(first.get("projected_score") or 0),
-        data_mode="native",
-        lineups_json=jsonable_encoder(lineups),
-    )
+    hist = lineup_history_from_save(user.id, body)
     db.add(hist)
     await db.commit()
     await db.refresh(hist)

@@ -74,6 +74,15 @@ class LineupRequest(BaseModel):
     slate_id: int
     settings: OptimizerSettings
 
+
+class LineupHistorySaveRequest(BaseModel):
+    """Explicit Save Lineup payload from the Optimizer Built Lineups action."""
+    sport: str = ""
+    platform: str = ""
+    slate_id: Optional[int] = None
+    strategy: str = ""
+    lineups: List[Any] = []
+
 class LineupResponse(BaseModel):
     total_salary: int
     projected_score: float

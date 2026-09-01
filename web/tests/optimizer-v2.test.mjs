@@ -74,7 +74,7 @@ test("desktop Live Lineup Builder is capped so Player Pool can show all columns"
 test("strategy change applies immediately and refreshes strategy-dependent results", () => {
   assert.match(optimizer, /STRATEGIES = \["balanced", "cash", "gpp", "aggressive"\]/);
   assert.match(optimizer, /onChange=\{applyStrategy\}/);
-  assert.match(optimizer, /optimizeMutation\.mutate\(\{ strategy: next \}\)/);
+  assert.match(optimizer, /optimizeMutation\.mutate\(\{ strategy: next, num_lineups: lineupCount \}\)/);
   assert.match(optimizer, /strategy: appliedStrategy/);
   assert.match(optimizer, /setLineups\(\[\]\)/);
   assert.doesNotMatch(optimizer, /onChange=\{setStrategy\}/);
@@ -94,4 +94,11 @@ test("OPT% uses /api/optimal-pct and polls until COMPLETE", () => {
   assert.match(optimizer, /RUNNING/);
   assert.match(optimizer, /setInterval\(load, POLL_MS\)/);
   assert.doesNotMatch(optimizer, /optPctMap\[normName\(p\.name\)\] \?\? .*ownership/);
+});
+
+test("BUILD sends selected lineupCount as num_lineups", () => {
+  assert.match(optimizer, /num_lineups: numLineups/);
+  assert.match(optimizer, /num_lineups: lineupCount/);
+  assert.match(optimizer, /lineups\.map/);
+  assert.doesNotMatch(optimizer, /setLineups\(data\[0\]\)/);
 });
