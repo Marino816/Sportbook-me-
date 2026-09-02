@@ -133,3 +133,9 @@ test("manually constructed lineup can be saved via existing payload", () => {
   assert.equal(extracted[0].players[0].name, "Gerrit Cole");
   assert.match(optimizer, /locked_player_ids: solverPlayerKeys\(ws\.lockedIds/);
 });
+
+test("BUILD failure switches to Built Lineups and surfaces the optimizer error", () => {
+  const err = optimizer.slice(optimizer.indexOf("onError: (err)"), optimizer.indexOf("const applyStrategy"));
+  assert.match(err, /setMainTab\("built"\)/);
+  assert.match(optimizer, /optimizeMutation\.isError && !optimizeMutation\.isPending/);
+});

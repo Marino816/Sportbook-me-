@@ -4,7 +4,7 @@ import inspect
 import pytest
 from models.domain import LineupHistory
 from models.schemas import LineupHistorySaveRequest, OptimizerSettings
-from api.router import lineup_history_from_save, num_lineups_from_settings, run_optimizer, save_lineup_history
+from api.router import lineup_history_from_save, num_lineups_from_settings, max_lineups_for_plan, run_optimizer, save_lineup_history
 
 
 def test_lineup_history_constructs_with_mapped_fields():
@@ -83,3 +83,15 @@ def test_optimizer_passes_requested_count_to_generator():
     src = inspect.getsource(run_optimizer)
     assert "requested_lineups = num_lineups_from_settings(request.settings)" in src
     assert "opt.generate(count=requested_lineups" in src
+
+
+def test_elite_stack_annual_gets_elite_lineup_cap():
+    assert max_lineups_for_plan("Elite Stack Annual", is_admin=False, is_pro=True) == 150
+    assert max_lineups_for_plan("Elite Stack", is_admin=False, is_pro=True) == 150
+    assert max_lineups_for_plan("Pro Arena Annual", is_admin=False, is_pro=True) == 20
+    assert max_lineups_for_plan("Pro Arena", is_admin=False, is_pro=True) == 20
+    assert max_lineups_for_plan("Elite Stack Annual", is_admin=False, is_pro=False) == 1
+    assert max_lineups_for_plan(None, is_admin=False, is_pro=True) == 1
+    assert max_lineups_for_plan("Elite Stack Annual", is_admin=True, is_pro=True) == 150
+    src = inspect.getsource(run_optimizer)
+    assert "max_lineups = max_lineups_for_plan(" in src

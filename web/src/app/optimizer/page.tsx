@@ -606,6 +606,7 @@ export default function OptimizerPage() {
         setLineups([]);
         setLastGenMeta(null);
       }
+      setMainTab("built");
     },
   });
 
@@ -1097,6 +1098,11 @@ export default function OptimizerPage() {
           <button type="button" className="sbme-opt-cmd" onClick={() => optimizeMutation.mutate({ strategy, num_lineups: lineupCount })} disabled={!canGenerate || optimizeMutation.isPending}>
             {optimizeMutation.isPending ? <><Loader2 size={18} className="animate-spin" /> SOLVING...</> : <>BUILD OPTIMAL LINEUP</>}
           </button>
+          {optimizeMutation.isError && !optimizeMutation.isPending && (
+            <p style={{ fontSize: 12, color: "#f87171", fontWeight: 700, marginTop: 8 }}>
+              {optimizeMutation.error instanceof Error ? optimizeMutation.error.message : "Optimization failed"}
+            </p>
+          )}
           {roster && roster.salaryCap == null && maxSalaryOverride == null && (
             <div className="sbme-opt-empty" style={{ marginTop: 12 }}>
               <h3>SALARY CAP UNAVAILABLE</h3>

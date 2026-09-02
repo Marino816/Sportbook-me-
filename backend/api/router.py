@@ -19,6 +19,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def max_lineups_for_plan(plan_name, *, is_admin: bool, is_pro: bool) -> int:
+    """Existing plan caps. Annual SKUs inherit the matching monthly tier."""
+    if is_admin:
+        return 150
+    if not is_pro:
+        return 1
+    name = (plan_name or "").strip()
+    if name == "Elite Stack" or name.startswith("Elite Stack "):
+        return 150
+    if name == "Pro Arena" or name.startswith("Pro Arena "):
+        return 20
+    return 1
+
+
 def num_lineups_from_settings(settings) -> int:
     """Read the customer-requested lineup count from OptimizerSettings or a dict."""
     raw = None
@@ -79,23 +93,15 @@ async def run_optimizer(
 ):
     """Run the DFS Optimizer Engine with SaaS feature gating for multi-lineup generation."""
     # Enforce Subscription Limits
-    max_lineups = 1  # Default for Free users
-
-    # Admin and QA bootstrap accounts get full access for testing
     is_admin = user.role == "admin"
-    
-    if is_admin:
-        max_lineups = 150
-    elif user.is_pro and user.active_subscription_id:
-        # Query matching subscription for tier check
+    plan_name = None
+    entitled = bool(user.is_pro and user.active_subscription_id)
+    if entitled:
         sub_result = await db.execute(select(Subscription).where(Subscription.id == user.active_subscription_id))
         sub = sub_result.scalars().first()
-        
-        if sub and sub.plan_name == "Elite Stack":
-            max_lineups = 150
-        elif sub and sub.plan_name == "Pro Arena":
-            max_lineups = 20
-            
+        plan_name = sub.plan_name if sub else None
+    max_lineups = max_lineups_for_plan(plan_name, is_admin=is_admin, is_pro=entitled)
+
     requested_lineups = num_lineups_from_settings(request.settings)
     
     if requested_lineups > max_lineups:
