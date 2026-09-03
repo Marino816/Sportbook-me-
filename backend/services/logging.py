@@ -21,6 +21,7 @@ from starlette.responses import Response
 REDACTED_FIELDS = {
     "password", "hashed_password", "token", "jwt", "secret",
     "api_key", "stripe", "authorization", "cookie", "credit_card",
+    "webhook-signature", "paykings", "signing_key", "payment_token", "security_key",
 }
 
 

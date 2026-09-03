@@ -131,7 +131,11 @@ app.include_router(sports.router, prefix="/api/sports", tags=["Sports"])
 app.include_router(billing.router, prefix="/api/billing", tags=["Billing"])
 app.include_router(auth.router, prefix="/api", tags=["Authentication"])
 from api import oauth as oauth_routes
+from api import paykings_webhooks
+from api import paykings_billing
 app.include_router(oauth_routes.router, prefix="/api", tags=["Authentication"])
+app.include_router(paykings_webhooks.router, prefix="/api", tags=["Webhooks"])
+app.include_router(paykings_billing.router, prefix="/api/billing", tags=["Billing"])
 app.include_router(ai_routes.router, tags=["AI Engine"])
 app.include_router(scout_routes.router, tags=["SB-Me Scout"])
 app.include_router(analyst_routes.router, tags=["SB-Me Analyst"])

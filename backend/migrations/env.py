@@ -40,6 +40,8 @@ from models.domain import (  # noqa: F401
     Matchup,
     SystemStatus,
     StripeEvent,
+    PaymentWebhookEvent,
+    BillingCheckout,
 )
 
 # Alembic Config object

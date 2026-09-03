@@ -6,7 +6,7 @@ import { LegalPage, H2, H3, P, UL, LI, SUPPORT_EMAIL, gold } from "@/components/
 
 export default function RefundPolicyPage() {
   return (
-    <LegalPage title="Refund & Cancellation Policy" lastUpdated="August 14, 2026">
+    <LegalPage title="Refund & Cancellation Policy" lastUpdated="September 3, 2026">
       <P>
         This Refund &amp; Cancellation Policy describes the terms under which you may cancel your SB ME DFS.AI
         subscription and the circumstances under which refunds may be available.
@@ -16,10 +16,11 @@ export default function RefundPolicyPage() {
       <P>The Service offers the following subscription plans:</P>
       <UL>
         <LI><strong style={{ color: "#f0f6fc" }}>Starter</strong> — Free ($0/month). No billing information required.</LI>
-        <LI><strong style={{ color: "#f0f6fc" }}>Pro Arena</strong> — $39.99/month. Includes expanded analytical features.</LI>
-        <LI><strong style={{ color: "#f0f6fc" }}>Elite Stack</strong> — $89.99/month. Includes all available features.</LI>
+        <LI><strong style={{ color: "#f0f6fc" }}>Pro Arena Monthly</strong> — $49.99/month. Includes expanded analytical features.</LI>
+        <LI><strong style={{ color: "#f0f6fc" }}>Pro Arena Annual</strong> — $399.99/year.</LI>
+        <LI><strong style={{ color: "#f0f6fc" }}>Elite Stack Monthly</strong> — $89.99/month. Includes all available features.</LI>
+        <LI><strong style={{ color: "#f0f6fc" }}>Elite Stack Annual</strong> — $599.99/year.</LI>
       </UL>
-      <P>Annual billing options may also be available for paid plans at a discounted rate.</P>
 
       <H2>Automatic Renewal</H2>
       <P>

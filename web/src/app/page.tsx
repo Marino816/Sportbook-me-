@@ -677,9 +677,9 @@ export default function LandingPage() {
 
           <div className="grid md:grid-cols-3 gap-6 lg:gap-8 max-w-4xl mx-auto">
             {([
-              { name: "Starter", price: "Free", features: ["1 daily lineup", "MLB projections", "Live scores & market data", "Player props", "AI chat (10 msgs/day)"], cta: "Get Started", href: "/register", featured: false, goldPrice: false, period: null as string | null },
-              { name: "Pro Arena", price: "$39", period: ".99/mo", features: ["10 daily lineups", "All-sport DFS projections", "Live odds, Fair Odds & Book Consensus", "Player & team props, alternate lines", "AI chat (unlimited)", "Lineup optimizer", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
-              { name: "Elite Stack", price: "$89", period: ".99/mo", features: ["Unlimited lineups", "All-sport DFS projections", "Custom projections", "Full AI intelligence", "Priority support", "Early features", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
+              { name: "Starter", price: "Free", features: ["1 daily lineup", "MLB projections", "Live scores & market data", "Player props", "AI chat (10 msgs/day)"], cta: "Get Started", href: "/register", featured: false, goldPrice: false, period: null as string | null, annual: null as string | null },
+              { name: "Pro Arena", price: "$49", period: ".99/mo", annual: "or $399.99/year", features: ["10 daily lineups", "All-sport DFS projections", "Live odds, Fair Odds & Book Consensus", "Player & team props, alternate lines", "AI chat (unlimited)", "Lineup optimizer", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
+              { name: "Elite Stack", price: "$89", period: ".99/mo", annual: "or $599.99/year", features: ["Unlimited lineups", "All-sport DFS projections", "Custom projections", "Full AI intelligence", "Priority support", "Early features", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
             ] as const).map((plan, i) => (
               <div key={i} className={`relative rounded-3xl border p-6 lg:p-8 flex flex-col transition-all duration-300 hover:shadow-xl
                 ${plan.featured ? "scale-[1.03] z-10" : ""}`}
@@ -699,6 +699,9 @@ export default function LandingPage() {
                   <span className={`text-4xl font-extrabold`} style={{ color: plan.goldPrice ? gold : textPrimary }}>{plan.price}</span>
                   {plan.period && <span className="text-sm" style={{ color: textMuted }}>{plan.period}</span>}
                 </div>
+                {plan.annual && (
+                  <p className="text-sm mb-1" style={{ color: textMuted }}>{plan.annual}</p>
+                )}
                 <p className="text-sm mb-6" style={{ color: textSecondary }}>{plan.price === "Free" ? "No credit card required" : "Cancel anytime"}</p>
                 <ul className="space-y-3 flex-1 mb-8">
                   {plan.features.map((f, j) => (

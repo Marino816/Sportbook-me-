@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from "./api-base-url";
+import { buildPayKingsSubscribeBody } from "./paykings";
 
 const API_BASE_URL = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
@@ -179,6 +180,27 @@ export async function createCheckout(plan: string): Promise<ApiResponse<{ url: s
   return apiFetch<{ url: string }>(`/billing/checkout`, {
     method: "POST",
     body: JSON.stringify({ plan }),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function createPayKingsSubscribe(
+  planId: string,
+  paymentToken: string,
+): Promise<ApiResponse<{
+  checkout_reference: string;
+  provider: string;
+  plan_id: string;
+  tier: string;
+  billing_period: string;
+  expected_price: number;
+  status: string;
+  provider_approved?: boolean;
+}>> {
+  const body = buildPayKingsSubscribeBody(planId, paymentToken);
+  return apiFetch(`/billing/paykings/subscribe`, {
+    method: "POST",
+    body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
   });
 }

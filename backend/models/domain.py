@@ -162,6 +162,62 @@ class StripeEvent(Base):
     processed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class PaymentWebhookEvent(Base):
+    """Idempotent ledger for PayKings (NMI) webhook deliveries.
+
+    provider_event_id is the confirmed PayKings event_id when present,
+    or a sha256 fingerprint of the raw body (idempotency_source marks which).
+    sanitized_payload stores the confirmed-field allowlist only — no PAN/CVV.
+    received_at / processed_at / processing_status are our ledger columns.
+    """
+    __tablename__ = "payment_webhook_events"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_event_id", name="uq_payment_webhook_provider_event"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String, nullable=False, default="paykings", index=True)
+    provider_event_id = Column(String, nullable=False, index=True)
+    idempotency_source = Column(String, nullable=False)  # event_id | payload_sha256_fallback
+    event_type = Column(String, nullable=True, index=True)
+    processing_status = Column(String, nullable=False, default="received")
+    received_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    sanitized_payload = Column(JSON, nullable=True)
+
+
+class BillingCheckout(Base):
+    """Provider-agnostic pending checkout / billing relationship.
+
+    Created before any PayKings provider call. Does not grant entitlements.
+    checkout_reference is an unguessable pkchk_ token, never the numeric user id.
+    """
+    __tablename__ = "billing_checkouts"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_subscription_id",
+            name="uq_billing_checkout_provider_subscription",
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String, nullable=False, default="paykings", index=True)
+    checkout_reference = Column(String, nullable=False, unique=True, index=True)
+    provider_customer_id = Column(String, nullable=True, index=True)
+    provider_transaction_id = Column(String, nullable=True)
+    provider_subscription_id = Column(String, nullable=True, index=True)
+    provider_plan_id = Column(String, nullable=False)
+    tier = Column(String, nullable=False)
+    billing_period = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pending")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class RevenueLog(Base):
     """Revenue tracking from successful Stripe payments."""
     __tablename__ = "revenue_logs"

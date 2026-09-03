@@ -34,8 +34,8 @@ Sportsbook Me DFS AI provides daily fantasy sports intelligence, including:
 | Plan | Price | Billing |
 |------|-------|---------|
 | Free | $0 | Basic access |
-| Pro Arena | $39.99/mo or $149.99/yr | Monthly/annual recurring |
-| Elite Stack | $79.99/mo or $249.99/yr | Monthly/annual recurring |
+| Pro Arena | $49.99/mo or $399.99/yr | Monthly/annual recurring |
+| Elite Stack | $89.99/mo or $599.99/yr | Monthly/annual recurring |
 
 - Payments processed by Stripe
 - Cancel anytime via Billing Portal

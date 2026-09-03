@@ -39,9 +39,8 @@
 - "This is your command center"
 
 ### Step 7: Subscription Overview (2:30)
-- Pro Arena: $39.99/mo — Full projections, 20 lineups, AI Chat
-- Elite Stack: $79.99/mo — 150 lineups, Deep analytics, Full AI
-- Annual plans: Save with yearly billing
+- Pro Arena: $49.99/mo or $399.99/year — Full projections, 20 lineups, AI Chat
+- Elite Stack: $89.99/mo or $599.99/year — 150 lineups, Deep analytics, Full AI
 - "Choose your plan when ready"
 
 ### Step 8: Complete (3:00)

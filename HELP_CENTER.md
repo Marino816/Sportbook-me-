@@ -52,7 +52,7 @@ A: Yes. Every lineup can be saved, edited, and exported.
 ### Subscription
 
 **Q: What plans are available?**
-A: Free (basic), Pro Arena ($39.99/mo), Elite Stack ($79.99/mo). Annual plans save you money.
+A: Free (basic), Pro Arena ($49.99/mo or $399.99/year), Elite Stack ($89.99/mo or $599.99/year).
 
 **Q: How do I upgrade?**
 A: Subscription tab → tap a plan → Stripe Checkout → instant access.

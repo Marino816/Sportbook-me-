@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Check, CreditCard, ExternalLink, Zap, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchSubscriptionStatus, createCheckout, createPortal, type SubscriptionStatus } from "@/lib/api";
+import { PayKingsPayButton } from "@/components/PayKingsPayButton";
 
 export default function BillingPage() {
   const [sub, setSub] = useState<SubscriptionStatus | null>(null);
@@ -144,19 +145,26 @@ export default function BillingPage() {
           sub?.plan === "Pro Arena" && "border-primary bg-primary/5 scale-[1.02]"
         )}>
           <h3 className="text-lg font-semibold mb-2">Pro Arena</h3>
-          <div className="text-3xl font-bold mb-4">$39<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
+          <div className="text-3xl font-bold mb-4">$49<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
 
-          <button
+          <PayKingsPayButton
+            planId="SBME_PRO_MONTHLY"
             disabled={sub?.plan === "Pro Arena" || !!actionLoading}
-            onClick={() => handleCheckout("Pro Arena")}
+            label={sub?.plan === "Pro Arena" ? "Current Plan" : "Subscribe Monthly"}
             className={cn(
-              "w-full py-3 font-bold rounded-lg transition-all mb-6 shadow-lg",
+              "w-full py-3 font-bold rounded-lg transition-all mb-2 shadow-lg",
               sub?.plan === "Pro Arena"
                 ? "bg-secondary text-muted-foreground cursor-not-allowed"
                 : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/20"
             )}
+          />
+          <button
+            type="button"
+            disabled={sub?.plan === "Pro Arena" || !!actionLoading}
+            onClick={() => handleCheckout("Pro Arena")}
+            className="w-full py-2 text-xs text-muted-foreground hover:text-foreground mb-6"
           >
-            {actionLoading === "Pro Arena" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Pro Arena" ? "Current Plan" : "Subscribe Monthly")}
+            {actionLoading === "Pro Arena" ? "Opening Stripe…" : "Or pay with Stripe"}
           </button>
 
           <ul className="space-y-3 flex-1 text-sm">
@@ -175,25 +183,32 @@ export default function BillingPage() {
             Best Value
           </div>
           <h3 className="text-lg font-semibold mb-1 text-primary">Pro Arena Annual</h3>
-          <div className="text-3xl font-bold mb-1 text-white">$249<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
-          <p className="text-xs text-primary/80 mb-4">Save $230 vs monthly</p>
+          <div className="text-3xl font-bold mb-1 text-white">$399<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
+          <p className="text-xs text-primary/80 mb-4">Save vs monthly</p>
 
-          <button
+          <PayKingsPayButton
+            planId="SBME_PRO_ANNUAL"
             disabled={sub?.plan === "Pro Arena Annual" || !!actionLoading}
-            onClick={() => handleCheckout("Pro Arena Annual")}
+            label={sub?.plan === "Pro Arena Annual" ? "Current Plan" : "Subscribe Annually"}
             className={cn(
-              "w-full py-3 font-bold rounded-lg transition-all mb-6 shadow-lg",
+              "w-full py-3 font-bold rounded-lg transition-all mb-2 shadow-lg",
               sub?.plan === "Pro Arena Annual"
                 ? "bg-secondary text-muted-foreground cursor-not-allowed"
                 : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20"
             )}
+          />
+          <button
+            type="button"
+            disabled={sub?.plan === "Pro Arena Annual" || !!actionLoading}
+            onClick={() => handleCheckout("Pro Arena Annual")}
+            className="w-full py-2 text-xs text-muted-foreground hover:text-foreground mb-6"
           >
-            {actionLoading === "Pro Arena Annual" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Pro Arena Annual" ? "Current Plan" : "Subscribe Annually")}
+            {actionLoading === "Pro Arena Annual" ? "Opening Stripe…" : "Or pay with Stripe"}
           </button>
 
           <ul className="space-y-3 flex-1 text-sm">
             <Feature check text="All Pro Arena features" />
-            <Feature check text="2 months free" highlight />
+            <Feature check text="Save vs monthly" highlight />
             <Feature check text="Priority support" highlight />
           </ul>
         </div>
@@ -209,17 +224,24 @@ export default function BillingPage() {
           <h3 className="text-lg font-semibold mb-1 text-primary">Elite Stack</h3>
           <div className="text-3xl font-bold mb-4 text-white">$89<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
 
+          <PayKingsPayButton
+            planId="SBME_ELITE_MONTHLY"
+            disabled={sub?.plan === "Elite Stack" || !!actionLoading}
+            label={sub?.plan === "Elite Stack" ? "Current Plan" : "Upgrade to Elite"}
+            className={cn(
+              "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-2",
+              sub?.plan === "Elite Stack"
+                ? "bg-secondary text-muted-foreground cursor-not-allowed"
+                : "bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/20"
+            )}
+          />
           <button
-             disabled={sub?.plan === "Elite Stack" || !!actionLoading}
-             onClick={() => handleCheckout("Elite Stack")}
-             className={cn(
-                "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-6",
-                sub?.plan === "Elite Stack"
-                    ? "bg-secondary text-muted-foreground cursor-not-allowed"
-                    : "bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/20"
-             )}
+            type="button"
+            disabled={sub?.plan === "Elite Stack" || !!actionLoading}
+            onClick={() => handleCheckout("Elite Stack")}
+            className="w-full py-2 text-xs text-muted-foreground hover:text-foreground mb-6"
           >
-            {actionLoading === "Elite Stack" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Elite Stack" ? "Current Plan" : "Upgrade to Elite")}
+            {actionLoading === "Elite Stack" ? "Opening Stripe…" : "Or pay with Stripe"}
           </button>
 
           <ul className="space-y-3 flex-1 text-sm">
@@ -236,28 +258,35 @@ export default function BillingPage() {
             sub?.plan === "Elite Stack Annual" && "border-orange-500 bg-orange-500/10 scale-[1.02]"
         )}>
           <div className="absolute top-0 right-4 -translate-y-1/2 bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
-            Save $580
+            Save vs monthly
           </div>
           <h3 className="text-lg font-semibold mb-1 text-orange-400">Elite Stack Annual</h3>
-          <div className="text-3xl font-bold mb-1 text-white">$499<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
-          <p className="text-xs text-orange-400/80 mb-4">$41.67/mo equivalent</p>
+          <div className="text-3xl font-bold mb-1 text-white">$599<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
+          <p className="text-xs text-orange-400/80 mb-4">Save vs monthly</p>
 
+          <PayKingsPayButton
+            planId="SBME_ELITE_ANNUAL"
+            disabled={sub?.plan === "Elite Stack Annual" || !!actionLoading}
+            label={sub?.plan === "Elite Stack Annual" ? "Current Plan" : "Go Annual"}
+            className={cn(
+              "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-2",
+              sub?.plan === "Elite Stack Annual"
+                ? "bg-secondary text-muted-foreground cursor-not-allowed"
+                : "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20"
+            )}
+          />
           <button
-             disabled={sub?.plan === "Elite Stack Annual" || !!actionLoading}
-             onClick={() => handleCheckout("Elite Stack Annual")}
-             className={cn(
-                "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-6",
-                sub?.plan === "Elite Stack Annual"
-                    ? "bg-secondary text-muted-foreground cursor-not-allowed"
-                    : "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20"
-             )}
+            type="button"
+            disabled={sub?.plan === "Elite Stack Annual" || !!actionLoading}
+            onClick={() => handleCheckout("Elite Stack Annual")}
+            className="w-full py-2 text-xs text-muted-foreground hover:text-foreground mb-6"
           >
-            {actionLoading === "Elite Stack Annual" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Elite Stack Annual" ? "Current Plan" : "Go Annual")}
+            {actionLoading === "Elite Stack Annual" ? "Opening Stripe…" : "Or pay with Stripe"}
           </button>
 
           <ul className="space-y-3 flex-1 text-sm">
             <Feature check text="All Elite Stack features" highlight />
-            <Feature check text="$580/yr savings" highlight />
+            <Feature check text="Annual Elite access" highlight />
             <Feature check text="Priority strategy calls" highlight />
           </ul>
         </div>

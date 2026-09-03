@@ -11,6 +11,8 @@ const leagues = readFileSync(join(root, "src/lib/sgo-leagues.ts"), "utf8");
 const marketView = readFileSync(join(root, "src/lib/market-view.ts"), "utf8");
 const protectedRoute = readFileSync(join(root, "src/components/auth/ProtectedRoute.tsx"), "utf8");
 const landing = readFileSync(join(root, "src/app/page.tsx"), "utf8");
+const terms = readFileSync(join(root, "src/app/terms/page.tsx"), "utf8");
+const refund = readFileSync(join(root, "src/app/refund-policy/page.tsx"), "utf8");
 
 test("55-platform catalog is exactly 55 unique rows", () => {
   assert.equal(platforms.length, 55);
@@ -91,10 +93,25 @@ test("parlay is an analytical workspace without wager execution", () => {
 });
 
 test("landing preserves prices and is not a sportsbook", () => {
-  assert.match(landing, /\$39/);
+  assert.match(landing, /price: "\$49"/);
   assert.match(landing, /\.99\/mo/);
+  assert.match(landing, /\$399\.99\/year/);
   assert.match(landing, /\$89/);
+  assert.match(landing, /\$599\.99\/year/);
+  assert.doesNotMatch(landing, /\$39\.99/);
+  assert.doesNotMatch(landing, /price: "\$39"/);
   assert.match(landing, /do not accept wagers/i);
   assert.match(landing, /DFS Intelligence/);
   assert.match(landing, /Premier League|EPL/);
+});
+
+test("legal copy uses PayKings production prices", () => {
+  assert.match(terms, /\$49\.99\/month or \$399\.99\/year/);
+  assert.match(terms, /\$89\.99\/month or \$599\.99\/year/);
+  assert.doesNotMatch(terms, /\$39\.99/);
+  assert.match(refund, /\$49\.99\/month/);
+  assert.match(refund, /\$399\.99\/year/);
+  assert.match(refund, /\$89\.99\/month/);
+  assert.match(refund, /\$599\.99\/year/);
+  assert.doesNotMatch(refund, /\$39\.99/);
 });
