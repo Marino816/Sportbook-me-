@@ -38,13 +38,9 @@ GATING = {
 }
 _rate: dict = {}
 
-def _tier(user: User) -> str:
-    if not user.is_pro: return "free"
-    try:
-        s = getattr(user, "subscription", None)
-        if s and getattr(s, "plan_name", "") == "Elite Stack": return "elite_stack"
-    except: pass
-    return "pro_arena"
+async def _tier(db: AsyncSession, user: User) -> str:
+    from services.entitlements import feature_tier_for_user
+    return await feature_tier_for_user(db, user)
 
 # ── Schemas ──────────────────────────────────────────────────
 
@@ -68,8 +64,8 @@ class PreferenceUpdate(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────
 
 @router.post("/chat")
-async def chat(body: ChatRequest, user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def chat(body: ChatRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     limits = GATING[tier]
     key = f"assistant:{user.id}:{datetime.now(timezone.utc).strftime('%Y%m%d')}"
     count = _rate.get(key, 0)
@@ -107,8 +103,8 @@ async def chat(body: ChatRequest, user: User = Depends(get_current_user)):
 
 
 @router.get("/strategy-modes")
-async def list_strategy_modes(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def list_strategy_modes(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     modes = StrategyModeEngine.list_modes()
     allowed = GATING[tier]["strategy_modes"]
     if allowed != "all":
@@ -117,8 +113,8 @@ async def list_strategy_modes(user: User = Depends(get_current_user)):
 
 
 @router.post("/strategy-mode")
-async def set_strategy_mode(body: StrategyModeRequest, user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def set_strategy_mode(body: StrategyModeRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     allowed = GATING[tier]["strategy_modes"]
     if allowed != "all" and body.mode not in allowed:
         raise HTTPException(403, f"Strategy mode '{body.mode}' requires Pro Arena or higher.")
@@ -128,8 +124,8 @@ async def set_strategy_mode(body: StrategyModeRequest, user: User = Depends(get_
 
 
 @router.get("/war-room")
-async def war_room(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def war_room(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     if not GATING[tier]["war_room"]:
         raise HTTPException(403, "War Room requires Pro Arena or higher.")
     return wrap_data(ResponseComposer.compose_war_room("balanced"), source="assistant_engine")

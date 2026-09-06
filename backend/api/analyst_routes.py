@@ -48,20 +48,13 @@ ANALYST_GATING = {
 _rate_tracker: dict = {}
 
 
-def _get_tier(user: User) -> str:
-    if not user.is_pro:
-        return "free"
-    try:
-        sub = getattr(user, "subscription", None)
-        if sub and getattr(sub, "plan_name", "") == "Elite Stack":
-            return "elite_stack"
-    except Exception:
-        pass
-    return "pro_arena"
+async def _get_tier(db: AsyncSession, user: User) -> str:
+    from services.entitlements import feature_tier_for_user
+    return await feature_tier_for_user(db, user)
 
 
-def _check_rate(user: User) -> tuple:
-    tier = _get_tier(user)
+async def _check_rate(db: AsyncSession, user: User) -> tuple:
+    tier = await _get_tier(db, user)
     limits = ANALYST_GATING[tier]
     key = f"analyst:{user.id}:{datetime.now(timezone.utc).strftime('%Y%m%d')}"
     count = _rate_tracker.get(key, 0)
@@ -111,7 +104,7 @@ async def player_analysis(
     user: User = Depends(get_current_user),
 ):
     start = time.time()
-    allowed, count, limit, tier = _check_rate(user)
+    allowed, count, limit, tier = await _check_rate(db, user)
     if not allowed:
         raise HTTPException(status_code=429, detail=f"Daily limit ({limit}) reached.")
 
@@ -170,8 +163,8 @@ async def projection_change(entity_id: int, user: User = Depends(get_current_use
 
 
 @router.get("/top-edges")
-async def top_edges(slate_id: int, user: User = Depends(get_current_user)):
-    tier = _get_tier(user)
+async def top_edges(slate_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _get_tier(db, user)
     if not ANALYST_GATING[tier]["edge_score"]:
         raise HTTPException(status_code=403, detail="Edge scores require Pro Arena or higher.")
     return wrap_data({
@@ -183,8 +176,8 @@ async def top_edges(slate_id: int, user: User = Depends(get_current_user)):
 
 
 @router.get("/risks")
-async def get_risks(entity_id: int, entity_type: str = "player", user: User = Depends(get_current_user)):
-    tier = _get_tier(user)
+async def get_risks(entity_id: int, entity_type: str = "player", user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _get_tier(db, user)
     if not ANALYST_GATING[tier]["risk_detail"]:
         raise HTTPException(status_code=403, detail="Risk details require Pro Arena or higher.")
     return wrap_data({

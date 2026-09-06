@@ -9,6 +9,12 @@ import logging
 from models.database import get_db
 from models.schemas import LineupRequest, LineupResponse, ProjectionSchema, LineupHistorySaveRequest
 from models.domain import Projection, LineupHistory, Player, User, Subscription
+from services.entitlements import (
+    effective_access_for_user,
+    max_lineups_for_tier,
+    plan_name_is_elite,
+    plan_name_is_pro,
+)
 from optimizer.core import DFSOptimizer
 from api.utils import wrap_data
 from api.auth import get_current_user
@@ -25,11 +31,10 @@ def max_lineups_for_plan(plan_name, *, is_admin: bool, is_pro: bool) -> int:
         return 150
     if not is_pro:
         return 1
-    name = (plan_name or "").strip()
-    if name == "Elite Stack" or name.startswith("Elite Stack "):
-        return 150
-    if name == "Pro Arena" or name.startswith("Pro Arena "):
-        return 20
+    if plan_name_is_elite(plan_name):
+        return max_lineups_for_tier("elite")
+    if plan_name_is_pro(plan_name):
+        return max_lineups_for_tier("pro")
     return 1
 
 
@@ -92,14 +97,11 @@ async def run_optimizer(
     user: User = Depends(get_current_user)
 ):
     """Run the DFS Optimizer Engine with SaaS feature gating for multi-lineup generation."""
-    # Enforce Subscription Limits
+    # Enforce Subscription Limits from provider-aware effective access.
     is_admin = user.role == "admin"
-    plan_name = None
-    entitled = bool(user.is_pro and user.active_subscription_id)
-    if entitled:
-        sub_result = await db.execute(select(Subscription).where(Subscription.id == user.active_subscription_id))
-        sub = sub_result.scalars().first()
-        plan_name = sub.plan_name if sub else None
+    access = await effective_access_for_user(db, user, is_admin=is_admin)
+    plan_name = access.plan_name if access.is_pro else None
+    entitled = access.is_pro
     max_lineups = max_lineups_for_plan(plan_name, is_admin=is_admin, is_pro=entitled)
 
     requested_lineups = num_lineups_from_settings(request.settings)

@@ -36,13 +36,9 @@ GATING = {
     "elite_stack": {"widgets": "all"},
 }
 
-def _tier(user: User) -> str:
-    if not user.is_pro: return "free"
-    try:
-        s = getattr(user, "subscription", None)
-        if s and getattr(s, "plan_name", "") == "Elite Stack": return "elite_stack"
-    except: pass
-    return "pro_arena"
+async def _tier(db: AsyncSession, user: User) -> str:
+    from services.entitlements import feature_tier_for_user
+    return await feature_tier_for_user(db, user)
 
 def _allowed(widget_id: str, tier: str) -> bool:
     allowed = GATING[tier]["widgets"]
@@ -61,8 +57,8 @@ class PreferenceUpdate(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────
 
 @router.get("")
-async def mission_control(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def mission_control(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     widgets = {}
     for wid, wdef in WIDGETS.items():
         if _allowed(wid, tier) and wdef.get("is_enabled", True):
@@ -71,8 +67,8 @@ async def mission_control(user: User = Depends(get_current_user)):
 
 
 @router.get("/widgets")
-async def get_widgets(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_widgets(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     return wrap_data({"widgets": [
         {"widget_id": w["widget_id"], "title": w["title"], "type": w["widget_type"],
          "subscription_required": w["subscription_required"],
@@ -82,14 +78,14 @@ async def get_widgets(user: User = Depends(get_current_user)):
 
 
 @router.get("/briefing")
-async def get_briefing(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_briefing(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     return wrap_data(briefing(tier), source="mission_control")
 
 
 @router.get("/alerts")
-async def get_alerts(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_alerts(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     alerts = [
         {"severity": "high", "event_type": "odds_movement", "title": "Odds: LAL -4.5 → -6.5", "timestamp": datetime.now(timezone.utc).isoformat()},
         {"severity": "info", "event_type": "lineup_confirmation", "title": "DAL starting lineup confirmed", "timestamp": datetime.now(timezone.utc).isoformat()},
@@ -118,8 +114,8 @@ async def save_preferences(body: PreferenceUpdate, user: User = Depends(get_curr
 
 
 @router.get("/preferences")
-async def get_preferences(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_preferences(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     return wrap_data({
         "favorite_sport": "nba", "favorite_platform": "draftkings",
         "widget_layout": ["daily_briefing", "scout_alerts", "analyst_insights", "builder_status"],

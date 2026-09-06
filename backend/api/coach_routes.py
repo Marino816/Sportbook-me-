@@ -42,13 +42,9 @@ GATING = {
 }
 _rate: dict = {}
 
-def _tier(user: User) -> str:
-    if not user.is_pro: return "free"
-    try:
-        s = getattr(user, "subscription", None)
-        if s and getattr(s, "plan_name", "") == "Elite Stack": return "elite_stack"
-    except: pass
-    return "pro_arena"
+async def _tier(db: AsyncSession, user: User) -> str:
+    from services.entitlements import feature_tier_for_user
+    return await feature_tier_for_user(db, user)
 
 # ── Contest Data ─────────────────────────────
 # Contests loaded from authenticated user's real history.
@@ -83,8 +79,8 @@ async def slates_review(slate_id: int, user: User = Depends(get_current_user)):
 
 
 @router.get("/performance")
-async def get_performance(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_performance(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     results = DEMO_CONTESTS
     roi = PerformanceAnalyzer.calculate_roi(results)
     cr = PerformanceAnalyzer.cash_rate(results)
@@ -96,8 +92,8 @@ async def get_performance(user: User = Depends(get_current_user)):
 
 
 @router.get("/findings")
-async def get_findings(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_findings(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     if not GATING[tier]["full_performance"]:
         raise HTTPException(403, "Full findings require Pro Arena or higher.")
     return wrap_data({
@@ -109,8 +105,8 @@ async def get_findings(user: User = Depends(get_current_user)):
 
 
 @router.get("/recommendations")
-async def get_recommendations(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_recommendations(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     metrics = PerformanceAnalyzer.calculate_roi(DEMO_CONTESTS)
     metrics["cash_rate"] = PerformanceAnalyzer.cash_rate(DEMO_CONTESTS)
     recs = RecommendationEngine.generate(metrics, [], DEMO_CONTESTS)
@@ -120,16 +116,16 @@ async def get_recommendations(user: User = Depends(get_current_user)):
 
 
 @router.get("/strategies")
-async def get_strategies(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_strategies(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     if not GATING[tier]["full_performance"]:
         raise HTTPException(403, "Strategy analysis requires Pro Arena or higher.")
     return wrap_data({"strategies": StrategyAnalyzer.analyze_by_strategy(DEMO_CONTESTS)}, source="coach_engine")
 
 
 @router.get("/exposures")
-async def get_exposures(user: User = Depends(get_current_user)):
-    tier = _tier(user)
+async def get_exposures(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tier = await _tier(db, user)
     if not GATING[tier]["full_performance"]:
         raise HTTPException(403, "Exposure analysis requires Pro Arena or higher.")
     return wrap_data(StrategyAnalyzer.exposure_analysis(DEMO_CONTESTS), source="coach_engine")

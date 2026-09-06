@@ -50,12 +50,10 @@ def resolve_tier(is_pro: bool, plan_name: Optional[str]) -> str:
 
     Uses only already-loaded scalars (no relationship access). Caller is
     responsible for fetching ``plan_name`` via an explicit awaited query.
+    Annual Elite/Pro names inherit the matching monthly tier.
     """
-    if not is_pro:
-        return "free"
-    if plan_name == "Elite Stack":
-        return "elite_stack"
-    return "pro_arena"
+    from services.entitlements import feature_tier_key
+    return feature_tier_key(is_pro, plan_name)
 
 
 def _daily_limit_for(tier: str) -> int:

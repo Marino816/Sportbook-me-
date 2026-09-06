@@ -32,7 +32,7 @@ from assistant.knowledge import (
     retrieve_knowledge, render_knowledge,
 )
 from assistant.tools import TOOLS, execute_tool, ALLOWED_TOOLS
-from assistant.limits import RateLimiter, resolve_tier
+from assistant.limits import RateLimiter
 from assistant.session_state import (
     ConversationContext,
     SuggestedAction,
@@ -222,17 +222,9 @@ async def ai_chat(
     if _is_injection_attempt(body.message):
         raise HTTPException(400, "Invalid input.")
 
-    # 2. Rate limit — resolve tier via an explicit query (never lazy-load
-    #    the subscription relationship, which would raise MissingGreenlet).
-    plan_name: Optional[str] = None
-    if getattr(user, "is_pro", False) and getattr(user, "active_subscription_id", None):
-        from models.domain import Subscription
-        from sqlalchemy import select as sa_select
-        r = await db.execute(
-            sa_select(Subscription.plan_name).where(Subscription.id == user.active_subscription_id)
-        )
-        plan_name = r.scalar()
-    tier = resolve_tier(getattr(user, "is_pro", False), plan_name)
+    # 2. Rate limit — provider-aware effective access, never User.is_pro alone.
+    from services.entitlements import feature_tier_for_user
+    tier = await feature_tier_for_user(db, user)
 
     limiter = RateLimiter()
     usage = limiter.check(user.id, tier)

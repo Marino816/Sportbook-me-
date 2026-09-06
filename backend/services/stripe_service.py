@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 from models.domain import User, Subscription, StripeEvent, RevenueLog
+from services.entitlements import reconcile_user_access_sync
 from services.stripe_dahlia import (
     invoice_subscription_id,
     invoice_period_start,
@@ -193,22 +194,35 @@ class StripeService:
 
     @staticmethod
     def _handle_payment_failed(invoice: Dict[str, Any], db: Session):
-        """Handle failed subscription payments - downgrade access."""
+        """Mark the Stripe subscription past_due, then recompute effective access.
+
+        Must not clear User.is_pro if another provider still has a valid entitlement.
+        """
         customer_id = invoice.get("customer")
         user = db.query(User).filter(
             User.stripe_customer_id == customer_id
         ).first()
-        if user:
-            user.is_pro = False
+        if not user:
+            return
+        stripe_id = invoice_subscription_id(invoice)
+        sub = None
+        if stripe_id:
             sub = db.query(Subscription).filter(
+                Subscription.stripe_subscription_id == stripe_id
+            ).first()
+        if sub is None and user.active_subscription_id:
+            candidate = db.query(Subscription).filter(
                 Subscription.id == user.active_subscription_id
             ).first()
-            if sub:
-                sub.status = "past_due"
-            print(
-                f"PAYMENT FAILED: User {user.email} "
-                f"(Customer {customer_id}) downgraded."
-            )
+            if candidate and candidate.stripe_subscription_id:
+                sub = candidate
+        if sub:
+            sub.status = "past_due"
+        reconcile_user_access_sync(db, user, stripe_subscription=sub)
+        print(
+            f"PAYMENT FAILED: User {user.email} "
+            f"(Customer {customer_id}) Stripe marked past_due; access recomputed."
+        )
 
     @staticmethod
     def _sync_subscription(stripe_id: str, user: User, db: Session):
@@ -255,9 +269,8 @@ class StripeService:
                     trial_end_ts, tz=timezone.utc
                 )
 
-            # Update user relation
-            user.active_subscription_id = local_sub.id
-            user.is_pro = local_sub.status in ["active", "trialing"]
+            db.flush()
+            reconcile_user_access_sync(db, user, stripe_subscription=local_sub)
 
         except Exception as e:
             print(f"Subscription Sync Error: {e}")

@@ -33,6 +33,7 @@ from identity import (
 )
 from models.database import get_db
 from models.domain import User, Subscription
+from services.entitlements import effective_access_for_user
 from models.schemas import (
     UserRegisterRequest,
     UserLoginRequest,
@@ -143,15 +144,17 @@ def _password_byte_errors(password: str) -> None:
 
 
 async def _plan_for_user(db: AsyncSession, user: User) -> str:
-    plan = "Starter"
+    access = await effective_access_for_user(db, user)
+    if access.is_pro:
+        return access.plan_name
     if user.active_subscription_id:
         sub_result = await db.execute(
             select(Subscription).where(Subscription.id == user.active_subscription_id)
         )
         sub = sub_result.scalars().first()
         if sub and sub.plan_name:
-            plan = sub.plan_name
-    return plan
+            return sub.plan_name
+    return "Starter"
 
 
 def token_response(user: User, plan: str) -> TokenResponse:
@@ -235,12 +238,13 @@ async def get_me(
     db: AsyncSession = Depends(get_db),
 ):
     """Return the current authenticated user's profile, including plan."""
+    access = await effective_access_for_user(db, user)
     return UserResponse(
         id=user.id,
         email=user.email,
         username=user.username,
         role=user.role or "user",
-        is_pro=bool(user.is_pro),
+        is_pro=access.is_pro,
         is_active=bool(user.is_active),
         created_at=user.created_at or datetime.now(timezone.utc),
         plan=await _plan_for_user(db, user),
@@ -255,12 +259,13 @@ async def claim_username(
 ):
     """One-time username creation for existing or OAuth accounts."""
     await assign_username(db, user, body.username)
+    access = await effective_access_for_user(db, user)
     return UserResponse(
         id=user.id,
         email=user.email,
         username=user.username,
         role=user.role or "user",
-        is_pro=bool(user.is_pro),
+        is_pro=access.is_pro,
         is_active=bool(user.is_active),
         created_at=user.created_at or datetime.now(timezone.utc),
         plan=await _plan_for_user(db, user),

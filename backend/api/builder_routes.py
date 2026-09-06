@@ -43,13 +43,9 @@ GATING = {
     "elite_stack": {"max_lineups": 150, "strategies": ["all"], "portfolios": True},
 }
 
-def _tier(user: User) -> str:
-    if not user.is_pro: return "free"
-    try:
-        s = getattr(user, "subscription", None)
-        if s and getattr(s, "plan_name", "") == "Elite Stack": return "elite_stack"
-    except: pass
-    return "pro_arena"
+async def _tier(db: AsyncSession, user: User) -> str:
+    from services.entitlements import feature_tier_for_user
+    return await feature_tier_for_user(db, user)
 
 # ── Request Schemas ──────────────────────────────────────────
 class LineupRequest(BaseModel):

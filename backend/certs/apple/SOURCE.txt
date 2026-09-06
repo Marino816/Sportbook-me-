@@ -1,0 +1,16 @@
+Apple Root Certificates (public PKI — not secrets)
+
+Downloaded from Apple PKI:
+https://www.apple.com/certificateauthority/
+
+Files:
+- AppleIncRootCertificate.cer
+  https://www.apple.com/appleca/AppleIncRootCertificate.cer
+- AppleRootCA-G2.cer
+  https://www.apple.com/certificateauthority/AppleRootCA-G2.cer
+- AppleRootCA-G3.cer
+  https://www.apple.com/certificateauthority/AppleRootCA-G3.cer
+
+Used only as SignedDataVerifier root_certificates (DER bytes).
+Override directory with APPLE_ROOT_CA_DIR if needed.
+Do not place .p8 private keys in this folder.

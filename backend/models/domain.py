@@ -218,6 +218,91 @@ class BillingCheckout(Base):
     )
 
 
+class BillingEntitlement(Base):
+    """Provider-aware paid access. Not granted by checkout or unsigned webhooks.
+
+    Effective user access is the highest valid entitlement across Stripe,
+    PayKings, and Apple. A cancel/refund/revoke on one provider must never
+    clear access if another provider is still valid.
+
+    Apple rows use provider='apple', provider_subscription_id=originalTransactionId,
+    provider_plan_id=Apple product ID, is_test_mode from verified Environment
+    (Sandbox=True, Production=False). paid_verified requires server-side JWS
+    verification (Phase 2) — never a client purchase-succeeded flag.
+
+    Apple identity is (provider, provider_subscription_id, is_test_mode)
+    so Sandbox and Production originalTransactionId values cannot collide
+    or cross-mutate.
+    """
+    __tablename__ = "billing_entitlements"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_subscription_id",
+            "is_test_mode",
+            name="uq_billing_entitlement_provider_subscription_env",
+        ),
+        UniqueConstraint(
+            "provider",
+            "checkout_reference",
+            name="uq_billing_entitlement_provider_checkout",
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String, nullable=False, index=True)
+    provider_subscription_id = Column(String, nullable=True, index=True)
+    provider_plan_id = Column(String, nullable=True)
+    checkout_reference = Column(String, nullable=True, index=True)
+    tier = Column(String, nullable=False)
+    billing_period = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pending_payment")
+    paid_verified = Column(Boolean, nullable=False, default=False)
+    is_test_mode = Column(Boolean, nullable=False, default=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    current_period_end = Column(DateTime(timezone=True), nullable=True)
+    canceled_at = Column(DateTime(timezone=True), nullable=True)
+    last_successful_transaction_id = Column(String, nullable=True)
+    last_refund_transaction_id = Column(String, nullable=True)
+    refunded_amount = Column(String, nullable=True)
+    compatibility_subscription_id = Column(Integer, nullable=True)
+    last_provider_signed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AppleNotificationEvent(Base):
+    """Durable ASSN V2 notificationUUID ledger for idempotency."""
+    __tablename__ = "apple_notification_events"
+    id = Column(Integer, primary_key=True)
+    notification_uuid = Column(String, nullable=False, unique=True, index=True)
+    signed_date = Column(DateTime(timezone=True), nullable=True)
+    notification_type = Column(String, nullable=True)
+    subtype = Column(String, nullable=True)
+    environment = Column(String, nullable=True)
+    original_transaction_id = Column(String, nullable=True)
+    transaction_id = Column(String, nullable=True)
+    product_id = Column(String, nullable=True)
+    decision = Column(String, nullable=False, default="received")
+    processed_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AppleAccountBinding(Base):
+    """Stable StoreKit 2 appAccountToken (UUID) bound to one Sportbook user.
+
+    Sequential users.id is never sent to Apple. Token is uuid4, stored once.
+    """
+    __tablename__ = "apple_account_bindings"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class RevenueLog(Base):
     """Revenue tracking from successful Stripe payments."""
     __tablename__ = "revenue_logs"

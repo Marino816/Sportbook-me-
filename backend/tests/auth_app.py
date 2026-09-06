@@ -22,7 +22,14 @@ async def override_get_db():
 
 def _rebuild(sync_conn):
     sync_conn.execute(text("PRAGMA foreign_keys=OFF"))
-    for name in ("user_oauth_identities", "users", "subscriptions"):
+    for name in (
+        "apple_notification_events",
+        "apple_account_bindings",
+        "billing_entitlements",
+        "user_oauth_identities",
+        "users",
+        "subscriptions",
+    ):
         sync_conn.execute(text(f"DROP TABLE IF EXISTS {name}"))
     Base.metadata.create_all(sync_conn)
 

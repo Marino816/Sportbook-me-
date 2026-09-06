@@ -42,6 +42,9 @@ from models.domain import (  # noqa: F401
     StripeEvent,
     PaymentWebhookEvent,
     BillingCheckout,
+    BillingEntitlement,
+    AppleAccountBinding,
+    AppleNotificationEvent,
 )
 
 # Alembic Config object

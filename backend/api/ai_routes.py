@@ -55,23 +55,13 @@ FEATURE_GATING = {
 _rate_tracker: dict = {}
 
 
-def _get_tier(user: User) -> str:
-    if not user.is_pro or not user.active_subscription_id:
-        return "free"
-    # Avoid lazy loading: check by subscription ID presence and is_pro
-    # Elite users have is_pro=True (set during webhook sync)
-    # Plan name check must be done via eager load or direct query in calling context
-    try:
-        sub = getattr(user, "subscription", None)
-        if sub and getattr(sub, "plan_name", "") == "Elite Stack":
-            return "elite_stack"
-    except Exception:
-        pass
-    return "pro_arena"
+async def _get_tier(db: AsyncSession, user: User) -> str:
+    from services.entitlements import feature_tier_for_user
+    return await feature_tier_for_user(db, user)
 
 
-def _check_rate(user: User) -> tuple[bool, int, int]:
-    tier = _get_tier(user)
+async def _check_rate(db: AsyncSession, user: User) -> tuple[bool, int, int]:
+    tier = await _get_tier(db, user)
     limits = FEATURE_GATING[tier]
     key = f"ai:{user.id}:{datetime.now(timezone.utc).strftime('%Y%m%d')}"
     count = _rate_tracker.get(key, 0)
@@ -128,7 +118,7 @@ async def get_projections(
     start = time.time()
 
     # Rate limiting
-    allowed, count, limit = _check_rate(user)
+    allowed, count, limit = await _check_rate(db, user)
     if not allowed:
         raise HTTPException(status_code=429, detail=f"Daily projection limit ({limit}) reached. Upgrade for more.")
 
@@ -173,7 +163,7 @@ async def get_player_explanation(
 ):
     """Get an AI explanation for a specific player's projection. Pro+ only."""
     start = time.time()
-    tier = _get_tier(user)
+    tier = await _get_tier(db, user)
 
     if not FEATURE_GATING[tier]["full_explanations"]:
         raise HTTPException(status_code=403, detail="Full explanations require Pro Arena or higher.")

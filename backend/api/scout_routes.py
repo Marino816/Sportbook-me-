@@ -195,7 +195,9 @@ async def get_alerts(
     db: AsyncSession = Depends(get_db),
 ):
     """Return the current user's alert configurations."""
-    if not user.is_pro:
+    from services.entitlements import effective_access_for_user
+    access = await effective_access_for_user(db, user)
+    if not access.is_pro:
         raise HTTPException(status_code=403, detail="Alerts require Pro Arena or higher.")
 
     result = await db.execute(
@@ -223,7 +225,9 @@ async def create_alert(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new alert configuration."""
-    if not user.is_pro:
+    from services.entitlements import effective_access_for_user
+    access = await effective_access_for_user(db, user)
+    if not access.is_pro:
         raise HTTPException(status_code=403, detail="Alerts require Pro Arena or higher.")
 
     alert = ScoutAlert(

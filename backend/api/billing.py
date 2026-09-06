@@ -8,6 +8,7 @@ import json
 
 from models.database import get_db, SyncSessionLocal
 from models.domain import User, Subscription
+from services.entitlements import effective_access_for_user
 from services.stripe_service import StripeService
 from api.utils import wrap_data
 from api.auth import get_current_user, require_admin
@@ -91,25 +92,19 @@ async def get_subscription_status(
     db: AsyncSession = Depends(get_db)
 ):
     """Get the current user's subscription and plan status."""
-    if not user.active_subscription_id:
-        return wrap_data({
-            "plan": "Starter",
-            "status": "free",
-            "next_billing": None,
-            "trial_end": None,
-            "has_access": False
-        }, source="live")
-        
-    result = await db.execute(select(Subscription).where(Subscription.id == user.active_subscription_id))
-    sub = result.scalars().first()
-    
+    access = await effective_access_for_user(db, user)
+    sub = None
+    if user.active_subscription_id:
+        result = await db.execute(select(Subscription).where(Subscription.id == user.active_subscription_id))
+        sub = result.scalars().first()
     return wrap_data({
-        "plan": sub.plan_name,
-        "status": sub.status,
-        "next_billing": sub.current_period_end.isoformat() if sub.current_period_end else None,
-        "trial_end": sub.trial_end.isoformat() if sub.trial_end else None,
-        "is_canceled": sub.cancel_at_period_end,
-        "has_access": sub.status in ['active', 'trialing']
+        "plan": access.plan_name if access.is_pro else (sub.plan_name if sub else "Starter"),
+        "status": access.status if access.is_pro else (sub.status if sub else "free"),
+        "next_billing": sub.current_period_end.isoformat() if sub and sub.current_period_end else None,
+        "trial_end": sub.trial_end.isoformat() if sub and sub.trial_end else None,
+        "is_canceled": bool(sub.cancel_at_period_end) if sub else False,
+        "has_access": access.is_pro,
+        "provider": access.provider,
     }, source="live")
 
 
@@ -120,14 +115,21 @@ async def force_sync_subscription(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Force a re-sync of the current user's subscription from Stripe."""
-    if not user.active_subscription_id:
-        raise HTTPException(status_code=400, detail="No active subscription to sync.")
-
+    """Force a re-sync of the current user's Stripe subscription."""
     result = await db.execute(
-        select(Subscription).where(Subscription.id == user.active_subscription_id)
+        select(Subscription).where(
+            Subscription.user_id == user.id,
+            Subscription.stripe_subscription_id.isnot(None),
+        )
     )
     sub = result.scalars().first()
+    if sub is None and user.active_subscription_id:
+        fallback = await db.execute(
+            select(Subscription).where(Subscription.id == user.active_subscription_id)
+        )
+        candidate = fallback.scalars().first()
+        if candidate and candidate.stripe_subscription_id:
+            sub = candidate
     if not sub or not sub.stripe_subscription_id:
         raise HTTPException(status_code=400, detail="No Stripe subscription found.")
 
