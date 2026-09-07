@@ -19,6 +19,7 @@ from services.apple_environment import (
     APPLE_ENVIRONMENT_SANDBOX,
     apple_environment_from_flag,
     apple_lifecycle_may_mutate,
+    normalize_apple_environment,
 )
 from services.apple_plans import get_apple_product
 from services.apple_verify import AppleGrantDecision, AppleVerifiedTransaction
@@ -27,6 +28,7 @@ from services.entitlements import (
     STATUS_ACTIVE,
     STATUS_EXPIRED,
     STATUS_REVOKED,
+    apple_entitlement_is_live,
     reconcile_user_access,
 )
 
@@ -90,6 +92,76 @@ async def find_apple_entitlement(
             )
         )
     ).scalars().first()
+
+
+async def find_user_apple_entitlement(
+    db: AsyncSession,
+    user: User,
+    *,
+    original_transaction_id: str,
+    is_sandbox: bool,
+) -> Optional[BillingEntitlement]:
+    """Same Apple identity as find_apple_entitlement, scoped to the JWT user."""
+    return (
+        await db.execute(
+            select(BillingEntitlement).where(
+                BillingEntitlement.user_id == user.id,
+                BillingEntitlement.provider == PROVIDER_APPLE,
+                BillingEntitlement.provider_subscription_id == original_transaction_id,
+                BillingEntitlement.is_test_mode == is_sandbox,
+            )
+        )
+    ).scalars().first()
+
+
+async def opposite_environment_blocks_apple_verify(
+    db: AsyncSession,
+    *,
+    original_transaction_id: str,
+    is_sandbox: bool,
+) -> bool:
+    """Client verify must not create the opposite-environment row for the same OTID."""
+    same = await find_apple_entitlement(
+        db,
+        original_transaction_id=original_transaction_id,
+        is_sandbox=is_sandbox,
+    )
+    if same is not None:
+        return False
+    other = await find_apple_entitlement(
+        db,
+        original_transaction_id=original_transaction_id,
+        is_sandbox=not is_sandbox,
+    )
+    return other is not None
+
+
+def already_current_apple_verify(
+    user: User,
+    verified: AppleVerifiedTransaction,
+    decision: AppleGrantDecision,
+    row: Optional[BillingEntitlement],
+) -> bool:
+    """True when a stale client verify is the same live Apple subscription.
+
+    Used only after upsert returns stale_notification. Does not mutate the row.
+    """
+    if row is None or user is None or verified is None or decision is None:
+        return False
+    if getattr(row, "provider", None) != PROVIDER_APPLE:
+        return False
+    if int(getattr(row, "user_id", 0) or 0) != int(getattr(user, "id", 0) or 0):
+        return False
+    if bool(row.is_test_mode) != bool(decision.is_sandbox):
+        return False
+    incoming_env = normalize_apple_environment(verified.environment or "")
+    if incoming_env is None:
+        return False
+    if apple_environment_from_flag(bool(row.is_test_mode)) != incoming_env:
+        return False
+    if (row.provider_subscription_id or "") != (verified.original_transaction_id or ""):
+        return False
+    return apple_entitlement_is_live(row)
 
 
 async def upsert_verified_apple_entitlement(

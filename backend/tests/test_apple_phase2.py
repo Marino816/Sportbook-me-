@@ -20,7 +20,8 @@ from main import app
 from models.database import Base, get_db
 from models.domain import BillingEntitlement, Subscription, User
 from services.apple_environment import APPLE_ENVIRONMENT_PRODUCTION, APPLE_ENVIRONMENT_SANDBOX
-from services.apple_verify import AppleVerificationError, AppleVerifiedTransaction
+from services.apple_verify import AppleGrantDecision, AppleVerificationError, AppleVerifiedTransaction
+from services.apple_writer import already_current_apple_verify
 from services.entitlements import (
     PROVIDER_APPLE,
     PROVIDER_PAYKINGS,
@@ -842,3 +843,343 @@ async def test_reconcile_preserves_stripe_when_apple_revoked(client):
         access = await effective_access_for_user(db, user)
         assert access.tier == "pro"
         assert access.provider == PROVIDER_STRIPE
+
+
+# ── Verify already_current / stale race ─────────────────────
+
+
+def _snapshot(row: BillingEntitlement) -> dict:
+    signed = row.last_provider_signed_at
+    if signed is not None and signed.tzinfo is None:
+        signed = signed.replace(tzinfo=timezone.utc)
+    return {
+        "status": row.status,
+        "paid_verified": row.paid_verified,
+        "is_test_mode": row.is_test_mode,
+        "tier": row.tier,
+        "provider_subscription_id": row.provider_subscription_id,
+        "last_successful_transaction_id": row.last_successful_transaction_id,
+        "signed_ms": int(signed.timestamp() * 1000) if signed is not None else None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_assn_initial_buy_then_older_verify_is_already_current(client):
+    jwt = await _register(client, "race@test.com")
+    token = await _account_token(client, jwt)
+    assn_txn = _verified(
+        app_account_token=token,
+        environment="Sandbox",
+        signed_date=SIGNED_NEW,
+        transaction_id="assn-buy",
+        original_transaction_id="otid-race-1",
+    )
+    assn = await _post_notification(
+        client,
+        _notification(
+            uuid="n-initial",
+            ntype="SUBSCRIBED",
+            subtype="INITIAL_BUY",
+            environment="Sandbox",
+            signed_ms=int(SIGNED_NEW.timestamp() * 1000),
+        ),
+        assn_txn,
+    )
+    assert assn.json()["decision"] == "applied"
+    before = _snapshot((await _entitlements("race@test.com"))[0])
+    older = _verified(
+        app_account_token=token,
+        environment="Sandbox",
+        signed_date=SIGNED_NEW - timedelta(seconds=2),
+        transaction_id="device-jws",
+        original_transaction_id="otid-race-1",
+        original_purchase_date=SIGNED_NEW - timedelta(seconds=2),
+    )
+    res = await _verify(client, jwt, mock_txn=older)
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["granted"] is True
+    assert data["decision"] == "already_current"
+    assert data["tier"] == "pro"
+    assert data["status"] in {"active", "pro"}
+    assert data["environment"] == APPLE_ENVIRONMENT_SANDBOX
+    rows = await _entitlements("race@test.com")
+    assert len(rows) == 1
+    after = _snapshot(rows[0])
+    assert after == before
+    assert rows[0].status == STATUS_ACTIVE
+    assert rows[0].paid_verified is True
+    access = await _access("race@test.com")
+    assert access.tier == "pro"
+    assert access.provider == PROVIDER_APPLE
+
+
+@pytest.mark.asyncio
+async def test_restore_already_current_does_not_require_new_purchase(client):
+    jwt = await _register(client, "restore-race@test.com")
+    token = await _account_token(client, jwt)
+    assn_txn = _verified(
+        app_account_token=token,
+        environment="Sandbox",
+        signed_date=SIGNED_NEW,
+        original_transaction_id="otid-restore-1",
+    )
+    await _post_notification(
+        client,
+        _notification(
+            uuid="n-restore-buy",
+            ntype="SUBSCRIBED",
+            subtype="INITIAL_BUY",
+            environment="Sandbox",
+        ),
+        assn_txn,
+    )
+    before = _snapshot((await _entitlements("restore-race@test.com"))[0])
+    older = _verified(
+        app_account_token=token,
+        environment="Sandbox",
+        signed_date=SIGNED_NEW - timedelta(seconds=2),
+        original_transaction_id="otid-restore-1",
+    )
+    res = await _verify(
+        client,
+        jwt,
+        extra={"signedTransactions": ["restore-jws-1"]},
+        mock_txn=older,
+    )
+    assert res.status_code == 200
+    assert res.json()["data"]["decision"] == "already_current"
+    assert res.json()["data"]["granted"] is True
+    after = _snapshot((await _entitlements("restore-race@test.com"))[0])
+    assert after == before
+    access = await _access("restore-race@test.com")
+    assert access.tier == "pro"
+
+
+@pytest.mark.asyncio
+async def test_stale_revoke_verify_remains_rejected(client):
+    jwt = await _register(client, "stale-rev@test.com")
+    token = await _account_token(client, jwt)
+    live = _verified(
+        app_account_token=token,
+        signed_date=SIGNED_NEW,
+        transaction_id="live-txn",
+        original_transaction_id="otid-rev-1",
+    )
+    await _post_notification(client, _notification(uuid="n-rev-1", ntype="SUBSCRIBED"), live)
+    revoke = _verified(
+        app_account_token=token,
+        signed_date=SIGNED_NEW + timedelta(seconds=5),
+        transaction_id="revoke-txn",
+        original_transaction_id="otid-rev-1",
+        revocation_date=SIGNED_NEW + timedelta(seconds=5),
+        revocation_reason="1",
+    )
+    applied = await _post_notification(
+        client,
+        _notification(
+            uuid="n-rev-2",
+            ntype="REVOKE",
+            signed_ms=int((SIGNED_NEW + timedelta(seconds=5)).timestamp() * 1000),
+        ),
+        revoke,
+    )
+    assert applied.json()["decision"] == "applied"
+    before = _snapshot((await _entitlements("stale-rev@test.com"))[0])
+    assert before["status"] == STATUS_REVOKED
+    older_purchase = _verified(
+        app_account_token=token,
+        signed_date=SIGNED_NEW,
+        transaction_id="device-old",
+        original_transaction_id="otid-rev-1",
+    )
+    res = await _verify(client, jwt, mock_txn=older_purchase)
+    assert res.status_code == 400
+    assert res.json()["detail"] == "stale_notification"
+    after = _snapshot((await _entitlements("stale-rev@test.com"))[0])
+    assert after == before
+    access = await _access("stale-rev@test.com")
+    assert access.tier == "free"
+
+
+@pytest.mark.asyncio
+async def test_stale_expire_verify_does_not_revive(client):
+    jwt = await _register(client, "stale-exp@test.com")
+    token = await _account_token(client, jwt)
+    live = _verified(
+        app_account_token=token,
+        signed_date=SIGNED_NEW,
+        original_transaction_id="otid-exp-1",
+    )
+    await _post_notification(client, _notification(uuid="n-exp-1", ntype="SUBSCRIBED"), live)
+    expired = _verified(
+        app_account_token=token,
+        signed_date=SIGNED_NEW + timedelta(seconds=5),
+        original_transaction_id="otid-exp-1",
+        expires_at=PAST,
+    )
+    applied = await _post_notification(
+        client,
+        _notification(
+            uuid="n-exp-2",
+            ntype="EXPIRED",
+            signed_ms=int((SIGNED_NEW + timedelta(seconds=5)).timestamp() * 1000),
+        ),
+        expired,
+    )
+    assert applied.json()["decision"] == "applied"
+    before = _snapshot((await _entitlements("stale-exp@test.com"))[0])
+    assert before["status"] == STATUS_EXPIRED
+    older = _verified(
+        app_account_token=token,
+        signed_date=SIGNED_NEW,
+        original_transaction_id="otid-exp-1",
+        expires_at=FUTURE,
+    )
+    res = await _verify(client, jwt, mock_txn=older)
+    assert res.status_code == 400
+    assert res.json()["detail"] == "stale_notification"
+    after = _snapshot((await _entitlements("stale-exp@test.com"))[0])
+    assert after == before
+    access = await _access("stale-exp@test.com")
+    assert access.tier == "free"
+
+
+@pytest.mark.asyncio
+async def test_stale_verify_wrong_user_rejected(client):
+    jwt_a = await _register(client, "owner@test.com")
+    token_a = await _account_token(client, jwt_a)
+    jwt_b = await _register(client, "other-user@test.com")
+    token_b = await _account_token(client, jwt_b)
+    owner = _verified(
+        app_account_token=token_a,
+        signed_date=SIGNED_NEW,
+        original_transaction_id="otid-owner-1",
+    )
+    await _post_notification(client, _notification(uuid="n-owner", ntype="SUBSCRIBED"), owner)
+    before = _snapshot((await _entitlements("owner@test.com"))[0])
+    spoofed = _verified(
+        app_account_token=token_b,
+        signed_date=SIGNED_NEW - timedelta(seconds=2),
+        original_transaction_id="otid-owner-1",
+    )
+    res = await _verify(client, jwt_b, mock_txn=spoofed)
+    assert res.status_code == 400
+    assert res.json()["detail"] == "stale_notification"
+    assert await _entitlements("other-user@test.com") == []
+    after = _snapshot((await _entitlements("owner@test.com"))[0])
+    assert after == before
+    access = await _access("owner@test.com")
+    assert access.tier == "pro"
+
+
+@pytest.mark.asyncio
+async def test_stale_verify_opposite_environment_rejected(client):
+    jwt = await _register(client, "env-iso@test.com")
+    token = await _account_token(client, jwt)
+    sandbox = _verified(
+        app_account_token=token,
+        environment="Sandbox",
+        signed_date=SIGNED_NEW,
+        original_transaction_id="otid-env-1",
+    )
+    await _post_notification(
+        client,
+        _notification(uuid="n-env-s", ntype="SUBSCRIBED", environment="Sandbox"),
+        sandbox,
+    )
+    before = _snapshot((await _entitlements("env-iso@test.com"))[0])
+    production = _verified(
+        app_account_token=token,
+        environment="Production",
+        signed_date=SIGNED_NEW - timedelta(seconds=2),
+        original_transaction_id="otid-env-1",
+    )
+    res = await _verify(client, jwt, mock_txn=production)
+    assert res.status_code == 400
+    assert res.json()["detail"] == "stale_notification"
+    rows = await _entitlements("env-iso@test.com")
+    assert len(rows) == 1
+    assert rows[0].is_test_mode is True
+    assert _snapshot(rows[0]) == before
+    access = await _access("env-iso@test.com")
+    assert access.tier == "pro"
+
+
+def test_already_current_helper_rejects_mismatched_and_dead_rows():
+    user = SimpleNamespace(id=11)
+    other = SimpleNamespace(id=12)
+    verified = _verified(
+        environment="Sandbox",
+        original_transaction_id="otid-helper-1",
+        app_account_token="11111111-1111-4111-8111-111111111111",
+    )
+    decision = AppleGrantDecision(
+        allowed=True,
+        reason="ok_sandbox",
+        product_id=PRO_MONTHLY,
+        tier="pro",
+        billing_period="monthly",
+        is_sandbox=True,
+    )
+    live = BillingEntitlement(
+        id=30,
+        user_id=11,
+        provider=PROVIDER_APPLE,
+        provider_subscription_id="otid-helper-1",
+        provider_plan_id=PRO_MONTHLY,
+        checkout_reference="apple:Sandbox:otid-helper-1",
+        tier="pro",
+        billing_period="monthly",
+        status=STATUS_ACTIVE,
+        paid_verified=True,
+        is_test_mode=True,
+        current_period_end=FUTURE,
+    )
+    assert already_current_apple_verify(user, verified, decision, live) is True
+    assert already_current_apple_verify(other, verified, decision, live) is False
+    live_prod = BillingEntitlement(
+        id=31,
+        user_id=11,
+        provider=PROVIDER_APPLE,
+        provider_subscription_id="otid-helper-1",
+        provider_plan_id=PRO_MONTHLY,
+        checkout_reference="apple:Production:otid-helper-1",
+        tier="pro",
+        billing_period="monthly",
+        status=STATUS_ACTIVE,
+        paid_verified=True,
+        is_test_mode=False,
+        current_period_end=FUTURE,
+    )
+    assert already_current_apple_verify(user, verified, decision, live_prod) is False
+    expired = BillingEntitlement(
+        id=32,
+        user_id=11,
+        provider=PROVIDER_APPLE,
+        provider_subscription_id="otid-helper-1",
+        provider_plan_id=PRO_MONTHLY,
+        checkout_reference="apple:Sandbox:otid-helper-1",
+        tier="pro",
+        billing_period="monthly",
+        status=STATUS_EXPIRED,
+        paid_verified=True,
+        is_test_mode=True,
+        current_period_end=PAST,
+    )
+    assert already_current_apple_verify(user, verified, decision, expired) is False
+    revoked = BillingEntitlement(
+        id=33,
+        user_id=11,
+        provider=PROVIDER_APPLE,
+        provider_subscription_id="otid-helper-1",
+        provider_plan_id=PRO_MONTHLY,
+        checkout_reference="apple:Sandbox:otid-helper-1",
+        tier="pro",
+        billing_period="monthly",
+        status=STATUS_REVOKED,
+        paid_verified=True,
+        is_test_mode=True,
+        current_period_end=FUTURE,
+    )
+    assert already_current_apple_verify(user, verified, decision, revoked) is False

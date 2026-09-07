@@ -15,10 +15,12 @@ POST /api/billing/apple/verify
     upserts a BillingEntitlement only after grant rules pass, then
     reconcile_user_access().
 
-    200 data: { "granted": true, "tier": "pro"|"elite", "status": "active",
+    200 data: { "granted": true, "decision": "applied"|"already_current",
+                "tier": "pro"|"elite", "status": "active",
                 "environment": "Production"|"Sandbox", "provider": "apple" }
     400 detail: missing_signed_transaction | wrong_bundle_id | unknown_product |
-                wrong_app_account_binding | expired | revoked | invalid_signature | ...
+                wrong_app_account_binding | expired | revoked | invalid_signature |
+                stale_notification | ...
     401: missing/invalid JWT
 """
 
@@ -37,7 +39,12 @@ from models.domain import User
 from services.apple_account_token import get_or_create_apple_account_token
 from services.apple_environment import apple_environment_from_flag, apple_client_access_override
 from services.apple_verify import AppleVerificationError, apple_grant_decision, verify_signed_transaction
-from services.apple_writer import upsert_verified_apple_entitlement
+from services.apple_writer import (
+    already_current_apple_verify,
+    find_user_apple_entitlement,
+    opposite_environment_blocks_apple_verify,
+    upsert_verified_apple_entitlement,
+)
 from services.entitlements import effective_access_for_user
 
 router = APIRouter()
@@ -98,18 +105,41 @@ async def apple_verify(
         if not decision.allowed:
             last_reason = decision.reason
             continue
+        if await opposite_environment_blocks_apple_verify(
+            db,
+            original_transaction_id=verified.original_transaction_id,
+            is_sandbox=bool(decision.is_sandbox),
+        ):
+            last_reason = "stale_notification"
+            continue
         row, result = await upsert_verified_apple_entitlement(
             db, user, verified, decision,
         )
-        last_reason = result
         if result == "applied":
             applied = row
+            last_reason = "applied"
+            continue
+        if result == "stale_notification":
+            current = await find_user_apple_entitlement(
+                db,
+                user,
+                original_transaction_id=verified.original_transaction_id,
+                is_sandbox=bool(decision.is_sandbox),
+            )
+            if already_current_apple_verify(user, verified, decision, current):
+                applied = current
+                last_reason = "already_current"
+            else:
+                last_reason = "stale_notification"
+            continue
+        last_reason = result
     if applied is None:
         raise HTTPException(status_code=400, detail=last_reason)
     await db.commit()
     access = await effective_access_for_user(db, user)
     return wrap_data({
         "granted": True,
+        "decision": last_reason,
         "tier": access.tier,
         "status": access.status,
         "environment": apple_environment_from_flag(bool(applied.is_test_mode)),
