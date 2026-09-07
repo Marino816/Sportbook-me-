@@ -98,8 +98,8 @@ async def get_subscription_status(
         result = await db.execute(select(Subscription).where(Subscription.id == user.active_subscription_id))
         sub = result.scalars().first()
     return wrap_data({
-        "plan": access.plan_name if access.is_pro else (sub.plan_name if sub else "Starter"),
-        "status": access.status if access.is_pro else (sub.status if sub else "free"),
+        "plan": access.plan_name,
+        "status": access.status,
         "next_billing": sub.current_period_end.isoformat() if sub and sub.current_period_end else None,
         "trial_end": sub.trial_end.isoformat() if sub and sub.trial_end else None,
         "is_canceled": bool(sub.cancel_at_period_end) if sub else False,

@@ -281,6 +281,25 @@ def _apple_data_status(data: Any) -> Optional[int]:
         return None
 
 
+def _cancel_at_period_end_from_renewal(subtype: Optional[str], renewal: Any) -> Optional[bool]:
+    """Map Apple auto-renew changes onto cancel-at-period-end. Does not revoke access."""
+    name = (subtype or "").strip().upper()
+    if name == "AUTO_RENEW_DISABLED":
+        return True
+    if name == "AUTO_RENEW_ENABLED":
+        return False
+    if renewal is None:
+        return None
+    raw = getattr(renewal, "autoRenewStatus", None)
+    if raw is None:
+        return None
+    value = getattr(raw, "value", raw)
+    try:
+        return int(value) == 0
+    except (TypeError, ValueError):
+        return None
+
+
 def _in_retry_or_grace(data: Any, renewal: Any) -> bool:
     apple_status = _apple_data_status(data)
     if apple_status in _STATUS_STILL_HAS_ACCESS:
@@ -379,6 +398,7 @@ async def _apply_lifecycle(
     if notification_type == "DID_CHANGE_RENEWAL_STATUS":
         if row is None:
             return "renewal_status_no_row"
+        cancel_at_period_end = _cancel_at_period_end_from_renewal(subtype, renewal)
         return await apply_apple_status_update(
             db,
             row,
@@ -389,6 +409,7 @@ async def _apply_lifecycle(
             product_id=transaction.product_id if transaction else None,
             period_end=transaction.expires_at if transaction else None,
             transaction_id=transaction.transaction_id if transaction else None,
+            cancel_at_period_end=cancel_at_period_end,
         )
 
     if notification_type == "DID_CHANGE_RENEWAL_PREF":

@@ -128,6 +128,24 @@ async def _user(email: str) -> User:
         return (await db.execute(select(User).where(User.email == email))).scalars().one()
 
 
+async def _compat_sub(email: str) -> Subscription | None:
+    async with _TestSession() as db:
+        user = (await db.execute(select(User).where(User.email == email))).scalars().one()
+        if not user.active_subscription_id:
+            return None
+        return (
+            await db.execute(
+                select(Subscription).where(Subscription.id == user.active_subscription_id)
+            )
+        ).scalars().first()
+
+
+async def _access(email: str):
+    async with _TestSession() as db:
+        user = (await db.execute(select(User).where(User.email == email))).scalars().one()
+        return await effective_access_for_user(db, user)
+
+
 # ── Account token ───────────────────────────────────────────
 
 
@@ -510,6 +528,29 @@ async def test_assn_revoke(client):
 
 
 @pytest.mark.asyncio
+async def test_active_apple_pro_http_plan_and_status(client):
+    jwt = await _register(client, "httppro@test.com")
+    token = await _account_token(client, jwt)
+    txn = _verified(app_account_token=token)
+    res = await _verify(client, jwt, mock_txn=txn)
+    assert res.status_code == 200
+    me = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {jwt}"})
+    assert me.status_code == 200
+    assert me.json()["plan"] == "Pro Arena"
+    assert me.json()["is_pro"] is True
+    status = await client.get("/api/billing/status", headers={"Authorization": f"Bearer {jwt}"})
+    data = status.json()["data"]
+    assert data["plan"] == "Pro Arena"
+    assert data["status"] == "active"
+    assert data["has_access"] is True
+    assert data["provider"] == "apple"
+    assert data["is_canceled"] is False
+    access = await _access("httppro@test.com")
+    assert access.max_lineups == 20
+    assert access.plan_name == "Pro Arena"
+
+
+@pytest.mark.asyncio
 async def test_assn_renewal_status_change_does_not_revoke(client):
     jwt = await _register(client, "rs@test.com")
     token = await _account_token(client, jwt)
@@ -523,6 +564,55 @@ async def test_assn_renewal_status_change_does_not_revoke(client):
     assert res.json()["decision"] == "applied"
     rows = await _entitlements("rs@test.com")
     assert rows[0].status == STATUS_ACTIVE
+    assert rows[0].paid_verified is True
+    compat = await _compat_sub("rs@test.com")
+    assert compat is not None
+    assert compat.cancel_at_period_end is True
+    me = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {jwt}"})
+    assert me.json()["plan"] == "Pro Arena"
+    assert me.json()["is_pro"] is True
+    data = (
+        await client.get("/api/billing/status", headers={"Authorization": f"Bearer {jwt}"})
+    ).json()["data"]
+    assert data["plan"] == "Pro Arena"
+    assert data["has_access"] is True
+    assert data["is_canceled"] is True
+    assert data["provider"] == "apple"
+    access = await _access("rs@test.com")
+    assert access.is_pro is True
+    assert access.max_lineups == 20
+
+
+@pytest.mark.asyncio
+async def test_expired_http_plan_is_starter_not_compat_label(client):
+    jwt = await _register(client, "explabel@test.com")
+    token = await _account_token(client, jwt)
+    txn = _verified(app_account_token=token)
+    await _post_notification(client, _notification(uuid="n-el1", ntype="SUBSCRIBED"), txn)
+    await _post_notification(
+        client,
+        _notification(uuid="n-el2", ntype="DID_CHANGE_RENEWAL_STATUS", subtype="AUTO_RENEW_DISABLED"),
+        txn,
+    )
+    res = await _post_notification(client, _notification(uuid="n-el3", ntype="EXPIRED"), txn)
+    assert res.json()["decision"] == "applied"
+    rows = await _entitlements("explabel@test.com")
+    assert len(rows) == 1
+    assert rows[0].status == STATUS_EXPIRED
+    assert rows[0].paid_verified is True
+    me = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {jwt}"})
+    assert me.json()["plan"] == "Starter"
+    assert me.json()["is_pro"] is False
+    data = (
+        await client.get("/api/billing/status", headers={"Authorization": f"Bearer {jwt}"})
+    ).json()["data"]
+    assert data["plan"] == "Starter"
+    assert data["status"] == "free"
+    assert data["has_access"] is False
+    assert data["provider"] is None
+    access = await _access("explabel@test.com")
+    assert access.plan_name == "Starter"
+    assert access.max_lineups == 1
 
 
 @pytest.mark.asyncio

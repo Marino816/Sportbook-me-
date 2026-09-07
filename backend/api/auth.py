@@ -32,7 +32,7 @@ from identity import (
     validate_username,
 )
 from models.database import get_db
-from models.domain import User, Subscription
+from models.domain import User
 from services.entitlements import effective_access_for_user
 from models.schemas import (
     UserRegisterRequest,
@@ -144,17 +144,9 @@ def _password_byte_errors(password: str) -> None:
 
 
 async def _plan_for_user(db: AsyncSession, user: User) -> str:
+    """Current plan label from effective access only. Expired compat rows are not current."""
     access = await effective_access_for_user(db, user)
-    if access.is_pro:
-        return access.plan_name
-    if user.active_subscription_id:
-        sub_result = await db.execute(
-            select(Subscription).where(Subscription.id == user.active_subscription_id)
-        )
-        sub = sub_result.scalars().first()
-        if sub and sub.plan_name:
-            return sub.plan_name
-    return "Starter"
+    return access.plan_name
 
 
 def token_response(user: User, plan: str) -> TokenResponse:

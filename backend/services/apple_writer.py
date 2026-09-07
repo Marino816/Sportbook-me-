@@ -13,7 +13,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.domain import BillingEntitlement, User
+from models.domain import BillingEntitlement, Subscription, User
 from services.apple_environment import (
     APPLE_ENVIRONMENT_PRODUCTION,
     APPLE_ENVIRONMENT_SANDBOX,
@@ -168,6 +168,8 @@ async def upsert_verified_apple_entitlement(
     await db.flush()
     if reconcile:
         await reconcile_user_access(db, user.id)
+    if status == STATUS_ACTIVE:
+        await _set_compat_cancel_at_period_end(db, existing, False)
     logger.info(
         "apple entitlement upsert decision=%s env=%s product=%s original=%s txn=%s user_id=%s",
         status,
@@ -178,6 +180,25 @@ async def upsert_verified_apple_entitlement(
         user.id,
     )
     return existing, "applied"
+
+
+async def _set_compat_cancel_at_period_end(
+    db: AsyncSession,
+    row: BillingEntitlement,
+    cancel_at_period_end: bool,
+) -> None:
+    """Persist Apple cancel-at-period-end on the non-Stripe compat subscription only."""
+    if not row.compatibility_subscription_id:
+        return
+    compat = (
+        await db.execute(
+            select(Subscription).where(Subscription.id == row.compatibility_subscription_id)
+        )
+    ).scalars().first()
+    if compat is None or compat.stripe_subscription_id:
+        return
+    compat.cancel_at_period_end = cancel_at_period_end
+    await db.flush()
 
 
 async def apply_apple_status_update(
@@ -191,6 +212,7 @@ async def apply_apple_status_update(
     product_id: Optional[str] = None,
     period_end: Optional[datetime] = None,
     transaction_id: Optional[str] = None,
+    cancel_at_period_end: Optional[bool] = None,
     reconcile: bool = True,
 ) -> str:
     reason = apple_lifecycle_may_mutate(
@@ -226,4 +248,6 @@ async def apply_apple_status_update(
     await db.flush()
     if reconcile:
         await reconcile_user_access(db, row.user_id)
+    if cancel_at_period_end is not None:
+        await _set_compat_cancel_at_period_end(db, row, cancel_at_period_end)
     return "applied"
