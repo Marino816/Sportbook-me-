@@ -108,6 +108,29 @@ def build_parlay(
     return result
 
 
+def unique_valid_leg_dicts(legs: list[dict] | None) -> list[dict]:
+    """Keep the first unique event+market+selection; drop later dupes/conflicts."""
+    seen: set[str] = set()
+    market_picks: dict[tuple[str, str], str] = {}
+    out: list[dict] = []
+    for leg in legs or []:
+        event_id = str(leg.get("event_id") or "").strip()
+        market = str(leg.get("market") or "").strip().lower()
+        selection = str(leg.get("selection") or "").strip().lower()
+        if not event_id or not selection:
+            continue
+        key = f"{event_id}::{market}::{selection}"
+        if key in seen:
+            continue
+        mk = (event_id, market)
+        if mk in market_picks and market_picks[mk] != selection:
+            continue
+        seen.add(key)
+        market_picks[mk] = selection
+        out.append(leg)
+    return out
+
+
 def build_parlay_dict(
     legs: list[dict],
     stake: float = 100.0,
@@ -128,7 +151,7 @@ def build_parlay_dict(
             bookmaker=leg.get("book", leg.get("bookmaker", "")),
             odds=leg.get("odds", 0),
         )
-        for leg in legs
+        for leg in unique_valid_leg_dicts(legs)
     ]
 
     result = build_parlay(parlay_legs, stake)
@@ -194,6 +217,8 @@ def validate_parlay_legs(legs: list[dict]) -> dict:
     elif len(legs) < 2:
         errors.append(f"Minimum 2 legs required, got {len(legs)}")
 
+    seen_keys: set[str] = set()
+    market_picks: dict[tuple[str, str], str] = {}
     for i, leg in enumerate(legs):
         idx = i + 1
         if not leg.get("event_id"):
@@ -205,6 +230,23 @@ def validate_parlay_legs(legs: list[dict]) -> dict:
                 leg["odds"] = int(leg["odds"])
             except (ValueError, TypeError):
                 errors.append(f"Leg {idx}: odds must be an integer (American odds)")
+        event_id = str(leg.get("event_id") or "").strip()
+        market = str(leg.get("market") or "").strip().lower()
+        selection = str(leg.get("selection") or "").strip().lower()
+        key = f"{event_id}::{market}::{selection}"
+        if event_id and selection:
+            if key in seen_keys:
+                errors.append(f"Leg {idx}: duplicate of {selection} in {market or 'market'}")
+            seen_keys.add(key)
+            mk = (event_id, market)
+            prior = market_picks.get(mk)
+            if prior and prior != selection:
+                errors.append(
+                    f"Leg {idx}: conflicting {market or 'market'} outcome "
+                    f"({prior} vs {selection})"
+                )
+            elif selection:
+                market_picks[mk] = selection
 
     # SGP warning
     if is_same_game_parlay([

@@ -30,17 +30,21 @@ async def list_published_slates(
     result = await db.execute(q)
     slates = result.scalars().all()
 
-    # Compute per-slate game count from distinct game_info values
+    # Canonical unordered matchups (LAD@SD and SD@LAD are one game)
     game_counts: dict[int, int] = {}
     if slates:
-        from sqlalchemy import func
+        from collections import defaultdict
+        from dfs.games import count_canonical_games
+
         slate_ids = [s.id for s in slates]
         gc_rows = await db.execute(
-            select(PlayerDB.slate_id, func.count(func.distinct(PlayerDB.game_info)))
+            select(PlayerDB.slate_id, PlayerDB.game_info, PlayerDB.team, PlayerDB.opponent)
             .where(PlayerDB.slate_id.in_(slate_ids))
-            .group_by(PlayerDB.slate_id)
         )
-        game_counts = {row[0]: row[1] for row in gc_rows}
+        by_slate: dict[int, list[dict]] = defaultdict(list)
+        for sid, gi, team, opp in gc_rows:
+            by_slate[sid].append({"game_info": gi, "team": team, "opponent": opp})
+        game_counts = {sid: count_canonical_games(rows) for sid, rows in by_slate.items()}
 
     from dfs.freshness import (
         is_current_slate,

@@ -125,18 +125,13 @@ async def run_optimizer(
         if native_slate:
             from dfs.freshness import is_stale_slate, is_optimizer_eligible_status
 
-            if not is_optimizer_eligible_status(
-                native_slate.status, native_slate.start_time, native_slate.sport
-            ):
-                raise HTTPException(404, "Slate not found or not published")
-
-            # ── Server-side freshness gate ──
-            # A stale (past-date) published slate must never generate or
-            # save a lineup.  Reject it at the API layer so a client that
-            # bypasses the frontend *is_current* filter cannot create
-            # lineups from out-of-date salaries.
-
-            if is_stale_slate(native_slate.start_time):
+            # is_optimizer_eligible_status / is_runnable_slate is False for
+            # STALE dates (and for unpublished/archived). Check published-stale
+            # first so the client gets a 400 "upload or select a current slate"
+            # instead of a 404 that pretends the contest does not exist.
+            # Lineups are still never generated for stale or unpublished slates.
+            native_status = (native_slate.status or "").upper()
+            if is_stale_slate(native_slate.start_time) and native_status == "PUBLISHED":
                 slate_d = (
                     native_slate.start_time.date().isoformat()
                     if native_slate.start_time
@@ -150,6 +145,11 @@ async def run_optimizer(
                         f"a current {native_slate.platform} slate."
                     ),
                 )
+
+            if not is_optimizer_eligible_status(
+                native_slate.status, native_slate.start_time, native_slate.sport
+            ):
+                raise HTTPException(404, "Slate not found or not published")
 
             sport = native_slate.sport.upper()
             platform = request.settings.get("platform", native_slate.platform) if isinstance(request.settings, dict) else getattr(request.settings, 'platform', native_slate.platform)

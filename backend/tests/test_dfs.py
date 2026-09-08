@@ -132,6 +132,22 @@ class TestFreshness:
         assert is_optimizer_eligible_status("DRAFT", future, "MLB") is False
         assert is_optimizer_eligible_status("PUBLISHED", future, "MLB") is True
 
+    def test_published_stale_is_not_runnable(self):
+        """Eligibility is False for past dates — optimizer must 400, not run."""
+        past = datetime.now(ZoneInfo("America/New_York")) - timedelta(days=5)
+        assert is_stale_slate(past) is True
+        assert is_optimizer_eligible_status("PUBLISHED", past, "MLB") is False
+        assert is_customer_visible_slate(past, "MLB") is False
+
+    def test_optimize_checks_published_stale_before_eligibility_404(self):
+        from pathlib import Path
+        src = (Path(__file__).resolve().parents[1] / "api" / "router.py").read_text()
+        stale_400 = src.find('native_status == "PUBLISHED"')
+        eligible_404 = src.find('raise HTTPException(404, "Slate not found or not published")')
+        assert stale_400 != -1
+        assert stale_400 < eligible_404
+        assert "is stale" in src
+
     def test_none_start_time_is_stale(self):
         """Missing start_time → STALE (cannot be proven current)."""
         assert slate_freshness(None) == "STALE"
@@ -170,16 +186,20 @@ class TestFreshness:
 
 # ── Optimizer endpoint stale-slate gate ──────────────────────
 
-import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from main import app
 from models.database import Base, get_db
 from dfs.db import DFSSlate, DFSPlayer
 
-OPT_TEST_URL = "sqlite+aiosqlite://"
-_opt_engine = create_async_engine(OPT_TEST_URL, echo=False)
+_opt_engine = create_async_engine(
+    "sqlite+aiosqlite://",
+    echo=False,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 _OptSession = async_sessionmaker(_opt_engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -187,13 +207,14 @@ async def _opt_override_get_db():
     async with _OptSession() as s: yield s
 
 
-app.dependency_overrides[get_db] = _opt_override_get_db
-
-
 async def _opt_reset_db():
     async with _opt_engine.begin() as c:
-        await c.run_sync(Base.metadata.drop_all)
-        await c.run_sync(Base.metadata.create_all)
+        def _recreate(sync_conn):
+            sync_conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            Base.metadata.drop_all(sync_conn)
+            Base.metadata.create_all(sync_conn)
+            sync_conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+        await c.run_sync(_recreate)
 
 
 async def _opt_login(client, email="fresh@test.com"):
@@ -245,9 +266,15 @@ def _make_players(slate_id: int, pool: list = _SLATE_POOL):
 @pytest.fixture(autouse=True, scope="module")
 async def _opt_module_setup():
     """Lifetime: module — create/drop tables once per test module."""
+    previous = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = _opt_override_get_db
     await _opt_reset_db()
     yield
     await _opt_reset_db()
+    if previous is not None:
+        app.dependency_overrides[get_db] = previous
+    else:
+        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture
@@ -283,6 +310,30 @@ class TestOptimizerFreshnessGate:
         detail = resp.json()["detail"]
         assert "stale" in detail.lower()
         assert "upload or select" in detail.lower()
+        assert "generated_lineups" not in (resp.json().get("data") or {})
+
+    async def test_unpublished_draft_slate_rejected(self, opt_client):
+        """A current-dated DRAFT MLB slate is not runnable — 404, no lineups."""
+        token = await _opt_login(opt_client, "draft@test.com")
+        today_et = datetime.now(ZoneInfo("America/New_York"))
+        async with _OptSession() as s:
+            s.add(DFSSlate(
+                id=103, platform="draftkings", sport="MLB",
+                slate_name="Draft Slate", start_time=today_et,
+                status="DRAFT", player_count=len(_SLATE_POOL),
+                data_source="native",
+            ))
+            for p in _make_players(103):
+                s.add(p)
+            await s.commit()
+
+        resp = await opt_client.post(
+            "/api/optimize",
+            json={"slate_id": 103, "settings": {"platform": "draftkings", "strategy": "balanced", "num_lineups": 1}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+        assert "generated_lineups" not in (resp.json().get("data") or {})
 
     async def test_current_published_slate_accepted(self, opt_client):
         """A published slate whose start_time is today (ET) must not be

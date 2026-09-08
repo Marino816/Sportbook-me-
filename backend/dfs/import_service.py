@@ -198,13 +198,9 @@ async def import_slate_file(
     if no_team > len(players) * 0.1:
         v.fail(f"{no_team}/{len(players)} players missing team")
 
-    # Game count
-    games = set()
-    for p in players:
-        gi = p.game_info or ""
-        if "@" in gi:
-            games.add(gi.split()[0] if " " in gi else gi)
-    result.game_count = len(games)
+    from dfs.games import count_canonical_games
+
+    result.game_count = count_canonical_games(players)
 
     if result.game_count == 0:
         v.add_warn("No games detected from game_info")
