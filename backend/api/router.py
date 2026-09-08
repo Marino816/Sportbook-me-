@@ -114,6 +114,7 @@ async def run_optimizer(
 
     is_native = False
     dfs_source = "native"
+    sport = None
 
     # Try native DFS slate first
     try:
@@ -272,26 +273,36 @@ async def run_optimizer(
     except Exception:
         pass
 
-    # Legacy SportsDataIO fallback
-        if not is_native:
-            projections_dicts = await get_slate_projections(request.slate_id, db)
+    # Legacy SportsDataIO fallback. This block used to be indented under
+    # `except Exception`, so a clean native miss never ran it and `sport`
+    # stayed unbound — UnboundLocalError at the MLB/slot branch (500).
+    # Only run when native lookup did not assign sport (missing DFS row).
+    # Native stale 400 / unpublished 404 / current (sport set) are unchanged.
+    if sport is None:
+        from models.domain import Slate as SlateModel
+        slate_result = await db.execute(
+            select(SlateModel).where(SlateModel.id == request.slate_id)
+        )
+        slate = slate_result.scalars().first()
+        if not slate:
+            raise HTTPException(404, "Slate not found or not published")
+        sport = slate.sport.upper()
+        min_players = 10 if sport == "MLB" else 8
+        projections_dicts = await get_slate_projections(request.slate_id, db)
 
-            # Determine sport from slate for roster requirements
-            from models.domain import Slate as SlateModel
-            slate_result = await db.execute(select(SlateModel).where(SlateModel.id == request.slate_id))
-            slate = slate_result.scalars().first()
-            if not slate:
-                raise HTTPException(status_code=400, detail=f"Slate {request.slate_id} not found.")
-            sport = slate.sport.upper()
-            min_players = 10 if sport == "MLB" else 8
+        if isinstance(projections_dicts, dict) and "data" in projections_dicts:
+            projections_list = projections_dicts["data"]
+        else:
+            projections_list = projections_dicts
 
-            if isinstance(projections_dicts, dict) and "data" in projections_dicts:
-                projections_list = projections_dicts["data"]
-            else:
-                projections_list = projections_dicts
-
-            if len(projections_list) < min_players:
-                raise HTTPException(status_code=400, detail=f"Not enough players in projection pool ({len(projections_list)}/{min_players} needed for {sport}.)")
+        if len(projections_list) < min_players:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Not enough players in projection pool "
+                    f"({len(projections_list)}/{min_players} needed for {sport}.)"
+                ),
+            )
 
     # Sport/platform roster: MLB uses the MLB CP-SAT engine. NFL/NCAAF use
     # the generic slot optimizer keyed by BOTH sport and platform.

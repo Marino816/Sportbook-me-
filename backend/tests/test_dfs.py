@@ -144,8 +144,15 @@ class TestFreshness:
         src = (Path(__file__).resolve().parents[1] / "api" / "router.py").read_text()
         stale_400 = src.find('native_status == "PUBLISHED"')
         eligible_404 = src.find('raise HTTPException(404, "Slate not found or not published")')
+        missing_404 = src.rfind('raise HTTPException(404, "Slate not found or not published")')
+        sport_init = src.find("sport = None")
+        mlb_branch = src.find('if sport == "MLB"')
         assert stale_400 != -1
         assert stale_400 < eligible_404
+        assert eligible_404 < missing_404
+        assert sport_init != -1
+        assert sport_init < mlb_branch
+        assert src.find("if sport is None:") != -1
         assert "is stale" in src
 
     def test_none_start_time_is_stale(self):
@@ -333,6 +340,37 @@ class TestOptimizerFreshnessGate:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 404
+        assert "generated_lineups" not in (resp.json().get("data") or {})
+
+    async def test_nonexistent_native_slate_id_is_404(self, opt_client):
+        """A DFS id with no native row must 404, not UnboundLocalError 500."""
+        token = await _opt_login(opt_client, "missingnative@test.com")
+        resp = await opt_client.post(
+            "/api/optimize",
+            json={"slate_id": 999991, "settings": {"platform": "draftkings", "strategy": "balanced", "num_lineups": 1}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+        assert "generated_lineups" not in (resp.json().get("data") or {})
+
+    async def test_nonexistent_legacy_slate_id_is_404(self, opt_client):
+        """Native miss then no SportsDataIO slate must 404, not 500."""
+        from models.domain import Slate as LegacySlate
+
+        token = await _opt_login(opt_client, "missinglegacy@test.com")
+        missing_id = 999992
+        async with _OptSession() as s:
+            native = (await s.get(DFSSlate, missing_id))
+            legacy = (await s.get(LegacySlate, missing_id))
+            assert native is None
+            assert legacy is None
+
+        resp = await opt_client.post(
+            "/api/optimize",
+            json={"slate_id": missing_id, "settings": {"platform": "draftkings", "strategy": "balanced", "num_lineups": 1}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
         assert "generated_lineups" not in (resp.json().get("data") or {})
 
     async def test_current_published_slate_accepted(self, opt_client):
