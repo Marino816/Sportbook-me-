@@ -124,8 +124,8 @@ class TestMLBOptimizer:
     def test_trial_label(self):
         from api.builder_routes import _gen_unique_lineups
         lu = _gen_unique_lineups(TEST_POOL, "balanced", 1, [], [], 50000)
-        assert lu[0]["data_mode"] == "TRIAL_SCRAMBLED"
-        assert lu[0]["data_source"] == "sportsdataio"
+        assert lu[0]["data_mode"] == "native"
+        assert lu[0]["data_source"] == "native"
 
     def test_projection_equals_sum(self):
         from api.builder_routes import _gen_unique_lineups

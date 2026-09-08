@@ -115,6 +115,7 @@ async def run_optimizer(
     is_native = False
     dfs_source = "native"
     sport = None
+    integrity_report = None
 
     # Try native DFS slate first
     try:
@@ -173,6 +174,7 @@ async def run_optimizer(
                     "projected_fp": 0.0,  # filled by projection engine below
                     "opponent": np.opponent or "",
                     "mapping_status": np.mapping_status,
+                    "game_info": np.game_info,
                 })
 
             if len(projections_list) >= 10:
@@ -186,6 +188,8 @@ async def run_optimizer(
                         projections_to_pool,
                         apply_projection_policy,
                         count_projected_players,
+                        build_projection_integrity_report,
+                        lineup_projection_total,
                     )
                     from projection.sgo_intelligence import build_sgo_intelligence
 
@@ -197,6 +201,16 @@ async def run_optimizer(
                     projections_list = apply_projection_policy(projections_to_pool(projs))
                     projected_count = count_projected_players(projections_list)
                     logger.info(f"Native projections: {projected_count}/{len(projections_list)} projected")
+                    from dfs.freshness import slate_freshness as _slate_freshness
+                    integrity_report = build_projection_integrity_report(
+                        projections_list,
+                        slate_id=native_slate.id,
+                        slate_name=native_slate.slate_name,
+                        salary_source=native_slate.data_source,
+                        freshness=_slate_freshness(native_slate.start_time),
+                        uploaded_at=str(native_slate.uploaded_at) if native_slate.uploaded_at else None,
+                        published_at=str(native_slate.published_at) if native_slate.published_at else None,
+                    )
 
                     # ── sgo_team + game_id enrichment ──
                     # Hit SGO to resolve team assignments for every player on this
@@ -422,7 +436,8 @@ async def run_optimizer(
         objective = (
             "MAXIMIZE SUM(projected_fp × 10 × x[i]) via OR-Tools CP-SAT; "
             f"x[i] ∈ {{0,1}} select player i from {solver_pool_count} eligible; "
-            f"fp source: SGO_FANTASY_MARKET / PROP_BASED / BC_PROJ_FALLBACK({bc_proj_fallback_count}) / MyProj-override"
+            f"fp source: SGO_FANTASY_MARKET / PROP_BASED / BC_PROJ_FALLBACK({bc_proj_fallback_count}) "
+            f"/ SLATE_SOURCE / CONSENSUS_CAPPED / MyProj-override"
         )
 
         # Format response with per-player projection_source
@@ -438,11 +453,18 @@ async def run_optimizer(
                     "projection_source": pl.get("projection_source", "UNAVAILABLE"),
                     "roster_slot": pl.get("roster_slot", "?"),
                     "id": pl.get("id", ""),
+                    "mapping_status": pl.get("mapping_status"),
+                    "identity_verified": bool(pl.get("identity_verified")),
+                    "sgo_fp": pl.get("sgo_fp"),
+                    "fppg": pl.get("fppg"),
                 })
+            fp_sum = lineup_projection_total(players_out)
+            sal_sum = sum(int(pl.get("salary") or 0) for pl in players_out)
+            cap = int(getattr(opt, "max_salary", 50000) or 50000)
             formatted.append({
-                "total_salary": lu.get("total_salary", 0),
-                "projected_score": lu.get("projected_score", 0),
-                "remaining_salary": lu.get("remaining_salary", 0),
+                "total_salary": sal_sum,
+                "projected_score": fp_sum,
+                "remaining_salary": cap - sal_sum,
                 "players": players_out,
                 "min_uniqueness": lu.get("min_uniqueness"),
                 "objective_function": lu.get("objective_function", objective),
@@ -493,6 +515,7 @@ async def run_optimizer(
                     "quarantined_count": len(quarantined),
                     "quarantined": quarantined[:20],
                     "bc_proj_fallback_count": bc_proj_fallback_count,
+                    "integrity": integrity_report,
                     "pool": [
                         {
                             "id": str(p.get("id", "")),
@@ -504,6 +527,10 @@ async def run_optimizer(
                             "projected_fp": p.get("projected_fp", 0.0),
                             "projection_source": p.get("projection_source", "UNAVAILABLE"),
                             "sgo_team": p.get("sgo_team", ""),
+                            "mapping_status": p.get("mapping_status"),
+                            "identity_verified": bool(p.get("identity_verified")),
+                            "sgo_fp": p.get("sgo_fp"),
+                            "fppg": p.get("fppg"),
                         }
                         for p in opt.players  # solver-eligible only (post-filter/quarantine)
                     ],

@@ -104,6 +104,7 @@ async def build_canonical_pool(
             "projected_fp": 0.0,
             "opponent": np.opponent or "",
             "mapping_status": np.mapping_status,
+            "game_info": np.game_info,
             "bc_value": (player_bc.get("value") if isinstance(player_bc, dict) else None),
             "bc_beta_proj": (player_bc.get("beta_proj") if isinstance(player_bc, dict) else None),
         })

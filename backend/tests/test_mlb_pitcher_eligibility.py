@@ -61,13 +61,14 @@ class TestBcUnavailable:
     def test_does_not_wipe_all_pitchers(self):
         pool = [
             _p(id="s1", name="SP Ace", roster_position="SP", eligible_positions=["SP", "P"],
-               projected_fp=18.0, projection_source="SGO_FANTASY_MARKET", fppg=None, team="TEX"),
+               projected_fp=18.0, projection_source="SGO_FANTASY_MARKET", fppg=None, team="TEX",
+               mapping_status="MATCHED"),
             _p(id="s2", name="SP Two", roster_position="SP", eligible_positions=["SP", "P"],
                projected_fp=15.0, projection_source="SGO_FANTASY_MARKET", fppg=None, team="LAD",
-               salary=8500),
+               salary=8500, mapping_status="MATCHED"),
             _p(id="r1", name="RP", roster_position="RP", eligible_positions=["RP", "P"],
                projected_fp=12.0, projection_source="SGO_FANTASY_MARKET", fppg=None, team="SF",
-               salary=6200),
+               salary=6200, mapping_status="MATCHED"),
         ]
         assert not has_bc_pitcher_coverage(pool)
         elig = resolve_eligible_pitcher_ids(pool)

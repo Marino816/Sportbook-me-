@@ -86,6 +86,8 @@ class NativeProjection:
     projection_updated_at: Optional[datetime] = None
     props_used: list[str] = field(default_factory=list)
     fantasy_market_line: Optional[float] = None
+    prop_fp: Optional[float] = None
+    game_info: Optional[str] = None
 
 
 def compute_projections(
@@ -125,6 +127,7 @@ def compute_projections(
             fppg=p.get("fppg"),
             eligible_positions=list(p.get("eligible_positions") or []),
             mapping_status=p.get("mapping_status"),
+            game_info=p.get("game_info"),
         )
 
         # Check SGO intelligence enrichment
@@ -134,22 +137,26 @@ def compute_projections(
         is_pitcher = "P" in pos or "SP" in pos or "RP" in pos
 
         if fantasy_market is not None and float(fantasy_market) > 0:
-            # Method 1: Direct fantasyScore market (hitters & pitchers)
+            # Record SGO as a raw source. Optimizer mean is decided later by
+            # apply_projection_policy (identity-gated consensus).
             proj.base_projection = round(float(fantasy_market), 1)
             proj.projection_source = "SGO_FANTASY_MARKET"
             proj.projection_confidence = 0.8
             proj.fantasy_market_line = float(fantasy_market)
             proj.props_used = ["fantasyScore"]
 
-        elif props and is_pitcher:
-            # Method 2: Prop-based model — pitchers only.
-            # Pitcher props (IP, K, ER) are legitimate expected values.
+        if props and is_pitcher:
+            # Pitcher props are an independent DK-scored estimate. Stored even
+            # when SGO fantasyScore exists. Unmatched identities will not use
+            # this as the optimizer mean.
             fp = _compute_mlb_pitcher_projection(props)
             if fp > 0:
-                proj.base_projection = fp
-                proj.projection_source = "PROP_BASED"
-                proj.projection_confidence = 0.5
-                proj.props_used = [k for k, v in props.items() if v is not None]
+                proj.prop_fp = fp
+                if proj.projection_source == "UNAVAILABLE":
+                    proj.base_projection = fp
+                    proj.projection_source = "PROP_BASED"
+                    proj.projection_confidence = 0.5
+                    proj.props_used = [k for k, v in props.items() if v is not None]
 
         # Hitters without fantasyScore: UNAVAILABLE (was PROP_BASED).
         # apply_bc_proj_fallback() may later attach BC_PROJ_FALLBACK.
@@ -263,6 +270,7 @@ def apply_bc_proj_fallback(pool: list[dict]) -> list[dict]:
     Value policy (not eligibility):
       - Hitters: fppg>0 becomes BC_PROJ_FALLBACK when projected_fp<=0
       - Pitchers: same, when BC fppg>0 (does not promote relievers by itself)
+    Raw SGO / BC values are not overwritten.
     """
     out: list[dict] = []
     for raw in pool:
@@ -278,9 +286,184 @@ def apply_bc_proj_fallback(pool: list[dict]) -> list[dict]:
     return out
 
 
+# Disagreement protection: when independent FP sources diverge, the solver
+# mean is capped relative to the lower source. Raw provider values are kept.
+R_AGREE = 1.20
+R_CAP = 1.35
+VERIFIED_IDENTITY = "MATCHED"
+
+
+def identity_verified(p: dict) -> bool:
+    """True only when SB ME reconciliation marked a verified identity match."""
+    return str(p.get("mapping_status") or "").strip().upper() == VERIFIED_IDENTITY
+
+
+def _positive_fp(val) -> Optional[float]:
+    try:
+        n = float(val)
+    except (TypeError, ValueError):
+        return None
+    if n > 0:
+        return n
+    return None
+
+
+def stamp_raw_fp_sources(p: dict) -> dict:
+    """Copy raw SGO / BC / prop onto dedicated keys. Never clobber existing raws."""
+    out = dict(p)
+    sgo = _positive_fp(out.get("sgo_fp"))
+    if sgo is None:
+        sgo = _positive_fp(out.get("fantasy_market_line"))
+    if sgo is None and str(out.get("projection_source") or "") == "SGO_FANTASY_MARKET":
+        sgo = _positive_fp(out.get("projected_fp"))
+    if sgo is not None and out.get("sgo_fp") is None:
+        out["sgo_fp"] = sgo
+    bc = _positive_fp(out.get("bc_fp"))
+    if bc is None:
+        bc = _positive_fp(out.get("fppg"))
+    if bc is not None:
+        if out.get("bc_fp") is None:
+            out["bc_fp"] = bc
+        if out.get("fppg") is None:
+            out["fppg"] = bc
+    return out
+
+
+def collect_fp_sources(p: dict) -> dict[str, float]:
+    """Independent fantasy-point estimates already on the player dict.
+
+    Does not invent values. Does not use 1.35× projection, hitter O/U props,
+    Optimal%, or Last-5.
+    """
+    out: dict[str, float] = {}
+    sgo = _positive_fp(p.get("sgo_fp"))
+    if sgo is None:
+        sgo = _positive_fp(p.get("fantasy_market_line"))
+    if sgo is not None:
+        out["sgo"] = sgo
+    bc = _positive_fp(p.get("fppg"))
+    if bc is None:
+        bc = _positive_fp(p.get("bc_fp"))
+    if bc is not None:
+        out["bc"] = bc
+    prop = _positive_fp(p.get("prop_fp"))
+    if prop is not None:
+        out["prop"] = prop
+    return out
+
+
+def apply_source_consensus(pool: list[dict]) -> list[dict]:
+    """Set optimizer projected_fp / ceiling / floor from real independent sources.
+
+    Raw sgo_fp / bc_fp / fppg / prop_fp are preserved.
+    Single source: mean = that source.
+    Agreeing sources (hi/lo <= R_AGREE): prefer SGO when present, else mean.
+    Disagreement: mean = min(hi, lo * R_CAP); ceiling = max; floor = min.
+    """
+    out: list[dict] = []
+    for raw in pool:
+        p = dict(raw)
+        sources = collect_fp_sources(p)
+        if "sgo" in sources and p.get("sgo_fp") is None:
+            p["sgo_fp"] = sources["sgo"]
+        if "bc" in sources and p.get("bc_fp") is None:
+            p["bc_fp"] = sources["bc"]
+        if "prop" in sources and p.get("prop_fp") is None:
+            p["prop_fp"] = sources["prop"]
+
+        if (p.get("projection_source") or "") == "MY_PROJ":
+            mean = _positive_fp(p.get("projected_fp"))
+            if mean is None:
+                mean = 0.0
+            p["projected_fp"] = round(mean, 1)
+            if sources:
+                p["floor"] = round(min(sources.values()), 1)
+                p["ceiling"] = round(max(sources.values()), 1)
+            else:
+                p["ceiling"] = round(mean, 1)
+                p["floor"] = round(mean, 1)
+            out.append(p)
+            continue
+
+        vals = list(sources.values())
+        if not vals:
+            p["ceiling"] = p.get("ceiling")
+            p["floor"] = p.get("floor")
+            out.append(p)
+            continue
+
+        lo, hi = min(vals), max(vals)
+        p["floor"] = round(lo, 1)
+        p["ceiling"] = round(hi, 1)
+
+        if len(vals) == 1:
+            p["projected_fp"] = round(vals[0], 1)
+            out.append(p)
+            continue
+
+        if hi / lo <= R_AGREE:
+            if "sgo" in sources:
+                p["projected_fp"] = round(sources["sgo"], 1)
+                if p.get("projection_source") in (None, "UNAVAILABLE", "BC_PROJ_FALLBACK", "SLATE_SOURCE"):
+                    p["projection_source"] = "SGO_FANTASY_MARKET"
+            else:
+                p["projected_fp"] = round(sum(vals) / len(vals), 1)
+                p["projection_source"] = "CONSENSUS"
+            out.append(p)
+            continue
+
+        capped = min(hi, lo * R_CAP)
+        p["projected_fp"] = round(capped, 1)
+        p["projection_source"] = "CONSENSUS_CAPPED"
+        out.append(p)
+    return out
+
+
+def apply_unmatched_slate_source(p: dict) -> dict:
+    """Unmatched identity: optimizer mean is slate-source (BC FPPG) only.
+
+    Raw SGO / prop values stay on the dict for the integrity report and are
+    not used as the solver projection. No team/player match is inferred.
+    """
+    out = dict(p)
+    out["identity_verified"] = False
+    bc = _positive_fp(out.get("fppg"))
+    if bc is None:
+        bc = _positive_fp(out.get("bc_fp"))
+    if bc is not None:
+        out["projected_fp"] = round(bc, 1)
+        out["projection_source"] = "SLATE_SOURCE"
+        out["projection_confidence"] = 0.4
+        out["ceiling"] = round(bc, 1)
+        out["floor"] = round(bc, 1)
+        out["fppg_was_fallback"] = True
+    else:
+        out["projected_fp"] = 0.0
+        out["projection_source"] = "UNAVAILABLE"
+    return out
+
+
 def apply_projection_policy(pool: list[dict]) -> list[dict]:
-    """Canonical post-SGO policy used by /optimize, Data Hub, Sims, Stacks, AI."""
-    out = apply_bc_proj_fallback(pool)
+    """Canonical post-SGO policy used by /optimize, Data Hub, Sims, Stacks, AI.
+
+    Matched identity: consensus-cap independent SGO/BC/prop sources.
+    Unmatched identity: slate-source FPPG only — never SGO or props.
+    Raw provider values are preserved on sgo_fp / bc_fp / fppg / prop_fp.
+    """
+    out: list[dict] = []
+    for raw in pool:
+        p = stamp_raw_fp_sources(raw)
+        if str(p.get("projection_source") or "") == "MY_PROJ":
+            p["identity_verified"] = identity_verified(p)
+            out.append(apply_source_consensus([p])[0])
+            continue
+        if not identity_verified(p):
+            out.append(apply_unmatched_slate_source(p))
+            continue
+        p = apply_bc_proj_fallback([p])[0]
+        p = apply_source_consensus([p])[0]
+        p["identity_verified"] = True
+        out.append(p)
     eligible = resolve_eligible_pitcher_ids(out)
     for p in out:
         if is_pitcher_player(p):
@@ -288,6 +471,62 @@ def apply_projection_policy(pool: list[dict]) -> list[dict]:
         else:
             p["mlb_pitcher_eligible"] = True
     return out
+
+
+def lineup_projection_total(players: list[dict]) -> float:
+    """Sum of optimizer projected_fp values, rounded to one decimal."""
+    return round(sum(float(p.get("projected_fp") or 0) for p in players or []), 1)
+
+
+def build_projection_integrity_report(
+    pool: list[dict],
+    *,
+    slate_id=None,
+    slate_name: Optional[str] = None,
+    salary_source: Optional[str] = None,
+    freshness: Optional[str] = None,
+    uploaded_at: Optional[str] = None,
+    published_at: Optional[str] = None,
+) -> dict:
+    """Per-player optimizer-input lineage. Does not invent matches or projections."""
+    salary_label = salary_source or "native"
+    if str(salary_label).lower() in ("native", "bcdfs", "blue_collar", "draftkings", "fanduel"):
+        salary_label = "stored_contest_salaries"
+    players = []
+    for p in pool or []:
+        verified = bool(p.get("identity_verified")) or identity_verified(p)
+        raw_bc = p.get("bc_fp")
+        if raw_bc is None:
+            raw_bc = p.get("fppg")
+        players.append({
+            "id": str(p.get("id") or p.get("player_id") or ""),
+            "name": p.get("name") or p.get("player_name") or "",
+            "team": p.get("team") or "",
+            "identity_verified": verified,
+            "mapping_status": str(p.get("mapping_status") or "UNMATCHED"),
+            "projection_source": p.get("projection_source") or "UNAVAILABLE",
+            "raw_sgo_fp": p.get("sgo_fp"),
+            "raw_bc_fp": raw_bc,
+            "optimizer_projected_fp": p.get("projected_fp"),
+            "slate_member": True,
+            "game_info": p.get("game_info"),
+            "salary": p.get("salary"),
+            "salary_source": salary_label,
+            "freshness": freshness,
+        })
+    matched = sum(1 for row in players if row["identity_verified"])
+    return {
+        "slate_id": slate_id,
+        "slate_name": slate_name,
+        "salary_source": salary_label,
+        "freshness": freshness,
+        "uploaded_at": uploaded_at,
+        "published_at": published_at,
+        "matched_count": matched,
+        "unmatched_count": len(players) - matched,
+        "player_count": len(players),
+        "players": players,
+    }
 
 
 def count_projected_players(pool: list[dict]) -> int:
@@ -325,4 +564,8 @@ def projections_to_pool(projections: list[NativeProjection]) -> list[dict]:
         "projected_fp": p.base_projection,
         "projection_source": p.projection_source,
         "projection_confidence": p.projection_confidence,
+        "fantasy_market_line": p.fantasy_market_line,
+        "sgo_fp": p.fantasy_market_line if p.fantasy_market_line and p.fantasy_market_line > 0 else None,
+        "prop_fp": p.prop_fp,
+        "game_info": p.game_info,
     } for p in projections]

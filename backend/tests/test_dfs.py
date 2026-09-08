@@ -264,6 +264,8 @@ def _make_players(slate_id: int, pool: list = _SLATE_POOL):
             position=pos,
             eligible_positions=[pos],
             salary=sal,
+            fppg=12.0 if pos == "P" else 7.5,
+            mapping_status="MATCHED",
             game_info=f"{team}@OPP 08/11/2026 07:00PM ET",
         )
         for (pid, name, team, sal, pos) in pool
@@ -422,3 +424,12 @@ class TestOptimizerFreshnessGate:
         body = resp.json()
         assert body.get("data", {}).get("generated_lineups", -1) >= 1
         assert body.get("data", {}).get("source") == "native"
+        integrity = body.get("data", {}).get("integrity") or {}
+        assert integrity.get("matched_count", 0) >= 10
+        assert integrity.get("salary_source") == "stored_contest_salaries"
+        assert integrity.get("freshness") == "CURRENT"
+        lu = (body.get("data") or {}).get("lineups") or []
+        assert lu
+        players = lu[0].get("players") or []
+        from projection.native import lineup_projection_total
+        assert lu[0]["projected_score"] == lineup_projection_total(players)
