@@ -420,7 +420,10 @@ async def run_optimizer(
         if not lineups and regenerate_from_ids:
             raise HTTPException(status_code=422, detail=UNIQUE_LINEUP_UNAVAILABLE)
         if not lineups:
-            raise HTTPException(status_code=400, detail="Infeasible constraints. Could not generate any valid lineups.")
+            detail = getattr(opt, "last_infeasible_reason", None) or (
+                "Infeasible constraints. Could not generate any valid lineups."
+            )
+            raise HTTPException(status_code=400, detail=detail)
 
         # Merge quarantine reports
         all_quarantined = list(quarantined_from_router)

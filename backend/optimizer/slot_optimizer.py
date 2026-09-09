@@ -83,10 +83,25 @@ class SlotOptimizer:
         self.players: list[dict] = []
         self.lock_indices: set[int] = set()
         self.idx_by_id: dict[str, int] = {}
+        self.unmatched_locks: list[str] = []
+        self.last_infeasible_reason: Optional[str] = None
         self._load_pool(pool)
 
+    @staticmethod
+    def _slot_pos(p: dict) -> str:
+        pos = p.get("roster_position") or p.get("position") or ""
+        elig = p.get("eligible_positions")
+        if isinstance(elig, list) and elig:
+            extra = "/".join(str(x) for x in elig if x)
+            return f"{pos}/{extra}" if pos else extra
+        return str(pos or "")
+
     def _load_pool(self, pool: list[dict]) -> None:
+        # UNAVAILABLE / 0.0 projected_fp players stay eligible. /optimize
+        # already documents that they must not be dropped; otherwise DST and
+        # locked stars vanish from weekly NFL slates when SGO coverage is thin.
         lock_l = {x.lower() for x in self.locks}
+        matched_lock_keys: set[str] = set()
         for p in pool:
             pid = str(p.get("id", "") or "")
             name = (p.get("name") or "").strip()
@@ -95,10 +110,7 @@ class SlotOptimizer:
                 continue
             if (p.get("salary", 0) or 0) <= 0:
                 continue
-            fp = p.get("projected_fp", 0) or 0
-            if fp <= 0:
-                continue
-            pos = p.get("roster_position") or p.get("position") or ""
+            pos = self._slot_pos(p)
             # Must be eligible for at least one slot on this roster.
             if not any(eligible_for_slot(pos, slot, self.roster) for slot in set(self.roster.slots)):
                 continue
@@ -108,6 +120,15 @@ class SlotOptimizer:
                 self.idx_by_id[pid] = idx
             if pid in self.locks or name_l in lock_l:
                 self.lock_indices.add(idx)
+                if pid in self.locks:
+                    matched_lock_keys.add(pid)
+                if name_l in lock_l:
+                    matched_lock_keys.add(name)
+                    matched_lock_keys.add(name_l)
+        self.unmatched_locks = [
+            lk for lk in self.locks
+            if lk not in matched_lock_keys and lk.lower() not in matched_lock_keys
+        ]
 
     def _prior_indices(self, prior_set: set) -> list[int]:
         want = {str(x).strip().lower() for x in prior_set if x is not None and str(x).strip()}
@@ -129,6 +150,25 @@ class SlotOptimizer:
         slots = list(self.roster.slots)
         n_slots = len(slots)
         if n < n_slots:
+            self.last_infeasible_reason = (
+                f"Only {n} eligible players remain for a {n_slots}-slot "
+                f"{self.roster.platform} {self.sport} lineup."
+            )
+            return None
+        for slot in slots:
+            if not any(eligible_for_slot(self._slot_pos(self.players[p]), slot, self.roster) for p in range(n)):
+                label = slot_label(slot, self.roster)
+                self.last_infeasible_reason = (
+                    f"No eligible {label} remains in the player pool. "
+                    "Unlock a player or choose a current full-roster slate."
+                )
+                return None
+        if self.unmatched_locks:
+            shown = ", ".join(self.unmatched_locks[:3])
+            self.last_infeasible_reason = (
+                f"Locked player {shown} is not in this slate pool. "
+                "Unlock them or select players from the current slate."
+            )
             return None
 
         model = cp_model.CpModel()
@@ -138,7 +178,7 @@ class SlotOptimizer:
 
         for p in range(n):
             model.Add(sum(y[p][s] for s in range(n_slots)) == x[p])
-            pos = self.players[p].get("roster_position") or self.players[p].get("position") or ""
+            pos = self._slot_pos(self.players[p])
             for s, slot in enumerate(slots):
                 if not eligible_for_slot(pos, slot, self.roster):
                     model.Add(y[p][s] == 0)
@@ -179,6 +219,15 @@ class SlotOptimizer:
 
         status = solver.Solve(model)
         if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            if self.lock_indices:
+                self.last_infeasible_reason = (
+                    "Could not complete a valid lineup with the locked players. "
+                    "Unlock a player or choose lower-salary locks."
+                )
+            else:
+                self.last_infeasible_reason = (
+                    "Infeasible constraints. Could not generate any valid lineups."
+                )
             return None
 
         selected = []
@@ -209,6 +258,13 @@ class SlotOptimizer:
         }
 
     def generate(self, count: int = 1, regenerate_from_ids: list[list[str]] | None = None) -> list[dict]:
+        if self.unmatched_locks:
+            shown = ", ".join(self.unmatched_locks[:3])
+            self.last_infeasible_reason = (
+                f"Locked player {shown} is not in this slate pool. "
+                "Unlock them or select players from the current slate."
+            )
+            return []
         extra_prior_sets: list[set[str]] = []
         if regenerate_from_ids:
             for prior in regenerate_from_ids:
