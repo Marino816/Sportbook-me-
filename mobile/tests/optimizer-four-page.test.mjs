@@ -11,14 +11,20 @@ import {
   applyLineupToSlots,
   BUILD_BUTTON_LABEL,
   buildOptimizeSettings,
+  confirmedBattingOrder,
+  displayProjection,
+  draftTitle,
   emptySlots,
+  extractGameCards,
   filterOpenSlates,
   getRoster,
   lineupFillMode,
   lockKeysFromSlots,
   OPEN_OPTIMIZER_COPY,
   OPEN_OPTIMIZER_LABEL,
+  playerMatchesGame,
   remainingSalary,
+  salaryFooterStats,
   shouldClearResultState,
   slotEligible,
   validateFullManualLineup,
@@ -84,6 +90,125 @@ test("Page 3 player selection returns to Page 2 and rejects over-cap", () => {
   assert.match(bad.reason, /salary cap/);
 });
 
+test("Page 2 salary and Clear are independently spaced", () => {
+  const src = read("app/(tabs)/optimizer/builder.tsx");
+  assert.match(src, /styles\.slotSal/);
+  assert.match(src, /styles\.clearBtn/);
+  assert.match(src, /minHeight: 44/);
+  assert.match(src, /marginRight: 12/);
+  assert.match(src, /formatSalaryFull/);
+  assert.match(src, /accessibilityLabel=\{`Clear/);
+  assert.match(src, /numberOfLines=\{1\}/);
+  assert.doesNotMatch(src, /slotSal[\s\S]{0,80}styles\.clear/);
+});
+
+test("Page 3 uses position-specific draft titles", () => {
+  const nfl = getRoster("nfl", "draftkings");
+  const mlb = getRoster("mlb", "draftkings");
+  assert.equal(draftTitle("QB", nfl), "Draft Quarterback");
+  assert.equal(draftTitle("RB", nfl), "Draft Running Back");
+  assert.equal(draftTitle("WR", nfl), "Draft Wide Receiver");
+  assert.equal(draftTitle("TE", nfl), "Draft Tight End");
+  assert.equal(draftTitle("DST", nfl), "Draft DST");
+  assert.equal(draftTitle("P", mlb), "Draft Pitcher");
+  assert.equal(draftTitle("C", mlb), "Draft Catcher");
+  assert.equal(draftTitle("1B", mlb), "Draft First Base");
+  assert.equal(draftTitle("2B", mlb), "Draft Second Base");
+  assert.equal(draftTitle("3B", mlb), "Draft Third Base");
+  assert.equal(draftTitle("SS", mlb), "Draft Shortstop");
+  assert.equal(draftTitle("OF", mlb), "Draft Outfield");
+  const src = read("app/(tabs)/optimizer/players.tsx");
+  assert.match(src, /draftTitle\(/);
+  assert.match(src, /Search All Players/);
+});
+
+test("compact game cards filter the eligible pool and stay narrow", () => {
+  const cards = extractGameCards([
+    { name: "A", team: "BUF", opponent: "MIA", game_info: "BUF@MIA 01:00PM ET" },
+    { name: "B", team: "MIA", opponent: "BUF", game_info: "BUF@MIA 01:00PM ET" },
+    { name: "C", team: "NE", opponent: "SEA", game_info: "NE@SEA 08:20PM ET" },
+  ], {
+    oddsGames: [{ home_abbr: "MIA", away_abbr: "BUF", moneyline_home: -140, moneyline_away: 120, spread_line: -3.5, total_line: 44.5 }],
+  });
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0].matchup, "BUF@MIA");
+  assert.equal(cards[0].time, "01:00PM ET");
+  assert.equal(cards[0].moneyline, "+120 / -140");
+  assert.equal(cards[0].total, "O/U 44.5");
+  assert.equal(cards[0].weather, "");
+  assert.equal(playerMatchesGame({ game_info: "BUF@MIA 01:00PM ET" }, "BUF@MIA"), true);
+  assert.equal(playerMatchesGame({ game_info: "NE@SEA 08:20PM ET" }, "BUF@MIA"), false);
+  const src = read("app/(tabs)/optimizer/players.tsx");
+  assert.match(src, /width: 168/);
+  assert.match(src, /flexGrow: 0/);
+  assert.match(src, /maxHeight: 108/);
+  assert.match(src, /All Games/);
+});
+
+test("missing projections display as unavailable, not 0.0", () => {
+  assert.equal(displayProjection({}), null);
+  assert.equal(displayProjection({ fppg: null, bc_beta_proj: null }), null);
+  assert.equal(displayProjection({ projected_fp: 0 }), 0);
+  assert.equal(displayProjection({ fppg: 12.4 }), 12.4);
+  const src = read("app/(tabs)/optimizer/players.tsx");
+  assert.match(src, /value == null \? "—" /);
+  assert.match(src, /projectionLabel/);
+});
+
+test("confirmed batting order shows only when lineup data is confirmed", () => {
+  assert.equal(confirmedBattingOrder({ batting_order: 7 }), null);
+  assert.equal(confirmedBattingOrder({ batting_order: 7, lineup_confirmed: true }), 7);
+  assert.equal(confirmedBattingOrder({ lineup_order: 1, confirmed_lineup: true }), 1);
+  assert.equal(confirmedBattingOrder({ batting_order: 6, batting_order_confirmed: "yes" }), 6);
+  const src = read("app/(tabs)/optimizer/players.tsx");
+  assert.match(src, /confirmedBattingOrder/);
+  assert.match(src, /\{order\} ✓/);
+  assert.doesNotMatch(src, /fake confirmation|always confirmed/i);
+});
+
+test("salary footer tracks filled slots remaining and cap", () => {
+  const nfl = getRoster("nfl", "draftkings");
+  const slots = emptySlots(nfl);
+  const empty = salaryFooterStats({ slots, cap: 50000, roster: nfl });
+  assert.equal(empty.filled, 0);
+  assert.equal(empty.total, 9);
+  assert.equal(empty.remaining, 50000);
+  assert.equal(empty.underCap, true);
+  slots[0] = { salary: 7000 };
+  slots[1] = { salary: 7000 };
+  slots[2] = { salary: 6200 };
+  const partial = salaryFooterStats({ slots, cap: 50000, roster: nfl });
+  assert.equal(partial.filled, 3);
+  assert.equal(partial.remaining, 29800);
+  assert.equal(partial.avgRemaining, Math.round(29800 / 6));
+  const mlb = salaryFooterStats({ slots: emptySlots(roster), cap: 50000, roster });
+  assert.equal(mlb.total, 10);
+  const src = read("app/(tabs)/optimizer/players.tsx");
+  assert.match(src, /Positions Filled/);
+  assert.match(src, /Remaining Salary/);
+  assert.match(src, /Avg Remaining\/Player/);
+});
+
+test("player selection and clear update footer stats and persist via session", () => {
+  const nfl = getRoster("nfl", "draftkings");
+  const slots = emptySlots(nfl);
+  const qb = { player_id: "JOSH_ALLEN_1_NFL", name: "Josh Allen", position: "QB", salary: 7000 };
+  assert.equal(validatePlayerSelection({ player: qb, slotIndex: 0, slots, roster: nfl }).ok, true);
+  slots[0] = qb;
+  const afterPick = salaryFooterStats({ slots, cap: nfl.salaryCap, roster: nfl });
+  assert.equal(afterPick.filled, 1);
+  assert.equal(afterPick.remaining, 43000);
+  slots[0] = null;
+  const afterClear = salaryFooterStats({ slots, cap: nfl.salaryCap, roster: nfl });
+  assert.equal(afterClear.filled, 0);
+  assert.equal(afterClear.remaining, 50000);
+  const src = read("app/(tabs)/optimizer/players.tsx");
+  assert.match(src, /assignPlayer/);
+  assert.match(src, /router\.back\(\)/);
+  assert.match(read("app/(tabs)/optimizer/builder.tsx"), /clearSlot/);
+  assert.match(read("lib/optimizer-session.tsx"), /assignPlayer/);
+});
+
 test("empty BUILD uses optimizer settings without locks", () => {
   const settings = buildOptimizeSettings({
     platform: "draftkings",
@@ -116,6 +241,31 @@ test("partial BUILD sends manual locks", () => {
   });
   assert.ok(settings.locked_player_ids.includes("pitch1"));
   assert.ok(settings.locked_player_ids.includes("Ace"));
+});
+
+test("NFL partial BUILD sends DK locks without changing roster rules", () => {
+  const nfl = getRoster("nfl", "draftkings");
+  assert.equal(nfl.slots.length, 9);
+  assert.equal(nfl.salaryCap, 50000);
+  const slots = emptySlots(nfl);
+  slots[0] = { player_id: "JOSH_ALLEN_1_NFL", name: "Josh Allen", position: "QB", salary: 7000 };
+  slots[1] = { player_id: "DEVON_ACHANE_1_NFL", name: "De'Von Achane", position: "RB", salary: 7000 };
+  slots[2] = { player_id: "KYREN_WILLIAMS_1_NFL", name: "Kyren Williams", position: "RB", salary: 6200 };
+  assert.equal(lineupFillMode(slots), "partial");
+  const settings = buildOptimizeSettings({
+    platform: "draftkings",
+    strategy: "balanced",
+    numLineups: 1,
+    sport: "nfl",
+    lockKeys: lockKeysFromSlots(slots),
+    pool: slots.filter(Boolean),
+  });
+  assert.equal(settings.platform, "draftkings");
+  assert.equal(settings.sport, "nfl");
+  assert.equal(settings.num_lineups, 1);
+  assert.ok(settings.locked_player_ids.includes("JOSH_ALLEN_1_NFL"));
+  assert.ok(settings.locked_player_ids.includes("DEVON_ACHANE_1_NFL"));
+  assert.ok(settings.locked_player_ids.includes("KYREN_WILLIAMS_1_NFL"));
 });
 
 test("valid full manual lineup goes to Page 4 without optimizer generation", () => {

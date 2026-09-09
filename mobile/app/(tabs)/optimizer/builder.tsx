@@ -16,7 +16,7 @@ import {
   EXPOSURE_OPTIONS,
   MLB_STACK_OPTIONS,
   STRATEGIES,
-  formatSalary,
+  formatSalaryFull,
 } from "../../../lib/optimizer-config";
 import { slotLabel } from "../../../lib/optimizer-flow.mjs";
 
@@ -63,31 +63,43 @@ export default function OptimizerBuilderScreen() {
 
         {slots.map((slot: string, index: number) => {
           const player = session.slots[index];
+          const pos = slotLabel(slot, session.roster);
           return (
-            <TouchableOpacity
-              key={`${slot}-${index}`}
-              style={styles.slot}
-              onPress={() => {
-                session.setSelectingSlotIndex(index);
-                router.push("/optimizer/players");
-              }}
-            >
-              <Text style={styles.slotPos}>{slotLabel(slot, session.roster)}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.slotName}>{player?.name || "Tap to select"}</Text>
-                <Text style={styles.slotTeam}>{player?.team || "Empty"}</Text>
-              </View>
-              {player ? (
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.slotSal}>{formatSalary(player.salary)}</Text>
-                  <TouchableOpacity onPress={() => session.clearSlot(index)}>
-                    <Text style={styles.clear}>Clear</Text>
-                  </TouchableOpacity>
+            <View key={`${slot}-${index}`} style={styles.slot}>
+              <TouchableOpacity
+                style={styles.slotMain}
+                onPress={() => {
+                  session.setSelectingSlotIndex(index);
+                  router.push("/optimizer/players");
+                }}
+              >
+                <Text style={styles.slotPos}>{pos}</Text>
+                <View style={styles.slotCenter}>
+                  <Text style={styles.slotName} numberOfLines={1} ellipsizeMode="tail">
+                    {player?.name || "Tap to select"}
+                  </Text>
+                  <Text style={styles.slotTeam} numberOfLines={1}>
+                    {player ? `${player.team || "?"} · ${player.position || pos}` : "Empty"}
+                  </Text>
                 </View>
-              ) : (
-                <Text style={styles.chevron}>›</Text>
-              )}
-            </TouchableOpacity>
+                {player ? (
+                  <Text style={styles.slotSal}>{formatSalaryFull(player.salary)}</Text>
+                ) : (
+                  <Text style={styles.chevron}>›</Text>
+                )}
+              </TouchableOpacity>
+              {player ? (
+                <TouchableOpacity
+                  style={styles.clearBtn}
+                  onPress={() => session.clearSlot(index)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Clear ${player.name || pos}`}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.clear}>Clear</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           );
         })}
 
@@ -206,19 +218,33 @@ const styles = StyleSheet.create({
   slot: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
     backgroundColor: "rgba(10,15,36,0.82)",
     borderRadius: 14,
-    padding: 14,
+    paddingVertical: 10,
+    paddingLeft: 12,
+    paddingRight: 8,
     borderWidth: 1,
     borderColor: "#1e293b",
   },
-  slotPos: { width: 44, color: "#c9a84c", fontWeight: "800" },
+  slotMain: { flex: 1, flexDirection: "row", alignItems: "center", minWidth: 0, paddingVertical: 4 },
+  slotPos: { width: 40, color: "#c9a84c", fontWeight: "800", flexShrink: 0 },
+  slotCenter: { flex: 1, minWidth: 0, marginRight: 8 },
   slotName: { color: "#f0f6fc", fontWeight: "600" },
   slotTeam: { color: "#64748b", fontSize: 12, marginTop: 2 },
-  slotSal: { color: "#c9a84c", fontWeight: "700" },
-  clear: { color: "#94a3b8", fontSize: 11, marginTop: 4 },
-  chevron: { color: "#64748b", fontSize: 22 },
+  slotSal: { color: "#c9a84c", fontWeight: "700", minWidth: 64, textAlign: "right", flexShrink: 0, marginRight: 12 },
+  clearBtn: {
+    minWidth: 64,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#c9a84c",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  clear: { color: "#c9a84c", fontSize: 12, fontWeight: "700" },
+  chevron: { color: "#64748b", fontSize: 22, paddingRight: 8 },
   error: { color: "#fca5a5", fontSize: 13, lineHeight: 18 },
   progress: { alignItems: "center", gap: 8 },
   progressText: { color: "#c9a84c", fontWeight: "600" },

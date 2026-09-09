@@ -36,6 +36,36 @@ export function buildOptimizeSettings(args: {
 export function gameLabel(player: any): string;
 export function extractGames(players: any[]): string[];
 export function playerMatchesGame(player: any, game: string): boolean;
+export function draftTitle(slot: string, roster: RosterTemplate | null): string;
+export function formatAmericanOdds(value: unknown): string;
+export function parseGameInfo(gameInfo?: string, fallbackStart?: string | Date | null): { matchup: string; date: string; time: string };
+export function matchOddsToGame(label: string, oddsGames?: any[]): any | null;
+export function extractGameCards(players: any[], opts?: { slateStart?: string | Date | null; oddsGames?: any[] }): Array<{
+  id: string;
+  matchup: string;
+  date: string;
+  time: string;
+  weather: string;
+  moneyline: string;
+  spread: string;
+  total: string;
+}>;
+export function salaryFooterStats(args: { slots: SlotPlayer[]; cap: number; roster: RosterTemplate | null }): {
+  filled: number;
+  total: number;
+  remaining: number;
+  underCap: boolean;
+  avgRemaining: number;
+};
+export function confirmedBattingOrder(player: any): number | null;
+export function batsDisplay(player: any): string;
+export function probablePitcher(player: any): string;
+export function opponentRank(player: any): number | null;
+export function isConfirmedStarter(player: any): boolean;
+export function hasStarterData(players: any[]): boolean;
+export function eligiblePositionsLabel(player: any): string;
+export function playerMatchupLine(player: any): string;
+export function playerGameTime(player: any, slateStart?: string | Date | null): string;
 export function sortPlayersBySalary(players: any[], direction: "high" | "low"): any[];
 export function applyLineupToSlots(lineup: any, roster: RosterTemplate): SlotPlayer[];
 export function shouldClearResultState(prev: { strategy?: string; count?: number }, next: { strategy?: string; count?: number }): boolean;

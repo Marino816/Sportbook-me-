@@ -39,4 +39,9 @@ export function formatSalary(n: number | null | undefined): string {
   return `$${v.toLocaleString()}`;
 }
 
+export function formatSalaryFull(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(Number(n))) return "—";
+  return `$${Math.round(Number(n)).toLocaleString("en-US")}`;
+}
+
 export { formatSourceLabel, formatProjectionSource, lineupProjectionIntegrity } from "./source-label.mjs";
