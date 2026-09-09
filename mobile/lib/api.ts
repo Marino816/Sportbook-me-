@@ -243,6 +243,29 @@ export async function openBillingPortal() {
   return apiFetch("/billing/portal");
 }
 
+export async function getAppleAccountToken(): Promise<string> {
+  const res = await apiFetch("/billing/apple/account-token");
+  const token = (res as { data?: { appAccountToken?: unknown } })?.data?.appAccountToken;
+  if (typeof token !== "string" || !token.trim()) {
+    throw new Error("Could not load Apple account token");
+  }
+  return token.trim();
+}
+
+export async function verifyAppleTransaction(signedTransaction: string) {
+  return apiFetch("/billing/apple/verify", {
+    method: "POST",
+    body: JSON.stringify({ signedTransaction }),
+  });
+}
+
+export async function verifyAppleTransactions(signedTransactions: string[]) {
+  return apiFetch("/billing/apple/verify", {
+    method: "POST",
+    body: JSON.stringify({ signedTransactions }),
+  });
+}
+
 // ── Builder ──
 export async function buildLineups(params: {
   platform: string;
@@ -268,4 +291,64 @@ export async function buildLineups(params: {
 // ── Mission Control ──
 export async function getMissionControl() {
   return apiFetch("/mission-control");
+}
+
+function unwrapPayload(body: unknown): any {
+  if (body && typeof body === "object" && "data" in (body as object)) {
+    return (body as { data: unknown }).data;
+  }
+  return body;
+}
+
+export async function getLiveOdds(league: string) {
+  return unwrapPayload(await apiFetch(`/market-tools/live-odds?league=${encodeURIComponent(league)}`));
+}
+
+export async function getPublishedSlates(params?: { sport?: string; platform?: string }) {
+  const q = new URLSearchParams();
+  if (params?.sport) q.set("sport", params.sport.toUpperCase());
+  if (params?.platform) q.set("platform", params.platform.toLowerCase());
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  const payload = unwrapPayload(await apiFetch(`/dfs/slates${suffix}`));
+  return Array.isArray(payload) ? payload : [];
+}
+
+export async function getPublishedSlate(slateId: number) {
+  return unwrapPayload(await apiFetch(`/dfs/slates/${slateId}`));
+}
+
+export async function getLineupHistory() {
+  const payload = unwrapPayload(await apiFetch("/lineups/history"));
+  return Array.isArray(payload) ? payload : [];
+}
+
+export async function saveLineupHistory(payload: {
+  sport: string;
+  platform: string;
+  slate_id: number | null;
+  strategy: string;
+  lineups: unknown[];
+}) {
+  return unwrapPayload(
+    await apiFetch("/lineups/history", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export async function getIntelligence(slateId: number) {
+  return unwrapPayload(await apiFetch(`/intelligence/slate/${slateId}`));
+}
+
+export async function runOptimize(
+  slateId: number,
+  settings: Record<string, unknown>,
+) {
+  return unwrapPayload(
+    await apiFetch("/optimize", {
+      method: "POST",
+      body: JSON.stringify({ slate_id: slateId, settings }),
+    }),
+  );
 }

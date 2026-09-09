@@ -190,7 +190,7 @@ test("F. Market Tools child routes are hidden from the bottom tab bar", () => {
   assert.match(tabs, /href: "\/\(tabs\)\/market-tools"/);
   const named = [...tabs.matchAll(/<Tabs\.Screen[\s\S]*?name="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(
-    named.filter((n) => !["subscription", "settings", "ai-preferences", "intelligence"].includes(n)),
+    named.filter((n) => !["subscription", "settings", "ai-preferences", "intelligence", "optimizer-classic"].includes(n)),
     ["dashboard", "ai-chat", "optimizer", "lineups", "profile", "market-tools"],
   );
   for (const child of ["live-odds", "compare", "bookmakers", "player-props", "arbitrage", "parlay"]) {

@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, TextInput,
+  ActivityIndicator, TextInput, Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { getToken, getApiUrl } from "../../../lib/api";
+import { hasConflictingLeg, hasDuplicateLeg, uniqueValidLegs } from "../../../lib/parlay-legs.mjs";
 
 const API_URL = getApiUrl();
 
@@ -48,10 +49,18 @@ export default function ParlayBuilderScreen() {
   useEffect(() => { loadGames(); }, []);
 
   const addLeg = (game: any, selection: string, odds: number) => {
-    const isSGP = legs.length > 0 && game.game_id === legs[0].eventId;
+    const eventId = game.game_id || game.id;
+    if (hasDuplicateLeg(legs, eventId, selectedMarket, selection)) {
+      Alert.alert("Already added", "That selection is already in this parlay.");
+      return;
+    }
+    if (hasConflictingLeg(legs, eventId, selectedMarket, selection)) {
+      Alert.alert("Conflicting pick", "This market already has an opposing selection.");
+      return;
+    }
     const newLeg: Leg = {
-      id: `${Date.now()}-${Math.random()}`,
-      eventId: game.game_id || game.id,
+      id: `${eventId}:${selectedMarket}:${selection}`,
+      eventId,
       eventName: `${game.away_team_name || "AWY"} @ ${game.home_team_name || "HOM"}`,
       market: selectedMarket,
       selection,
@@ -72,15 +81,15 @@ export default function ParlayBuilderScreen() {
   };
 
   const calculateParlay = () => {
-    if (legs.length === 0) return { odds: 0, payout: 0, profit: 0 };
+    const valid = uniqueValidLegs(legs);
+    if (valid.length === 0) return { odds: 0, payout: 0, profit: 0 };
     let totalDecimal = 1;
-    for (const leg of legs) {
+    for (const leg of valid) {
       totalDecimal *= americanToDecimal(leg.odds || 0);
     }
     const st = parseFloat(stake) || 0;
     const payout = totalDecimal * st;
     const profit = payout - st;
-    // Convert back to American
     let amOdds: number;
     if (totalDecimal >= 2) amOdds = Math.round((totalDecimal - 1) * 100);
     else amOdds = Math.round(-100 / (totalDecimal - 1));

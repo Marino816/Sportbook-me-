@@ -15,6 +15,7 @@
     "@types/react": "~19.1.10",
     "expo": "~54.0.0",
     "expo-dev-client": "~6.0.21",
+    "expo-iap": "^5.5.1",
     "expo-linking": "~8.0.12",
     "expo-local-authentication": "~17.0.8",
     "expo-router": "~6.0.24",

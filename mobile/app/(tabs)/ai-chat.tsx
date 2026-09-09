@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
-import { sendAIChat, setStrategyMode, AIMessage, AIChatContext } from "../../lib/ai-api";
+import { router } from "expo-router";
+import { sendAIChat, setStrategyMode, loadAIPreferences, AIMessage, AIChatContext } from "../../lib/ai-api";
 
 const QUICK_ACTIONS = [
   { label: "🏗️ Build GPP lineup", prompt: "Build my best GPP lineup tonight for DraftKings NBA." },
@@ -21,6 +22,16 @@ export default function AIChatScreen() {
   const [convId, setConvId] = useState<string | undefined>();
   const [context, setContext] = useState<AIChatContext>({});
   const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    loadAIPreferences().then((prefs) => {
+      setContext((prev) => ({
+        ...prev,
+        sport: prev.sport || prefs.preferred_sport,
+        contest_type: prev.contest_type || prefs.preferred_contest,
+      }));
+    });
+  }, []);
 
   async function handleSend(text?: string) {
     const msg = (text || input).trim();
@@ -51,6 +62,10 @@ export default function AIChatScreen() {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.container} keyboardVerticalOffset={90}>
+      <TouchableOpacity style={s.prefsBar} onPress={() => router.push("/(tabs)/ai-preferences")}>
+        <Text style={s.prefsText}>AI Preferences</Text>
+        <Text style={s.prefsLink}>Open →</Text>
+      </TouchableOpacity>
       {/* Strategy Mode Bar */}
       <ScrollView horizontal style={s.modeBar} contentContainerStyle={s.modeContent} showsHorizontalScrollIndicator={false}>
         {STRATEGY_MODES.map(m => (
@@ -98,6 +113,18 @@ export default function AIChatScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#060b1a" },
+  prefsBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: "#1e293b",
+    backgroundColor: "#0a0f24",
+  },
+  prefsText: { color: "#f0f6fc", fontSize: 13, fontWeight: "600" },
+  prefsLink: { color: "#c9a84c", fontSize: 13, fontWeight: "700" },
   modeBar: { maxHeight: 44, borderBottomWidth: 1, borderColor: "#222" },
   modeContent: { paddingHorizontal: 12, gap: 8, alignItems: "center" },
   modeChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "#0a0f24", borderWidth: 1, borderColor: "#333" },

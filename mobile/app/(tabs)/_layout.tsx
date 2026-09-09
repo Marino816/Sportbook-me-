@@ -21,6 +21,7 @@ export default function TabLayout() {
         name="dashboard"
         options={{
           title: "SB ME",
+          headerShown: false,
           tabBarLabel: "Home",
           tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
@@ -57,7 +58,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
-      <Tabs.Screen name="subscription" options={{ href: null }} />
+      <Tabs.Screen name="optimizer-classic" options={{ href: null, title: "Optimizer Classic" }} />
+      <Tabs.Screen name="subscription" options={{ href: null, title: "Premium Plans" }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="ai-preferences" options={{ href: null }} />
       <Tabs.Screen name="intelligence" options={{ href: null, title: "Market Intel" }} />

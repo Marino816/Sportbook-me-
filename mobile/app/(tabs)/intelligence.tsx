@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { getApiUrl, getToken } from "../../lib/api";
+import { getIntelligence, getPublishedSlates } from "../../lib/api";
 
-const API_URL = getApiUrl();
+const SPORTS = ["MLB", "NBA", "NFL"];
 
 const SIGNAL_COLORS: Record<string, string> = {
   VERY_BULLISH: "#c9a84c",
@@ -25,18 +25,20 @@ const ENV_COLORS: Record<string, string> = {
 export default function IntelligenceScreen() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [slateId, setSlateId] = useState(1);
+  const [sport, setSport] = useState("MLB");
+  const [slates, setSlates] = useState<any[]>([]);
+  const [slateId, setSlateId] = useState<number | null>(null);
 
-  const load = async () => {
+  const loadIntel = async (id: number | null) => {
+    if (!id) {
+      setData({ noSlates: true });
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const token = await getToken();
-      const res = await fetch(`${API_URL}/intelligence/slate/${slateId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setData(json.data || json);
+      const payload = await getIntelligence(id);
+      setData(payload);
     } catch (e: any) {
       setData({ error: e.message });
     } finally {
@@ -44,17 +46,54 @@ export default function IntelligenceScreen() {
     }
   };
 
-  useFocusEffect(useCallback(() => { load(); }, [slateId]));
+  const load = async (nextSport = sport) => {
+    setLoading(true);
+    try {
+      const items = await getPublishedSlates({ sport: nextSport });
+      setSlates(items);
+      const next = items.find((s) => s.is_current) || items[0];
+      const nextId = next?.id ?? null;
+      setSlateId(nextId);
+      await loadIntel(nextId);
+    } catch (e: any) {
+      setSlates([]);
+      setSlateId(null);
+      setData({ error: e.message });
+      setLoading(false);
+    }
+  };
 
-  if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#c9a84c" /></View>;
+  useFocusEffect(useCallback(() => { load(sport); }, [sport]));
 
-  if (data?.error) {
+  const sportBar = (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.sportRow}>
+      {SPORTS.map((lg) => (
+        <TouchableOpacity key={lg} style={[s.sportChip, sport === lg && s.sportChipOn]} onPress={() => setSport(lg)}>
+          <Text style={sport === lg ? s.sportTextOn : s.sportText}>{lg}</Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  );
+
+  if (loading && !data) return <View style={s.center}><ActivityIndicator size="large" color="#c9a84c" /></View>;
+
+  if (data?.error && !/slate not found/i.test(String(data.error))) {
     return (
       <View style={s.center}>
+        {sportBar}
         <Text style={s.errorText}>{data.error}</Text>
-        <TouchableOpacity onPress={load} style={s.retryBtn}>
+        <TouchableOpacity onPress={() => load()} style={s.retryBtn}>
           <Text style={s.retryText}>Retry</Text>
         </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (data?.noSlates) {
+    return (
+      <View style={s.center}>
+        {sportBar}
+        <Text style={s.empty}>No published {sport} slates to score yet.</Text>
       </View>
     );
   }
@@ -63,17 +102,43 @@ export default function IntelligenceScreen() {
   const games = data?.games || [];
   const prov = data?.provider || {};
   const perf = data?.performance || {};
+  const intelUnavailable =
+    data?.empty === true ||
+    data?.available === false ||
+    /slate not found/i.test(String(data?.error || ""));
 
   return (
-    <ScrollView style={s.container} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+    <ScrollView style={s.container} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => load()} />}>
+      {sportBar}
+      {slates.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.sportRow}>
+          {slates.map((sl) => (
+            <TouchableOpacity
+              key={sl.id}
+              style={[s.sportChip, slateId === sl.id && s.sportChipOn]}
+              onPress={() => { setSlateId(sl.id); loadIntel(sl.id); }}
+            >
+              <Text style={slateId === sl.id ? s.sportTextOn : s.sportText}>{sl.slate_name || `Slate ${sl.id}`}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      ) : null}
       {/* Provider Status */}
       <View style={s.statusBar}>
         <Text style={s.statusText}>
-          DFS: {prov.dfs} ({prov.dfs_data_mode}) | Market: {prov.market} ({prov.market_context_status})
+          DFS: {prov.dfs || "unavailable"} ({prov.dfs_data_mode || "unavailable"}) | Market: {prov.market || "unavailable"} ({prov.market_context_status || "unavailable"})
         </Text>
-        <Text style={s.statusSub}>Games: {data?.game_count} | Players: {data?.player_intelligence_count} | {perf.build_ms}ms</Text>
+        <Text style={s.statusSub}>Games: {data?.game_count ?? 0} | Players: {data?.player_intelligence_count ?? 0}{perf.build_ms != null ? ` | ${perf.build_ms}ms` : ""}</Text>
       </View>
 
+      {intelUnavailable ? (
+        <Text style={s.empty}>
+          {data?.reason === "slate_not_found"
+            ? "No intelligence summary for this slate."
+            : "No intelligence summary for this slate yet."}
+        </Text>
+      ) : (
+        <>
       {/* Games */}
       <Text style={s.section}>Game Environments</Text>
       {games.map((g: any, i: number) => (
@@ -121,6 +186,8 @@ export default function IntelligenceScreen() {
       ))}
 
       {players.length === 0 && <Text style={s.empty}>No intelligence data available for this slate.</Text>}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -146,7 +213,12 @@ const s = StyleSheet.create({
   edge: { fontWeight: "600", fontSize: 13, marginTop: 4 },
   missing: { color: "#fbbf24", fontSize: 11, marginTop: 3 },
   reasons: { color: "#888", fontSize: 11, marginTop: 3, fontStyle: "italic" },
-  empty: { color: "#666", textAlign: "center", marginTop: 40, fontSize: 14 },
+  empty: { color: "#64748b", textAlign: "center", marginTop: 40, fontSize: 14, paddingHorizontal: 24 },
+  sportRow: { gap: 8, paddingBottom: 12 },
+  sportChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: "#0a0f24", borderWidth: 1, borderColor: "#1e293b" },
+  sportChipOn: { borderColor: "#c9a84c", backgroundColor: "#c9a84c22" },
+  sportText: { color: "#64748b", fontWeight: "700", fontSize: 12 },
+  sportTextOn: { color: "#c9a84c", fontWeight: "800", fontSize: 12 },
   errorText: { color: "#ef4444", fontSize: 16, textAlign: "center" },
   retryBtn: { marginTop: 16, backgroundColor: "#c9a84c22", paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
   retryText: { color: "#c9a84c", fontWeight: "600" },

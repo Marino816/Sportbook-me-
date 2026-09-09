@@ -1,17 +1,28 @@
 import { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { router } from "expo-router";
-import { getMe } from "../../lib/api";
+import { getMe, getSubscriptionStatus, unwrapUser } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
+import { displayPlanLabel, lineupCopyForPlan } from "../../lib/plan-copy";
 
 export default function ProfileScreen() {
   const { signOut } = useAuth();
   const [user, setUser] = useState<any>(null);
+  const [billing, setBilling] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      try { const r = await getMe(); setUser((r as any).data || r); } catch {} finally { setLoading(false); }
+      try {
+        const [meBody, billBody] = await Promise.all([
+          getMe().catch(() => null),
+          getSubscriptionStatus().catch(() => null),
+        ]);
+        setUser(unwrapUser(meBody) || (meBody as any)?.data || meBody);
+        setBilling((billBody as any)?.data || billBody);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
@@ -24,7 +35,9 @@ export default function ProfileScreen() {
 
   if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#c9a84c" /></View>;
 
-  const plan = user?.plan || (user?.is_pro === true ? "Pro" : "Free");
+  const hasAccess = billing?.has_access === true || user?.is_pro === true;
+  const planLabel = displayPlanLabel(billing?.plan || user?.plan, hasAccess);
+  const planCopy = lineupCopyForPlan(billing?.plan || user?.plan, hasAccess);
   const role = user?.role || "user";
 
   return (
@@ -39,14 +52,18 @@ export default function ProfileScreen() {
       </View>
       <View style={s.card}>
         <Text style={s.label}>Plan</Text>
-        <Text style={s.value}>{plan}</Text>
+        <Text style={s.value}>{planLabel}</Text>
+        <Text style={s.hint}>{planCopy}</Text>
       </View>
 
       <TouchableOpacity style={s.linkCard} onPress={() => router.push("/(tabs)/subscription")}>
         <Text style={s.linkText}>Billing & Subscription →</Text>
       </TouchableOpacity>
+      <TouchableOpacity style={s.linkCard} onPress={() => router.push("/(tabs)/ai-preferences")}>
+        <Text style={s.linkText}>AI Preferences →</Text>
+      </TouchableOpacity>
       <TouchableOpacity style={s.linkCard} onPress={() => router.push("/(tabs)/settings")}>
-        <Text style={s.linkText}>Settings & AI Preferences →</Text>
+        <Text style={s.linkText}>Settings →</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={s.logout} onPress={handleLogout}>
@@ -59,14 +76,15 @@ export default function ProfileScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#060b1a", padding: 20 },
   center: { flex: 1, backgroundColor: "#060b1a", justifyContent: "center", alignItems: "center" },
-  card: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#333", marginBottom: 12 },
-  label: { fontSize: 12, color: "#666", textTransform: "uppercase" },
-  value: { fontSize: 16, color: "#fff", marginTop: 4, fontWeight: "600" },
+  card: { backgroundColor: "#0a0f24", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#1e293b", marginBottom: 12 },
+  label: { fontSize: 12, color: "#64748b", textTransform: "uppercase" },
+  value: { fontSize: 16, color: "#f0f6fc", marginTop: 4, fontWeight: "600" },
+  hint: { fontSize: 12, color: "#94a3b8", marginTop: 6, lineHeight: 18 },
   linkCard: {
     backgroundColor: "#c9a84c22", borderRadius: 12, padding: 16, marginBottom: 10,
     borderWidth: 1, borderColor: "#c9a84c44",
   },
   linkText: { color: "#c9a84c", fontSize: 15, fontWeight: "600" },
-  logout: { marginTop: 24, backgroundColor: "#333", borderRadius: 12, padding: 16, alignItems: "center" },
-  logoutText: { color: "#ff4444", fontWeight: "700", fontSize: 16 },
+  logout: { marginTop: 24, backgroundColor: "#1e293b", borderRadius: 12, padding: 16, alignItems: "center" },
+  logoutText: { color: "#ef4444", fontWeight: "700", fontSize: 16 },
 });

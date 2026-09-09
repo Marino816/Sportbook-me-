@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, RefreshControl } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { getApiUrl, getToken } from "../../lib/api";
+import { formatSourceLabel } from "../../lib/optimizer-config";
 
 const API_URL = getApiUrl();
 
@@ -53,6 +54,7 @@ export default function LineupsScreen() {
 
   if (selected) {
     const lus = selected.lineups || [];
+    const source = formatSourceLabel(selected.data_mode, selected.data_source);
     return (
       <ScrollView style={styles.container}>
         <TouchableOpacity onPress={() => setSelected(null)} style={styles.backBtn}>
@@ -62,7 +64,7 @@ export default function LineupsScreen() {
           {selected.sport} · {selected.platform}
         </Text>
         <Text style={styles.meta}>
-          {selected.strategy} · {selected.created_at?.slice(0, 10)} · {selected.data_mode}
+          {selected.strategy} · {selected.created_at?.slice(0, 10)} · {source.label}
         </Text>
         {lus.map((lu: any, i: number) => (
           <View key={i} style={styles.card}>
@@ -122,12 +124,12 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "700", color: "#fff" },
   meta: { color: "#888", fontSize: 13, marginBottom: 16 },
   backBtn: { marginBottom: 12 },
-  backText: { color: "#7c5cfc", fontSize: 15 },
+  backText: { color: "#c9a84c", fontSize: 15 },
   card: { backgroundColor: "#0a0f24", borderRadius: 10, padding: 14, marginBottom: 12 },
   cardTitle: { color: "#fff", fontWeight: "600", fontSize: 15 },
   cardSal: { color: "#aaa", fontSize: 13, marginBottom: 8 },
   pRow: { flexDirection: "row", paddingVertical: 3, borderBottomWidth: 0.5, borderBottomColor: "#222" },
-  pSlot: { color: "#7c5cfc", width: 40, fontSize: 12, fontWeight: "600" },
+  pSlot: { color: "#c9a84c", width: 40, fontSize: 12, fontWeight: "600" },
   pName: { color: "#ddd", flex: 1, fontSize: 13 },
   pSal: { color: "#aaa", fontSize: 12 },
 });

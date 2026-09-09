@@ -3,6 +3,7 @@
  * Uses the canonical backend endpoint POST /api/ai/chat (same as web).
  */
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl, getToken } from "./api";
 
 export interface AIPreferences {
@@ -79,6 +80,29 @@ export async function sendAIChat(
 }
 
 // ── Strategy Mode (still backed by /assistant/strategy-mode) ──
+export const AI_PREFS_KEY = "sbm_ai_preferences";
+
+export const defaultAIPreferences: AIPreferences = {
+  preferred_sport: "nba",
+  preferred_contest: "gpp",
+  risk_tolerance: "medium",
+  salary_utilization: "balanced",
+};
+
+export async function loadAIPreferences(): Promise<AIPreferences> {
+  try {
+    const stored = await AsyncStorage.getItem(AI_PREFS_KEY);
+    if (stored) return { ...defaultAIPreferences, ...JSON.parse(stored) };
+  } catch {
+    /* ignore */
+  }
+  return { ...defaultAIPreferences };
+}
+
+export async function saveAIPreferences(prefs: AIPreferences): Promise<void> {
+  await AsyncStorage.setItem(AI_PREFS_KEY, JSON.stringify(prefs));
+}
+
 export async function setStrategyMode(mode: string) {
   const token = await getToken();
   const res = await fetch(`${getApiUrl()}/assistant/strategy-mode`, {

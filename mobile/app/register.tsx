@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import { Link, router } from "expo-router";
+import { LogoText } from "../components/Logo";
 import { register } from "../lib/api";
 
 export default function RegisterScreen() {
@@ -24,6 +25,7 @@ export default function RegisterScreen() {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={s.container}>
+      <LogoText />
       <Text style={s.title}>Create Account</Text>
       <TextInput style={s.input} placeholder="Username" placeholderTextColor="#475569" autoCapitalize="none" value={username} onChangeText={setUsername} />
       <TextInput style={s.input} placeholder="Email" placeholderTextColor="#475569" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
@@ -38,7 +40,7 @@ export default function RegisterScreen() {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#060b1a", justifyContent: "center", padding: 24 },
-  title: { fontSize: 24, fontWeight: "900", color: "#c9a84c", textAlign: "center", marginBottom: 32, fontStyle: "italic" },
+  title: { fontSize: 24, fontWeight: "900", color: "#c9a84c", textAlign: "center", marginTop: 12, marginBottom: 32, fontStyle: "italic" },
   input: {
     backgroundColor: "#0a0f24", color: "#f0f6fc", borderRadius: 14,
     padding: 14, marginBottom: 12, fontSize: 16, borderWidth: 1, borderColor: "#1e293b",

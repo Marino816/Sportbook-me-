@@ -3,9 +3,10 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, TextInput,
 } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getToken, getApiUrl } from "../../../lib/api";
+import { formatEventTime, displayBookmakerName } from "../../../lib/format-display.mjs";
 
 const API_URL = getApiUrl();
 
@@ -42,12 +43,16 @@ const MOVE_LABELS: Record<string, string> = {
 };
 
 export default function LiveOddsScreen() {
-  const router = useRouter();
+  const params = useLocalSearchParams<{ league?: string }>();
   const [data, setData] = useState<LiveOddsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [league, setLeague] = useState("MLB");
+  const [league, setLeague] = useState(() => String(params.league || "MLB"));
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (params.league) setLeague(String(params.league));
+  }, [params.league]);
 
   const load = async () => {
     setLoading(true);
@@ -166,6 +171,7 @@ export default function LiveOddsScreen() {
       {games.map((game, i) => {
         const moveColor = getMovementColor(game);
         const moveLabel = getMovementLabel(game);
+        const when = formatEventTime(game.start_time);
 
         return (
           <View key={game.game_id || i} style={s.gameCard}>
@@ -182,9 +188,7 @@ export default function LiveOddsScreen() {
                       <Text style={s.liveText}>LIVE</Text>
                     </View>
                   )}
-                  {game.start_time && (
-                    <Text style={s.gameTime}>{game.start_time}</Text>
-                  )}
+                  {when ? <Text style={s.gameTime}>{when}</Text> : null}
                 </View>
               </View>
               {moveColor && moveLabel && (
@@ -221,16 +225,19 @@ export default function LiveOddsScreen() {
             {/* Bookmaker odds */}
             {game.odds && game.odds.length > 0 && (
               <View style={s.booksRow}>
-                {game.odds.slice(0, 4).map((book: any, bi: number) => (
-                  <View key={bi} style={s.bookChip}>
-                    <Text style={s.bookName} numberOfLines={1}>
-                      {book.bookmaker_name || book.sportsbook || `Book ${bi + 1}`}
-                    </Text>
-                    <Text style={s.bookOdds}>
-                      {formatOdds(book.moneyline_home)} / {formatOdds(book.moneyline_away)}
-                    </Text>
-                  </View>
-                ))}
+                {game.odds.slice(0, 4).map((book: any, bi: number) => {
+                  const bookName = displayBookmakerName(book.bookmaker_name || book.sportsbook);
+                  return (
+                    <View key={bi} style={s.bookChip}>
+                      {bookName ? (
+                        <Text style={s.bookName} numberOfLines={1}>{bookName}</Text>
+                      ) : null}
+                      <Text style={s.bookOdds}>
+                        {formatOdds(book.moneyline_home)} / {formatOdds(book.moneyline_away)}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>

@@ -8,6 +8,7 @@
     "app/**/*.tsx",
     "lib/**/*.ts",
     "lib/**/*.tsx",
+    "lib/**/*.d.ts",
     "components/**/*.ts",
     "components/**/*.tsx",
     ".expo/types/**/*.ts",
