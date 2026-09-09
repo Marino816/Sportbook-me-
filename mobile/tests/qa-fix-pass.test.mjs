@@ -130,13 +130,14 @@ test("production EAS profile still points at Railway production /api", () => {
   assert.equal(eas.submit.production.ios.ascAppId, "6808706342");
 });
 
-test("app icon is generated from the owner-approved logo.png, not the Expo grid template", () => {
+test("production app icon is the owner-approved SB ME 1024 artwork, not the Expo grid template", () => {
   const logo = join(root, "assets/logo.png");
   const icon = join(root, "assets/icon.png");
   assert.equal(existsSync(logo), true);
   assert.equal(existsSync(icon), true);
   assert.ok(statSync(logo).size > 300_000);
   assert.ok(statSync(icon).size > 80_000);
+  assert.match(read("app.json"), /"icon": "\.\/assets\/icon\.png"/);
   const header = readFileSync(icon).subarray(0, 24);
   assert.equal(header[0], 0x89);
   assert.equal(header[1], 0x50);
