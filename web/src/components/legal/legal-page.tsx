@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { AppStoreBadge } from "@/components/AppStoreBadge";
 
 const navy = "#060b1a";
 const cardBg = "#0a0f24";
@@ -46,9 +47,12 @@ export function LegalPage({
       {/* Footer */}
       <footer style={{ borderTop: `1px solid ${border}`, background: cardBg }}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs" style={{ color: textMuted }}>
-            &copy; {new Date().getFullYear()} SPORTBOOK ME DFS AI LLC. All rights reserved.
-          </p>
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <AppStoreBadge placement="legal-footer" />
+            <p className="text-xs" style={{ color: textMuted }}>
+              &copy; {new Date().getFullYear()} SPORTBOOK ME DFS AI LLC. All rights reserved.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-4">
             <Link href="/terms" className="text-xs hover:underline" style={{ color: textMuted }}>Terms</Link>
             <Link href="/privacy" className="text-xs hover:underline" style={{ color: textMuted }}>Privacy</Link>
