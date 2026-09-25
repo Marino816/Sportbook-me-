@@ -9,6 +9,7 @@ import {
   ArrowRight, Zap, Star, Swords, Building2, Trophy, Flame, Shield, Radio, GitCompare,
 } from "lucide-react";
 import { SBMEBackground } from "@/components/sbme-background";
+import { AppStoreBadge, AppStoreCtaLink } from "@/components/AppStoreBadge";
 import { ROOKIE_LEAGUES, SOCCER_LEAGUE_IDS } from "@/lib/sgo-leagues";
 
 /* ── Brand palette ── */
@@ -368,7 +369,7 @@ export default function LandingPage() {
       <Section className="py-16 md:py-24 lg:py-28">
         <div className="relative grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left */}
-          <div>
+          <div className="min-w-0">
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold tracking-widest mb-6"
               style={{ borderColor: `${gold}40`, color: gold, background: `${gold}08` }}>
@@ -396,6 +397,11 @@ export default function LandingPage() {
               <GhostButton href="#features">
                 See How It Works <ArrowRight size={16} />
               </GhostButton>
+            </div>
+
+            <div className="mt-6 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-4 w-full max-w-full min-w-0">
+              <AppStoreBadge placement="hero" />
+              <AppStoreCtaLink placement="hero-cta" />
             </div>
           </div>
 
@@ -462,6 +468,53 @@ export default function LandingPage() {
             })}
           </div>
         </div>
+      </div>
+
+      {/* ═══ iOS APP ═══ */}
+      <div id="ios-app" style={{ borderBottom: `1px solid ${border}`, background: "transparent" }}>
+        <Section className="py-16 md:py-20 lg:py-24">
+          <div className="text-center mb-10 md:mb-12">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-bold tracking-widest mb-5"
+              style={{ borderColor: `${gold}40`, color: gold, background: `${gold}08` }}>
+              NOW ON IPHONE
+            </div>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight" style={{ color: textPrimary }}>
+              Sportbook Me DFS AI <span style={{ color: gold }}>for iPhone</span>
+            </h2>
+            <p className="mt-4 text-base max-w-2xl mx-auto" style={{ color: textSecondary }}>
+              Take DFS Optimizer, live markets, and SB ME AI with you. Download Sportbook Me DFS AI from the App Store.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-5">
+            {[
+              { icon: Layers, title: "DFS Optimizer", desc: "Build optimized lineups from projections and salary data on supported DFS slates." },
+              { icon: Users, title: "Player projections and research", desc: "Review projections, matchups, and player research before you lock a lineup." },
+              { icon: Radio, title: "Live Odds and Market Tools", desc: "Compare live lines, Fair Odds, and Book Consensus when markets are available." },
+              { icon: Swords, title: "Parlay Builder", desc: "Plan multi-leg combinations with current lines. Analytical only — SB ME does not place wagers." },
+              { icon: Bot, title: "SB ME AI assistant", desc: "Ask SB ME AI about games, markets, props, scores, or today’s DFS slate." },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.title} className="flex sm:flex-col gap-4 p-5 rounded-2xl border transition-all hover:border-[#c9a84c30]"
+                  style={{ background: cardElevated, borderColor: border }}>
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${gold}10`, border: `1px solid ${gold}15` }}>
+                    <Icon size={22} style={{ color: gold }} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold mb-1" style={{ color: textPrimary }}>{item.title}</h3>
+                    <p className="text-[13px] leading-relaxed" style={{ color: textSecondary }}>{item.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-10 flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-4 w-full max-w-full min-w-0 px-1">
+            <AppStoreBadge placement="ios-section" />
+            <AppStoreCtaLink placement="ios-section-cta" />
+          </div>
+        </Section>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════ */}
@@ -758,9 +811,10 @@ export default function LandingPage() {
               <Link href="/" className="inline-block mb-3">
                 <Image src="/logo.png" alt="SB ME DFS.AI" width={100} height={53} />
               </Link>
-              <p className="text-[13px] leading-relaxed" style={{ color: textSecondary }}>
+              <p className="text-[13px] leading-relaxed mb-4" style={{ color: textSecondary }}>
                 AI-powered DFS intelligence platform. Advanced projections, real-time odds, lineup optimization, and AI insights.
               </p>
+              <AppStoreBadge placement="footer" />
             </div>
 
             {/* Links */}

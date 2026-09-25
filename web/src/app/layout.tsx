@@ -36,6 +36,9 @@ export const metadata: Metadata = {
     ],
   },
   manifest: "/site.webmanifest",
+  itunes: {
+    appId: "6808706342",
+  },
 };
 
 export default function RootLayout({
