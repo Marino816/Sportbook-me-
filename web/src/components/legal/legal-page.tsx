@@ -51,6 +51,7 @@ export function LegalPage({
             <AppStoreBadge placement="legal-footer" />
             <p className="text-xs" style={{ color: textMuted }}>
               &copy; {new Date().getFullYear()} SPORTBOOK ME DFS AI LLC. All rights reserved.
+              SB ME is sports analytics and DFS intelligence software. We do not accept wagers, hold betting funds, or place bets.
             </p>
           </div>
           <div className="flex flex-wrap gap-4">

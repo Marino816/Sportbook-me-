@@ -72,9 +72,14 @@ test("root layout publishes the Apple Smart App Banner", () => {
   assert.match(layout, /appId:\s*"6808706342"/);
 });
 
-test("landing prices and sportsbook disclaimer stay unchanged", () => {
-  assert.match(home, /price: "\$39"/);
+test("homepage publishes the required public prices and complete disclaimer", () => {
+  assert.match(home, /price: "\$49"/);
+  assert.match(home, /\.99\/mo/);
+  assert.match(home, /or \$399\.99\/year/);
   assert.match(home, /price: "\$89"/);
-  assert.doesNotMatch(home, /price: "\$29"/);
-  assert.match(home, /does not place wagers/i);
+  assert.match(home, /or \$599\.99\/year/);
+  assert.doesNotMatch(home, /price: "\$39"/);
+  assert.match(home, /SB ME is sports analytics and DFS intelligence software\. We do not accept wagers, hold betting funds, or place bets\./);
+  assert.match(home, /DFS optimizer and Parlay Builder/);
+  assert.match(footerLegal, /SB ME is sports analytics and DFS intelligence software\. We do not accept wagers, hold betting funds, or place bets\./);
 });
