@@ -3,10 +3,11 @@ export const metadata: Metadata = { title: "Terms of Service — SB ME DFS.AI", 
 
 import Link from "next/link";
 import { LegalPage, H2, H3, P, UL, LI, SUPPORT_EMAIL, gold } from "@/components/legal/legal-page";
+import { WEBSITE_PRICE_DISPLAY } from "@/lib/website-pricing";
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms of Service" lastUpdated="August 14, 2026">
+    <LegalPage title="Terms of Service" lastUpdated="September 25, 2026">
       <P>
         These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of the SB ME DFS.AI
         website, applications, and services (collectively, the &ldquo;Service&rdquo;), operated by
@@ -46,7 +47,8 @@ export default function TermsPage() {
       <H2>4. Subscription Plans</H2>
       <P>
         The Service offers subscription plans, including a free Starter plan and paid plans such as Pro Arena
-        ($39.99/month) and Elite Stack ($89.99/month). Plan features and pricing are described on our website and are
+        ({WEBSITE_PRICE_DISPLAY.proMonthlyLegal} or {WEBSITE_PRICE_DISPLAY.proAnnualLegal}) and Elite Stack
+        ({WEBSITE_PRICE_DISPLAY.eliteMonthlyLegal} or {WEBSITE_PRICE_DISPLAY.eliteAnnualLegal}). Plan features and pricing are described on our website and are
         subject to change. Paid subscriptions provide access to additional analytical features for the duration
         of the subscription period.
       </P>

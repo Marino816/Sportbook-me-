@@ -73,11 +73,10 @@ test("root layout publishes the Apple Smart App Banner", () => {
 });
 
 test("homepage publishes the required public prices and complete disclaimer", () => {
-  assert.match(home, /price: "\$49"/);
-  assert.match(home, /\.99\/mo/);
-  assert.match(home, /or \$399\.99\/year/);
-  assert.match(home, /price: "\$89"/);
-  assert.match(home, /or \$599\.99\/year/);
+  assert.match(home, /WEBSITE_PRICE_DISPLAY\.proMonthlyDollars/);
+  assert.match(home, /WEBSITE_PRICE_DISPLAY\.proAnnualLine/);
+  assert.match(home, /WEBSITE_PRICE_DISPLAY\.eliteMonthlyDollars/);
+  assert.match(home, /WEBSITE_PRICE_DISPLAY\.eliteAnnualLine/);
   assert.doesNotMatch(home, /price: "\$39"/);
   assert.match(home, /SB ME is sports analytics and DFS intelligence software\. We do not accept wagers, hold betting funds, or place bets\./);
   assert.match(home, /DFS optimizer and Parlay Builder/);

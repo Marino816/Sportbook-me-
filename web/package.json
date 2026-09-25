@@ -7,7 +7,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/safe-return-path.test.mjs tests/api-base-url.test.mjs tests/ios-app-store.test.mjs tests/pricing-disclaimer.test.mjs"
+    "test": "node --test tests/safe-return-path.test.mjs tests/api-base-url.test.mjs tests/ios-app-store.test.mjs tests/pricing-disclaimer.test.mjs tests/website-pricing.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.96.1",

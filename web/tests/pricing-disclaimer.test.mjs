@@ -19,11 +19,10 @@ const lib = read("src/lib/app-store.ts");
 const billing = read("src/app/billing/page.tsx");
 
 test("public homepage lists all four required prices", () => {
-  assert.match(home, /or \$399\.99\/year/);
-  assert.match(home, /or \$599\.99\/year/);
-  assert.match(home, /price: "\$49"/);
-  assert.match(home, /price: "\$89"/);
-  assert.match(home, /\.99\/mo/);
+  assert.match(home, /WEBSITE_PRICE_DISPLAY\.proMonthlyDollars/);
+  assert.match(home, /WEBSITE_PRICE_DISPLAY\.proAnnualLine/);
+  assert.match(home, /WEBSITE_PRICE_DISPLAY\.eliteMonthlyDollars/);
+  assert.match(home, /WEBSITE_PRICE_DISPLAY\.eliteAnnualLine/);
   assert.doesNotMatch(home, /\$39\.99/);
   assert.doesNotMatch(home, /price: "\$39"/);
   assert.doesNotMatch(home, /\$249\.99/);
@@ -52,7 +51,10 @@ test("App Store URL, iPhone CTA, and Smart App Banner remain", () => {
   assert.match(layout, /itunes:\s*\{/);
 });
 
-test("this hotfix does not rewrite billing checkout prices", () => {
-  assert.match(billing, /handleCheckout\("Pro Arena"\)/);
+test("billing checkout uses canonical plan mapping without PayKings", () => {
+  assert.match(billing, /handleCheckout\(WEBSITE_CHECKOUT_PLANS\.proMonthly\)/);
+  assert.match(billing, /handleCheckout\(WEBSITE_CHECKOUT_PLANS\.proAnnual\)/);
+  assert.match(billing, /handleCheckout\(WEBSITE_CHECKOUT_PLANS\.eliteMonthly\)/);
+  assert.match(billing, /handleCheckout\(WEBSITE_CHECKOUT_PLANS\.eliteAnnual\)/);
   assert.doesNotMatch(billing, /PayKingsPayButton/);
 });

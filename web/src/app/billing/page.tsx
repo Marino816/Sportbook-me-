@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Check, CreditCard, ExternalLink, Zap, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchSubscriptionStatus, createCheckout, createPortal, type SubscriptionStatus } from "@/lib/api";
+import { WEBSITE_CHECKOUT_PLANS, WEBSITE_PRICE_DISPLAY, WEBSITE_PRICE_SAVINGS } from "@/lib/website-pricing";
 
 export default function BillingPage() {
   const [sub, setSub] = useState<SubscriptionStatus | null>(null);
@@ -141,22 +142,22 @@ export default function BillingPage() {
         {/* Pro Arena Monthly */}
         <div className={cn(
           "glass p-6 rounded-2xl border border-border flex flex-col h-full transition-all duration-300",
-          sub?.plan === "Pro Arena" && "border-primary bg-primary/5 scale-[1.02]"
+          sub?.plan === WEBSITE_CHECKOUT_PLANS.proMonthly && "border-primary bg-primary/5 scale-[1.02]"
         )}>
-          <h3 className="text-lg font-semibold mb-2">Pro Arena</h3>
-          <div className="text-3xl font-bold mb-4">$39<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
+          <h3 className="text-lg font-semibold mb-2">{WEBSITE_CHECKOUT_PLANS.proMonthly}</h3>
+          <div className="text-3xl font-bold mb-4">{WEBSITE_PRICE_DISPLAY.proMonthlyDollars}<span className="text-lg text-muted-foreground font-normal">{WEBSITE_PRICE_DISPLAY.proMonthlyPeriod}</span></div>
 
           <button
-            disabled={sub?.plan === "Pro Arena" || !!actionLoading}
-            onClick={() => handleCheckout("Pro Arena")}
+            disabled={sub?.plan === WEBSITE_CHECKOUT_PLANS.proMonthly || !!actionLoading}
+            onClick={() => handleCheckout(WEBSITE_CHECKOUT_PLANS.proMonthly)}
             className={cn(
               "w-full py-3 font-bold rounded-lg transition-all mb-6 shadow-lg",
-              sub?.plan === "Pro Arena"
+              sub?.plan === WEBSITE_CHECKOUT_PLANS.proMonthly
                 ? "bg-secondary text-muted-foreground cursor-not-allowed"
                 : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/20"
             )}
           >
-            {actionLoading === "Pro Arena" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Pro Arena" ? "Current Plan" : "Subscribe Monthly")}
+            {actionLoading === WEBSITE_CHECKOUT_PLANS.proMonthly ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === WEBSITE_CHECKOUT_PLANS.proMonthly ? "Current Plan" : "Subscribe Monthly")}
           </button>
 
           <ul className="space-y-3 flex-1 text-sm">
@@ -169,31 +170,31 @@ export default function BillingPage() {
         {/* Pro Arena Annual */}
         <div className={cn(
           "p-6 rounded-2xl border border-primary/30 bg-primary/5 relative flex flex-col h-full transition-all duration-300",
-          sub?.plan === "Pro Arena Annual" && "border-primary bg-primary/10 scale-[1.02]"
+          sub?.plan === WEBSITE_CHECKOUT_PLANS.proAnnual && "border-primary bg-primary/10 scale-[1.02]"
         )}>
           <div className="absolute top-0 right-4 -translate-y-1/2 bg-primary text-primary-foreground px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
             Best Value
           </div>
-          <h3 className="text-lg font-semibold mb-1 text-primary">Pro Arena Annual</h3>
-          <div className="text-3xl font-bold mb-1 text-white">$249<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
-          <p className="text-xs text-primary/80 mb-4">Save $230 vs monthly</p>
+          <h3 className="text-lg font-semibold mb-1 text-primary">{WEBSITE_CHECKOUT_PLANS.proAnnual}</h3>
+          <div className="text-3xl font-bold mb-1 text-white">{WEBSITE_PRICE_DISPLAY.proAnnualDollars}<span className="text-lg text-muted-foreground font-normal">{WEBSITE_PRICE_DISPLAY.proAnnualPeriod}</span></div>
+          <p className="text-xs text-primary/80 mb-4">Save ${WEBSITE_PRICE_SAVINGS.proAnnualVsMonthly} vs monthly</p>
 
           <button
-            disabled={sub?.plan === "Pro Arena Annual" || !!actionLoading}
-            onClick={() => handleCheckout("Pro Arena Annual")}
+            disabled={sub?.plan === WEBSITE_CHECKOUT_PLANS.proAnnual || !!actionLoading}
+            onClick={() => handleCheckout(WEBSITE_CHECKOUT_PLANS.proAnnual)}
             className={cn(
               "w-full py-3 font-bold rounded-lg transition-all mb-6 shadow-lg",
-              sub?.plan === "Pro Arena Annual"
+              sub?.plan === WEBSITE_CHECKOUT_PLANS.proAnnual
                 ? "bg-secondary text-muted-foreground cursor-not-allowed"
                 : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20"
             )}
           >
-            {actionLoading === "Pro Arena Annual" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Pro Arena Annual" ? "Current Plan" : "Subscribe Annually")}
+            {actionLoading === WEBSITE_CHECKOUT_PLANS.proAnnual ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === WEBSITE_CHECKOUT_PLANS.proAnnual ? "Current Plan" : "Subscribe Annually")}
           </button>
 
           <ul className="space-y-3 flex-1 text-sm">
             <Feature check text="All Pro Arena features" />
-            <Feature check text="2 months free" highlight />
+            <Feature check text={`${WEBSITE_PRICE_SAVINGS.proAnnualMonthsFree} months free`} highlight />
             <Feature check text="Priority support" highlight />
           </ul>
         </div>
@@ -201,25 +202,25 @@ export default function BillingPage() {
         {/* Elite Stack */}
         <div className={cn(
             "p-6 rounded-2xl border border-primary bg-primary/5 shadow-xl shadow-primary/10 relative flex flex-col h-full transition-all duration-300",
-            sub?.plan === "Elite Stack" && "border-orange-500/50 bg-orange-500/5 shadow-orange-500/10 scale-[1.02]"
+            sub?.plan === WEBSITE_CHECKOUT_PLANS.eliteMonthly && "border-orange-500/50 bg-orange-500/5 shadow-orange-500/10 scale-[1.02]"
         )}>
           <div className="absolute top-0 right-4 -translate-y-1/2 bg-gradient-to-r from-orange-400 to-primary text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
             Pro
           </div>
-          <h3 className="text-lg font-semibold mb-1 text-primary">Elite Stack</h3>
-          <div className="text-3xl font-bold mb-4 text-white">$89<span className="text-lg text-muted-foreground font-normal">.99/mo</span></div>
+          <h3 className="text-lg font-semibold mb-1 text-primary">{WEBSITE_CHECKOUT_PLANS.eliteMonthly}</h3>
+          <div className="text-3xl font-bold mb-4 text-white">{WEBSITE_PRICE_DISPLAY.eliteMonthlyDollars}<span className="text-lg text-muted-foreground font-normal">{WEBSITE_PRICE_DISPLAY.eliteMonthlyPeriod}</span></div>
 
           <button
-             disabled={sub?.plan === "Elite Stack" || !!actionLoading}
-             onClick={() => handleCheckout("Elite Stack")}
+             disabled={sub?.plan === WEBSITE_CHECKOUT_PLANS.eliteMonthly || !!actionLoading}
+             onClick={() => handleCheckout(WEBSITE_CHECKOUT_PLANS.eliteMonthly)}
              className={cn(
                 "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-6",
-                sub?.plan === "Elite Stack"
+                sub?.plan === WEBSITE_CHECKOUT_PLANS.eliteMonthly
                     ? "bg-secondary text-muted-foreground cursor-not-allowed"
                     : "bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/20"
              )}
           >
-            {actionLoading === "Elite Stack" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Elite Stack" ? "Current Plan" : "Upgrade to Elite")}
+            {actionLoading === WEBSITE_CHECKOUT_PLANS.eliteMonthly ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === WEBSITE_CHECKOUT_PLANS.eliteMonthly ? "Current Plan" : "Upgrade to Elite")}
           </button>
 
           <ul className="space-y-3 flex-1 text-sm">
@@ -233,31 +234,31 @@ export default function BillingPage() {
         {/* Elite Stack Annual */}
         <div className={cn(
             "p-6 rounded-2xl border border-orange-500/30 bg-orange-500/5 relative flex flex-col h-full transition-all duration-300",
-            sub?.plan === "Elite Stack Annual" && "border-orange-500 bg-orange-500/10 scale-[1.02]"
+            sub?.plan === WEBSITE_CHECKOUT_PLANS.eliteAnnual && "border-orange-500 bg-orange-500/10 scale-[1.02]"
         )}>
           <div className="absolute top-0 right-4 -translate-y-1/2 bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-lg">
-            Save $580
+            Save ${WEBSITE_PRICE_SAVINGS.eliteAnnualVsMonthly}
           </div>
-          <h3 className="text-lg font-semibold mb-1 text-orange-400">Elite Stack Annual</h3>
-          <div className="text-3xl font-bold mb-1 text-white">$499<span className="text-lg text-muted-foreground font-normal">.99/yr</span></div>
-          <p className="text-xs text-orange-400/80 mb-4">$41.67/mo equivalent</p>
+          <h3 className="text-lg font-semibold mb-1 text-orange-400">{WEBSITE_CHECKOUT_PLANS.eliteAnnual}</h3>
+          <div className="text-3xl font-bold mb-1 text-white">{WEBSITE_PRICE_DISPLAY.eliteAnnualDollars}<span className="text-lg text-muted-foreground font-normal">{WEBSITE_PRICE_DISPLAY.eliteAnnualPeriod}</span></div>
+          <p className="text-xs text-orange-400/80 mb-4">${WEBSITE_PRICE_SAVINGS.eliteAnnualMonthlyEquivalent}/mo equivalent</p>
 
           <button
-             disabled={sub?.plan === "Elite Stack Annual" || !!actionLoading}
-             onClick={() => handleCheckout("Elite Stack Annual")}
+             disabled={sub?.plan === WEBSITE_CHECKOUT_PLANS.eliteAnnual || !!actionLoading}
+             onClick={() => handleCheckout(WEBSITE_CHECKOUT_PLANS.eliteAnnual)}
              className={cn(
                 "w-full py-3 font-bold rounded-lg shadow-lg transition-all mb-6",
-                sub?.plan === "Elite Stack Annual"
+                sub?.plan === WEBSITE_CHECKOUT_PLANS.eliteAnnual
                     ? "bg-secondary text-muted-foreground cursor-not-allowed"
                     : "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20"
              )}
           >
-            {actionLoading === "Elite Stack Annual" ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === "Elite Stack Annual" ? "Current Plan" : "Go Annual")}
+            {actionLoading === WEBSITE_CHECKOUT_PLANS.eliteAnnual ? <Loader2 className="size-4 animate-spin mx-auto" /> : (sub?.plan === WEBSITE_CHECKOUT_PLANS.eliteAnnual ? "Current Plan" : "Go Annual")}
           </button>
 
           <ul className="space-y-3 flex-1 text-sm">
             <Feature check text="All Elite Stack features" highlight />
-            <Feature check text="$580/yr savings" highlight />
+            <Feature check text={`$${WEBSITE_PRICE_SAVINGS.eliteAnnualVsMonthly}/yr savings`} highlight />
             <Feature check text="Priority strategy calls" highlight />
           </ul>
         </div>

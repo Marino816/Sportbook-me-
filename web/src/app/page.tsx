@@ -9,6 +9,7 @@ import {
   ArrowRight, Zap, Star, Swords, Building2, Trophy, Flame, Shield, Radio,
 } from "lucide-react";
 import { AppStoreBadge, AppStoreCtaLink } from "@/components/AppStoreBadge";
+import { WEBSITE_PRICE_DISPLAY } from "@/lib/website-pricing";
 
 /* ── Brand palette ── */
 const navy = "#060b1a";
@@ -726,8 +727,8 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-3 gap-6 lg:gap-8 max-w-4xl mx-auto">
             {([
               { name: "Starter", price: "Free", features: ["1 daily lineup", "MLB projections", "Real-time odds", "Player props", "AI chat (10 msgs/day)"], cta: "Get Started", href: "/register", featured: false, goldPrice: false, period: null as string | null, annual: null as string | null },
-              { name: "Pro Arena", price: "$49", period: ".99/mo", annual: "or $399.99/year", features: ["10 daily lineups", "All-sport DFS projections", "Live odds & movement", "Player props + edge detection", "DFS optimizer and Parlay Builder", "AI chat (unlimited)", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
-              { name: "Elite Stack", price: "$89", period: ".99/mo", annual: "or $599.99/year", features: ["Unlimited lineups", "All-sport DFS projections", "DFS optimizer and Parlay Builder", "Custom projections", "Full AI intelligence", "Priority support", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
+              { name: "Pro Arena", price: WEBSITE_PRICE_DISPLAY.proMonthlyDollars, period: WEBSITE_PRICE_DISPLAY.proMonthlyPeriod, annual: WEBSITE_PRICE_DISPLAY.proAnnualLine, features: ["10 daily lineups", "All-sport DFS projections", "Live odds & movement", "Player props + edge detection", "DFS optimizer and Parlay Builder", "AI chat (unlimited)", "Stacking rules"], cta: "Start Pro", href: "/register", featured: true, goldPrice: true },
+              { name: "Elite Stack", price: WEBSITE_PRICE_DISPLAY.eliteMonthlyDollars, period: WEBSITE_PRICE_DISPLAY.eliteMonthlyPeriod, annual: WEBSITE_PRICE_DISPLAY.eliteAnnualLine, features: ["Unlimited lineups", "All-sport DFS projections", "DFS optimizer and Parlay Builder", "Custom projections", "Full AI intelligence", "Priority support", "Everything in Pro"], cta: "Go Elite", href: "/register", featured: false, goldPrice: false },
             ] as const).map((plan, i) => (
               <div key={i} className={`relative rounded-3xl border p-6 lg:p-8 flex flex-col transition-all duration-300 hover:shadow-xl
                 ${plan.featured ? "scale-[1.03] z-10" : ""}`}
