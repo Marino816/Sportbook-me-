@@ -36,6 +36,7 @@ CONFIG = {
         "live_test_events_per_refresh": 5,
     },
     "single_flight": True,
+    "context_collect_scheduled": False,
     "dedupe_key": "sport|markets|region|event_id",
     "browsing_triggers_upstream": False,
 }

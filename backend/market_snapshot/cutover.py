@@ -71,7 +71,8 @@ COMPATIBLE_CONSUMERS = (
 INCOMPATIBLE_CONSUMERS = ()
 
 HANDLED_UNAVAILABLE_CAPABILITIES = (
-    {"capability": "live_scores", "reason": "Odds API snapshot has no live scores."},
+    {"capability": "live_scores", "reason": "Odds API scores are attached when a unique event match exists. Period, inning, and clock are not in the documented scores schema."},
+    {"capability": "sourced_injuries", "reason": "No permitted commercial injury API was established; live injury HTTP was not sent."},
     {"capability": "sgo_odd_id", "reason": "SGO oddIDs are not Odds API selection ids."},
     {"capability": "sgo_team_props", "reason": "Nested SGO team props are not in the Odds API snapshot."},
     {"capability": "sbme_game_environment", "reason": "Environment is derived from nested SGO markets."},
@@ -97,7 +98,7 @@ FEATURE_IMPACT = (
     {
         "surface": "Assistant Odds API event/odds/prop lookup",
         "class": "working_replacement",
-        "note": "Reads shared cache. SGO event IDs return unavailable. Not a live-score source.",
+        "note": "Reads shared cache including matched Odds API scores. SGO event IDs return unavailable. Period/clock not invented.",
     },
     {
         "surface": "market_engine selection identity",
@@ -116,8 +117,23 @@ FEATURE_IMPACT = (
     },
     {
         "surface": "Live scores",
+        "class": "working_replacement",
+        "note": "Odds API GET /scores for sampled NFL and MLB. Unique id match only. Period/clock not supplied. Other leagues untested.",
+    },
+    {
+        "surface": "Schedules in customer timezone",
+        "class": "working_replacement",
+        "note": "UTC commence_time from saved odds; UI displays local time with timezone abbreviation.",
+    },
+    {
+        "surface": "Venue weather",
+        "class": "working_replacement",
+        "note": "NWS hourly forecast for one outdoor US venue sample plus indoor/retractable labels. Horizon and missing coords handled.",
+    },
+    {
+        "surface": "Sourced injuries",
         "class": "unavailable_capability",
-        "note": "Odds API featured snapshot has no scores/period/status. /sgo/events is blocked while serving Odds API.",
+        "note": "Live injury collection blocked: no permitted commercial API without account/purchase. Labeled fixtures only.",
     },
     {
         "surface": "Line movement / steam",
@@ -127,7 +143,7 @@ FEATURE_IMPACT = (
     {
         "surface": "Assistant live scores, team props, SB ME environment",
         "class": "unavailable_capability",
-        "note": "Structured unavailable. Tools must not invent scores or nested SGO environment.",
+        "note": "Scores flow through the shared cache when matched. Team props and nested SGO environment stay structured unavailable. Period/clock not invented.",
     },
     {
         "surface": "DFS SGO intelligence",

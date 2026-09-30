@@ -63,7 +63,11 @@
 }
 .sbme-mt-approved .match { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
 .sbme-mt-approved .teams { font-size: 18px; font-weight: 800; }
-.sbme-mt-approved .meta { color: var(--muted); font-size: 13px; }
+.sbme-mt-approved .game-context { margin: 8px 0 10px; }
+.sbme-mt-approved .context-line { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+.sbme-mt-approved .game-details { margin: 0; }
+.sbme-mt-approved .game-details summary { cursor: pointer; color: var(--gold2); font-size: 12px; font-weight: 700; }
+.sbme-mt-approved .game-details p { margin: 6px 0 0; }
 .sbme-mt-approved .book-name { color: var(--gold2); font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin: 10px 0; }
 .sbme-mt-approved .markets { display: grid; gap: 10px; }
 .sbme-mt-approved .mrow { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; }

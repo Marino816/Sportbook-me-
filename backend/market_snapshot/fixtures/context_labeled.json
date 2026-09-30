@@ -1,0 +1,329 @@
+{
+  "label": "FIXTURE_CONTEXT",
+  "not_customer_data": true,
+  "retrieved_at": "2026-09-30T16:00:00Z",
+  "note": "Labeled edge-case fixtures. Separate from collected Odds API and NWS payloads.",
+  "demo_events": [
+    {
+      "label": "CTX_SCHEDULED",
+      "id": "oddsapi:americanfootball_nfl:ctxscheduled000000000000000001",
+      "sport_key": "americanfootball_nfl",
+      "sport_title": "NFL",
+      "selector": "nfl",
+      "home_team": "Fixture Outdoor",
+      "away_team": "Fixture Visitor",
+      "commence_time": "2026-10-02T00:15:00Z"
+    },
+    {
+      "label": "CTX_IN_PROGRESS",
+      "id": "oddsapi:baseball_mlb:ctxinprogress00000000000000002",
+      "sport_key": "baseball_mlb",
+      "sport_title": "MLB",
+      "selector": "mlb",
+      "home_team": "Atlanta Braves",
+      "away_team": "Philadelphia Phillies",
+      "commence_time": "2026-09-30T18:00:00Z"
+    },
+    {
+      "label": "CTX_FINAL",
+      "id": "oddsapi:americanfootball_nfl:ctxfinal0000000000000000000003",
+      "sport_key": "americanfootball_nfl",
+      "sport_title": "NFL",
+      "selector": "nfl",
+      "home_team": "Fixture Home",
+      "away_team": "Fixture Away",
+      "commence_time": "2026-09-28T17:00:00Z"
+    },
+    {
+      "label": "CTX_POSTPONED",
+      "id": "oddsapi:baseball_mlb:ctxpostponed000000000000000004",
+      "sport_key": "baseball_mlb",
+      "sport_title": "MLB",
+      "selector": "mlb",
+      "home_team": "New York Yankees",
+      "away_team": "Boston Red Sox",
+      "commence_time": "2026-10-01T00:00:00Z"
+    },
+    {
+      "label": "CTX_DELAYED",
+      "id": "oddsapi:baseball_mlb:ctxdelayed00000000000000000005",
+      "sport_key": "baseball_mlb",
+      "sport_title": "MLB",
+      "selector": "mlb",
+      "home_team": "San Diego Padres",
+      "away_team": "Chicago Cubs",
+      "commence_time": "2026-10-01T02:00:00Z"
+    },
+    {
+      "label": "CTX_CANCELED",
+      "id": "oddsapi:americanfootball_nfl:ctxcanceled000000000000000006",
+      "sport_key": "americanfootball_nfl",
+      "sport_title": "NFL",
+      "selector": "nfl",
+      "home_team": "Buffalo Bills",
+      "away_team": "New England Patriots",
+      "commence_time": "2026-10-04T17:00:00Z"
+    },
+    {
+      "label": "CTX_STALE",
+      "id": "oddsapi:americanfootball_nfl:ctxstale000000000000000000007",
+      "sport_key": "americanfootball_nfl",
+      "sport_title": "NFL",
+      "selector": "nfl",
+      "home_team": "Chicago Bears",
+      "away_team": "New York Jets",
+      "commence_time": "2026-10-04T17:00:00Z"
+    },
+    {
+      "label": "CTX_WEATHER_HORIZON",
+      "id": "oddsapi:americanfootball_nfl:ctxhorizon0000000000000000008",
+      "sport_key": "americanfootball_nfl",
+      "sport_title": "NFL",
+      "selector": "nfl",
+      "home_team": "Fixture Horizon",
+      "away_team": "Fixture Far",
+      "commence_time": "2026-11-20T18:00:00Z"
+    },
+    {
+      "label": "CTX_INDOOR",
+      "id": "oddsapi:basketball_nba:ctxindoor00000000000000000009",
+      "sport_key": "basketball_nba",
+      "sport_title": "NBA",
+      "selector": "nba",
+      "home_team": "Boston Celtics",
+      "away_team": "Detroit Pistons",
+      "commence_time": "2026-10-20T19:00:00Z"
+    },
+    {
+      "label": "CTX_TZ_BOUNDARY",
+      "id": "oddsapi:americanfootball_nfl:ctxtzbound0000000000000000010",
+      "sport_key": "americanfootball_nfl",
+      "sport_title": "NFL",
+      "selector": "nfl",
+      "home_team": "Seattle Seahawks",
+      "away_team": "San Francisco 49ers",
+      "commence_time": "2026-10-05T03:30:00Z"
+    },
+    {
+      "label": "CTX_MISSING_SCORE",
+      "id": "oddsapi:americanfootball_nfl:ctxmissingscore0000000000011",
+      "sport_key": "americanfootball_nfl",
+      "sport_title": "NFL",
+      "selector": "nfl",
+      "home_team": "Miami Dolphins",
+      "away_team": "Fixture Unmatched",
+      "commence_time": "2026-10-04T17:00:00Z"
+    },
+    {
+      "label": "CTX_INJURY",
+      "id": "oddsapi:americanfootball_nfl:ctxinjury0000000000000000012",
+      "sport_key": "americanfootball_nfl",
+      "sport_title": "NFL",
+      "selector": "nfl",
+      "home_team": "Fixture Home",
+      "away_team": "Fixture Away",
+      "commence_time": "2026-10-05T17:00:00Z"
+    }
+  ],
+  "scores": [
+    {
+      "id": "ctxscheduled000000000000000001",
+      "sport_key": "americanfootball_nfl",
+      "home_team": "Fixture Outdoor",
+      "away_team": "Fixture Visitor",
+      "commence_time": "2026-10-02T00:15:00Z",
+      "completed": false,
+      "scores": null,
+      "last_update": null
+    },
+    {
+      "id": "ctxinprogress00000000000000002",
+      "sport_key": "baseball_mlb",
+      "home_team": "Atlanta Braves",
+      "away_team": "Philadelphia Phillies",
+      "commence_time": "2026-09-30T18:00:00Z",
+      "completed": false,
+      "scores": [
+        {"name": "Atlanta Braves", "score": "3"},
+        {"name": "Philadelphia Phillies", "score": "2"}
+      ],
+      "last_update": "2026-09-30T16:04:30Z"
+    },
+    {
+      "id": "ctxfinal0000000000000000000003",
+      "sport_key": "americanfootball_nfl",
+      "home_team": "Fixture Home",
+      "away_team": "Fixture Away",
+      "commence_time": "2026-09-28T17:00:00Z",
+      "completed": true,
+      "scores": [
+        {"name": "Fixture Home", "score": "24"},
+        {"name": "Fixture Away", "score": "17"}
+      ],
+      "last_update": "2026-09-28T20:12:00Z"
+    },
+    {
+      "id": "ctxpostponed000000000000000004",
+      "sport_key": "baseball_mlb",
+      "status": "postponed",
+      "home_team": "New York Yankees",
+      "away_team": "Boston Red Sox",
+      "commence_time": "2026-10-01T00:00:00Z",
+      "completed": false,
+      "scores": null,
+      "last_update": "2026-09-30T15:00:00Z"
+    },
+    {
+      "id": "ctxdelayed00000000000000000005",
+      "sport_key": "baseball_mlb",
+      "status": "delayed",
+      "home_team": "San Diego Padres",
+      "away_team": "Chicago Cubs",
+      "commence_time": "2026-10-01T02:00:00Z",
+      "completed": false,
+      "scores": [{"name": "San Diego Padres", "score": "0"}, {"name": "Chicago Cubs", "score": "0"}],
+      "last_update": "2026-09-30T16:00:00Z"
+    },
+    {
+      "id": "ctxcanceled000000000000000006",
+      "sport_key": "americanfootball_nfl",
+      "status": "canceled",
+      "home_team": "Buffalo Bills",
+      "away_team": "New England Patriots",
+      "commence_time": "2026-10-04T17:00:00Z",
+      "completed": false,
+      "scores": null,
+      "last_update": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "ctxstale000000000000000000007",
+      "sport_key": "americanfootball_nfl",
+      "home_team": "Chicago Bears",
+      "away_team": "New York Jets",
+      "commence_time": "2026-10-04T17:00:00Z",
+      "completed": false,
+      "scores": [
+        {"name": "Chicago Bears", "score": "14"},
+        {"name": "New York Jets", "score": "10"}
+      ],
+      "last_update": "2026-09-30T12:00:00Z",
+      "retrieved_at": "2026-09-30T12:00:00Z"
+    },
+    {
+      "id": "ctxhorizon0000000000000000008",
+      "sport_key": "americanfootball_nfl",
+      "home_team": "Fixture Horizon",
+      "away_team": "Fixture Far",
+      "commence_time": "2026-11-20T18:00:00Z",
+      "completed": false,
+      "scores": null,
+      "last_update": null
+    },
+    {
+      "id": "ctxtzbound0000000000000000010",
+      "sport_key": "americanfootball_nfl",
+      "home_team": "Seattle Seahawks",
+      "away_team": "San Francisco 49ers",
+      "commence_time": "2026-10-05T03:30:00Z",
+      "completed": false,
+      "scores": null,
+      "last_update": null
+    },
+    {
+      "id": "ctxinjury0000000000000000012",
+      "sport_key": "americanfootball_nfl",
+      "home_team": "Fixture Home",
+      "away_team": "Fixture Away",
+      "commence_time": "2026-10-05T17:00:00Z",
+      "completed": false,
+      "scores": null,
+      "last_update": null
+    }
+  ],
+  "weather_by_home": {
+    "Atlanta Braves": {
+      "retrieved_at": "2026-09-30T16:00:00Z",
+      "source_updated_at": "2026-09-30T15:45:00Z",
+      "periods": [
+        {
+          "startTime": "2026-09-30T17:00:00+00:00",
+          "endTime": "2026-09-30T18:00:00+00:00",
+          "temperature": 81,
+          "temperatureUnit": "F",
+          "windSpeed": "8 mph",
+          "windDirection": "SW",
+          "shortForecast": "Partly Cloudy",
+          "probabilityOfPrecipitation": {"value": 20}
+        },
+        {
+          "startTime": "2026-09-30T18:00:00+00:00",
+          "endTime": "2026-09-30T19:00:00+00:00",
+          "temperature": 82,
+          "temperatureUnit": "F",
+          "windSpeed": "9 mph",
+          "windDirection": "SW",
+          "shortForecast": "Mostly Sunny",
+          "probabilityOfPrecipitation": {"value": 15}
+        }
+      ]
+    },
+    "Fixture Horizon": {
+      "retrieved_at": "2026-09-30T16:00:00Z",
+      "source_updated_at": "2026-09-30T15:45:00Z",
+      "horizon_unavailable": true,
+      "periods": [
+        {
+          "startTime": "2026-09-30T16:00:00+00:00",
+          "endTime": "2026-10-07T16:00:00+00:00",
+          "temperature": 55,
+          "temperatureUnit": "F"
+        }
+      ]
+    },
+    "Fixture Outdoor": {
+      "retrieved_at": "2026-09-30T16:00:00Z",
+      "source_updated_at": "2026-09-30T15:45:00Z",
+      "periods": [
+        {
+          "startTime": "2026-10-01T23:00:00+00:00",
+          "endTime": "2026-10-02T01:00:00+00:00",
+          "temperature": 58,
+          "temperatureUnit": "F",
+          "windSpeed": "12 mph",
+          "windDirection": "NW",
+          "shortForecast": "Clear",
+          "probabilityOfPrecipitation": {"value": 10}
+        }
+      ]
+    }
+  },
+  "injuries": [
+    {
+      "event_id": "oddsapi:americanfootball_nfl:ctxinjury0000000000000000012",
+      "sport_key": "americanfootball_nfl",
+      "player": "Fixture Receiver",
+      "team": "Fixture Home",
+      "reported_status": "Questionable — ankle, per team report",
+      "source_wording": "Questionable — ankle, per team report",
+      "certainty": "report",
+      "source": "Labeled fixture (not a live league feed)",
+      "source_url": "https://example.invalid/fixture-injury-report",
+      "published_at": "2026-09-30T14:00:00Z",
+      "retrieved_at": "2026-09-30T16:00:00Z",
+      "note": "Fixture wording preserved. Not confirmed availability. Projections were not changed."
+    },
+    {
+      "event_id": "oddsapi:americanfootball_nfl:ctxinjury0000000000000000012",
+      "sport_key": "americanfootball_nfl",
+      "player": "Fixture Tight End",
+      "team": "Fixture Away",
+      "reported_status": "Active",
+      "source_wording": "Active",
+      "certainty": "confirmed",
+      "source": "Labeled fixture (not a live league feed)",
+      "source_url": "https://example.invalid/fixture-availability",
+      "published_at": "2026-09-30T13:00:00Z",
+      "retrieved_at": "2026-09-30T16:00:00Z"
+    }
+  ]
+}

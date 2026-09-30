@@ -50,6 +50,18 @@ def fixture_ingest_allowed() -> bool:
     return _truthy("MARKET_TOOLS_FIXTURE_INGEST", False)
 
 
+def context_collect_enabled() -> bool:
+    """One-shot/server context collect. Default OFF. Not a browsing trigger."""
+    return _truthy("MARKET_TOOLS_CONTEXT_COLLECT", False)
+
+
+def context_fixtures_enabled() -> bool:
+    """Attach labeled context edge-case cards. Local only. Default OFF."""
+    if is_production():
+        return False
+    return _truthy("MARKET_TOOLS_CONTEXT_FIXTURES", False)
+
+
 def serves_oddsapi() -> bool:
     return snapshot_mode() or oddsapi_enabled()
 
@@ -74,6 +86,8 @@ def flag_status() -> dict:
         "snapshot_development_only": True,
         "oddsapi_enabled": oddsapi_enabled(),
         "collect_enabled": collect_enabled(),
+        "context_collect_enabled": context_collect_enabled(),
+        "context_fixtures_enabled": context_fixtures_enabled(),
         "requires_shared_redis": requires_shared_redis(),
         "fixture_ingest_allowed": fixture_ingest_allowed(),
         "browsing_triggers_upstream": False,

@@ -80,6 +80,71 @@ function localTime(iso?: string | null) {
   return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 }
 
+function utcStamp(iso?: string | null) {
+  if (!iso) return "UTC unavailable";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toISOString().replace(".000Z", "Z");
+}
+
+function GameContext({ ev }: { ev: any }) {
+  const ctx = ev.context || {};
+  const schedule = ctx.schedule || {};
+  const score = ctx.score || {};
+  const weather = ctx.weather || {};
+  const injuries = ctx.injuries || [];
+  const periodBits = [score.period, score.inning, score.clock].filter((v: unknown) => v != null && v !== "");
+  const scoreLine = (score.away_score != null || score.home_score != null)
+    ? `${score.away_score ?? "—"}–${score.home_score ?? "—"}`
+    : null;
+  const weatherLine = weather.kind === "indoor"
+    ? (weather.label || "Indoor")
+    : weather.label === "Forecast not yet available."
+      ? "Forecast not yet available."
+      : weather.kind === "forecast" && weather.temperature != null
+        ? `${weather.temperature}°${weather.temperature_unit || "F"}`
+        : weather.label || "Weather unavailable";
+  return (
+    <div className="game-context" data-game-context data-fixture-label={ev.fixture_label || ""} data-status={score.status || ""}>
+      <p className="context-line">
+        <span data-local-time>{localTime(schedule.commence_time_utc || ev.commence_time)}</span>
+        {score.status_display ? <span> · {score.status_display}</span> : null}
+        {scoreLine ? <span data-score> · {scoreLine}</span> : null}
+        {weatherLine ? <span data-weather-summary> · {weatherLine}</span> : null}
+        {injuries.length ? <span> · {injuries.length} availability note{injuries.length === 1 ? "" : "s"}</span> : null}
+        {score.freshness === "stale" ? <span className="warn"> · Stale</span> : null}
+      </p>
+      <details className="game-details">
+        <summary>Game details</summary>
+        <p className="meta">UTC {utcStamp(schedule.commence_time_utc || ev.commence_time)} · shown in your timezone{schedule.timezone_abbreviation ? ` (${schedule.timezone_abbreviation} on the server preview)` : ""}.</p>
+        {score.note ? <p className="note">{score.note}</p> : null}
+        {periodBits.length ? <p className="meta">Period/clock {periodBits.join(" · ")}</p> : <p className="note">Period, inning, and clock were not supplied.</p>}
+        {score.source ? <p className="meta">Scores source {score.source}{score.source_updated_at ? ` · updated ${localTime(score.source_updated_at)}` : ""}{score.retrieved_at ? ` · retrieved ${localTime(score.retrieved_at)}` : ""} · {score.freshness || "unknown"}</p> : null}
+        {weather.kind === "indoor" ? <p className="meta">{weather.label || "Indoor"}{weather.venue_name ? ` · ${weather.venue_name}` : ""} · {weather.note || ""}</p> : null}
+        {weather.kind === "forecast" && weather.label === "Forecast not yet available." ? <p className="note">Forecast not yet available.</p> : null}
+        {weather.kind === "forecast" && weather.temperature != null ? (
+          <p className="meta">
+            Forecast (not an observation) · {weather.venue_name} · {weather.temperature}°{weather.temperature_unit || "F"}
+            {weather.wind ? ` · Wind ${weather.wind}` : ""}
+            {weather.precipitation_probability != null ? ` · Precip ${weather.precipitation_probability}%` : ""}
+            {weather.forecast_time ? ` · valid ${localTime(weather.forecast_time)}` : ""} · {weather.source}
+            {weather.roof_note ? ` · ${weather.roof_note}` : ""}
+          </p>
+        ) : null}
+        {weather.kind === "unavailable" ? <p className="note">{weather.reason || "Weather unavailable"}</p> : null}
+        {injuries.length === 0 ? <p className="note">{ctx.injuries_note || "No report does not mean healthy or available."}</p> : injuries.map((row: any, i: number) => (
+          <p className="meta" key={i} data-injury>
+            {row.player} ({row.team}) · {row.source_wording || row.reported_status} · {row.certainty_label}
+            {row.source_url ? <> · <a href={row.source_url} target="_blank" rel="noreferrer">Source</a></> : null}
+            {row.published_at ? ` · ${localTime(row.published_at)}` : ""}
+            {row.projection_adjustment === "not_applied" ? " · projections unchanged" : ""}
+          </p>
+        ))}
+      </details>
+    </div>
+  );
+}
+
 function localDate(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -351,6 +416,7 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
       return (
         <article className="card" key={ev.id}>
           <div className="match"><div className="teams">{matchup}</div><div className="meta">{localTime(ev.commence_time)} · {ev.period || "game"}</div></div>
+          <GameContext ev={ev} />
           <p className="note">Tournament-winner market only. Not weekly PGA Tour coverage.</p>
           {listed.map((bookRow: any) => (
             <div key={bookRow.bookmaker}>
@@ -371,6 +437,7 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
     return (
       <article className="card" key={ev.id}>
         <div className="match"><div className="teams">{matchup}</div><div className="meta">{localTime(ev.commence_time)}</div></div>
+        <GameContext ev={ev} />
         {ev.stale ? <p className="warn">Saved odds—not live</p> : null}
         {listed.map((bookRow: any) => {
           const h2h = bookRow.h2h || {};
@@ -566,6 +633,18 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
                 <div className="player">{sample.player || "Unknown player"}</div>
                 {sample.season_label === "possible_preseason_not_confirmed_regular_season" ? <p className="warn">Possible preseason — not confirmed regular-season coverage.</p> : null}
                 <p className="meta">{matchup} · {sample.market_label || "Player market"}</p>
+                {sample.availability ? (
+                  <p className="note" data-injury>
+                    {sample.availability.source_wording || sample.availability.reported_status} · {sample.availability.certainty_label}
+                    {sample.availability.source_url ? <> · <a href={sample.availability.source_url} target="_blank" rel="noreferrer">Source</a></> : null}
+                    {" · projections unchanged"}
+                  </p>
+                ) : (
+                  <details className="game-details">
+                    <summary>Availability</summary>
+                    <p className="note">No availability report on file. That does not mean healthy or available. Projections were not changed.</p>
+                  </details>
+                )}
                 <div className="odds">
                   {[over, under, ...rest].filter(Boolean).map((row: any) => (
                     <OddButton key={row.id} quote={row} format={format} selected={selected(row.id)} onAdd={addLeg} extra={{
@@ -592,7 +671,8 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
 
       <details className="dev">
         <summary>How it works</summary>
-        <p><b>Saved odds—not live.</b> Times shown are the sportsbook update times in this snapshot.</p>
+        <p><b>Saved odds—not live.</b> Game start times are stored in UTC and shown in your timezone. Scores come from The Odds API scores endpoint when a unique match exists. Period and clock stay hidden unless supplied.</p>
+        <p>Venue weather is an NWS forecast for outdoor US catalogs, or Indoor when the venue is documented as indoor. Injury notes are sourced reports only; missing notes are not a healthy listing.</p>
         <p><b>Market-derived fair odds</b> remove that sportsbook’s margin from a complete set of outcomes for the same market, line, and period. They are not SB ME win probabilities.</p>
         <p><b>Sportsbook consensus</b> is the typical listed price across unique books for the same selection. It still includes each book’s margin.</p>
         <p>Price discrepancies are historical and not a live or guaranteed profit. Incomplete markets, mismatched lines, integer lines that can push, and stale mixed timestamps stay unavailable.</p>

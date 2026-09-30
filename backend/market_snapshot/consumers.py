@@ -42,7 +42,7 @@ def league_to_selector(league: str) -> str | None:
 
 
 def event_card_to_mobile_game(ev: dict) -> dict:
-    """Preserve the mobile live-odds Game fields. Scores and movement stay unavailable."""
+    """Project Odds API cache rows onto existing consumer contracts. Never invent SGO IDs."""
     books = ev.get("books") or []
     first = books[0] if books else {}
     h2h = first.get("h2h") or {}
@@ -60,6 +60,12 @@ def event_card_to_mobile_game(ev: dict) -> dict:
             "moneyline_away": (bh.get("away") or {}).get("american"),
             "movements": [],
         })
+    ctx = ev.get("context") or {}
+    score = ctx.get("score") or {}
+    home_score = score.get("home_score")
+    away_score = score.get("away_score")
+    status = score.get("status")
+    has_score = home_score is not None or away_score is not None or status in {"in_progress", "final"}
     return {
         "game_id": ev.get("id"),
         "id": ev.get("id"),
@@ -67,9 +73,16 @@ def event_card_to_mobile_game(ev: dict) -> dict:
         "home_team_name": ev.get("home_team"),
         "away_team_name": ev.get("away_team"),
         "start_time": ev.get("commence_time"),
-        "status": None,
-        "home_score": None,
-        "away_score": None,
+        "start_time_utc": (ctx.get("schedule") or {}).get("commence_time_utc") or ev.get("commence_time"),
+        "status": status,
+        "status_display": score.get("status_display"),
+        "home_score": home_score,
+        "away_score": away_score,
+        "period": score.get("period"),
+        "inning": score.get("inning"),
+        "clock": score.get("clock"),
+        "weather": ctx.get("weather"),
+        "injuries": ctx.get("injuries") or [],
         "total_line": (totals.get("over") or {}).get("line"),
         "spread_line": (spreads.get("home") or {}).get("line"),
         "moneyline_home": home_ml,
@@ -77,25 +90,39 @@ def event_card_to_mobile_game(ev: dict) -> dict:
         "odds": odds,
         "sgo_event_id": None,
         "movement": "unavailable",
-        "live_score": "unavailable",
-        "source_timestamp": (h2h.get("home") or {}).get("source_timestamp"),
-        "retrieved_at": (h2h.get("home") or {}).get("retrieved_at"),
+        "live_score": "available" if has_score else "unavailable",
+        "source_timestamp": score.get("source_updated_at") or (h2h.get("home") or {}).get("source_timestamp"),
+        "retrieved_at": score.get("retrieved_at") or (h2h.get("home") or {}).get("retrieved_at"),
+        "installed_mobile_tested": False,
     }
 
 
 def assistant_event_row(ev: dict, sport: str) -> dict:
+    ctx = ev.get("context") or {}
+    score = ctx.get("score") or {}
+    home_score = score.get("home_score")
+    away_score = score.get("away_score")
+    status = score.get("status")
+    has_score = home_score is not None or away_score is not None or status in {"in_progress", "final"}
     return {
         "event_id": ev.get("id"),
         "league": sport,
         "start_time": ev.get("commence_time"),
-        "status": None,
-        "status_display": "unavailable",
+        "start_time_utc": (ctx.get("schedule") or {}).get("commence_time_utc") or ev.get("commence_time"),
+        "status": status,
+        "status_display": score.get("status_display") or "unavailable",
         "home_team": ev.get("home_team"),
         "away_team": ev.get("away_team"),
-        "home_score": None,
-        "away_score": None,
+        "home_score": home_score,
+        "away_score": away_score,
+        "period": score.get("period"),
+        "inning": score.get("inning"),
+        "clock": score.get("clock"),
+        "weather": ctx.get("weather"),
+        "injuries": ctx.get("injuries") or [],
         "sgo_event_id": None,
-        "live_score": "unavailable",
+        "live_score": "available" if has_score else "unavailable",
+        "installed_mobile_tested": False,
     }
 
 

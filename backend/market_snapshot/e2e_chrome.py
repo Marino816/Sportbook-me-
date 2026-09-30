@@ -25,6 +25,38 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 OUT = Path(__file__).resolve().parent / "screenshots"
 E2E_JSON = OUT / "e2e-results.json"
 
+LOGIN_SCRIPT = r"""
+async (creds) => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const setNative = (el, val) => {
+    const proto = Object.getPrototypeOf(el);
+    const desc = Object.getOwnPropertyDescriptor(proto, "value");
+    desc.set.call(el, val);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  for (let i = 0; i < 40; i++) {
+    const userInput = document.querySelector('input[autocomplete="username"], input[type="email"]');
+    if (userInput) {
+      const passInput = document.querySelector('input[type="password"]');
+      setNative(userInput, creds.email);
+      if (passInput) setNative(passInput, creds.password);
+      document.querySelector(".sbme-login-submit, button[type='submit']")?.click();
+      for (let j = 0; j < 40; j++) {
+        if (localStorage.getItem("sbme_dfs_token") || localStorage.getItem("token")) {
+          return { loginSubmitted: true, hasToken: true };
+        }
+        await wait(250);
+      }
+      return { loginSubmitted: true, hasToken: false };
+    }
+    if (document.querySelector(".sbme-mt-approved")) return { loginSubmitted: false, already: true };
+    await wait(250);
+  }
+  return { loginSubmitted: false };
+}
+"""
+
 CUSTOMER_SCRIPT = r"""
 async (creds) => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -64,10 +96,25 @@ async (creds) => {
     setNative(userInput, creds.email);
     if (passInput) setNative(passInput, creds.password);
     document.querySelector(".sbme-login-submit, button[type='submit']")?.click();
+    return { ok: false, checks: [], blockers: ["login_submitted"], loginSubmitted: true };
   }
   const app = await waitFor(() => document.querySelector(".sbme-mt-approved"));
   note("application_loaded", Boolean(app), app ? location.pathname : location.href);
-  if (!app) return results;
+  if (!app) {
+    const token = localStorage.getItem("sbme_dfs_token");
+    let statusDetail = "no_token";
+    if (token) {
+      try {
+        const r = await fetch(`${creds.api}/market-tools/internal/status`, { headers: { Authorization: `Bearer ${token}` } });
+        const j = await r.json().catch(() => ({}));
+        statusDetail = `http=${r.status} provider=${j?.data?.provider || ""}`;
+      } catch (e) {
+        statusDetail = String(e);
+      }
+    }
+    note("debug_status", false, `${location.pathname} token=${Boolean(token)} ${statusDetail} html=${(document.documentElement.innerHTML || "").slice(0, 400)}`);
+    return results;
+  }
   localStorage.removeItem("sbme_mt_slip_v1");
 
   const chipsReady = await waitFor(() => document.querySelector(".sbme-mt-approved .chip"));
@@ -86,6 +133,31 @@ async (creds) => {
     league.dispatchEvent(new Event("change", { bubbles: true }));
     await wait(200);
   }
+  clickChip("NFL");
+  await wait(300);
+  const contextCard = document.querySelector("[data-game-context]");
+  const details = document.querySelector("details.game-details");
+  if (details) details.open = true;
+  await wait(150);
+  const contextText = (contextCard && contextCard.textContent) || "";
+  note("game_context", Boolean(contextCard), contextText.slice(0, 180));
+  note("local_timezone_shown", /EDT|EST|CDT|CST|MDT|MST|PDT|PST|GMT|UTC|AM|PM/.test(contextText), contextText.slice(0, 120));
+  note("game_details_expand", Boolean(details), details ? "open" : "missing");
+  const postponedChip = clickChip("MLB") || clickChip("NFL");
+  await wait(300);
+  const postponed = [...document.querySelectorAll("[data-fixture-label='CTX_POSTPONED']")];
+  note("postponed_fixture", postponed.length > 0 && /Postponed/i.test((postponed[0].textContent || "")), postponed.length ? postponed[0].textContent.slice(0, 120) : "missing");
+  clickChip("NFL");
+  await wait(300);
+  const horizon = [...document.querySelectorAll("[data-fixture-label='CTX_WEATHER_HORIZON']")];
+  note("weather_horizon", horizon.length > 0 && /Forecast not yet available/i.test(horizon[0].textContent || ""), horizon.length ? horizon[0].textContent.slice(0, 120) : "missing");
+  const injury = [...document.querySelectorAll("[data-fixture-label='CTX_INJURY']")];
+  if (injury[0]) injury[0].querySelector("details")?.setAttribute("open", "true");
+  note("injury_attribution", injury.length > 0 && /Questionable|projections unchanged|Source/i.test(injury[0]?.textContent || ""), injury.length ? injury[0].textContent.slice(0, 160) : "missing");
+  clickChip("NBA");
+  await wait(250);
+  const indoor = [...document.querySelectorAll("[data-fixture-label='CTX_INDOOR']")];
+  note("indoor_weather", indoor.length > 0 && /Indoor/i.test(indoor[0].textContent || ""), indoor.length ? indoor[0].textContent.slice(0, 80) : "missing");
   clickChip("NFL");
   await wait(300);
 
@@ -248,6 +320,7 @@ class _MiniWS:
             if not chunk:
                 break
             buf += chunk
+        self.sock.settimeout(120)
         self._id = 0
 
     def send(self, payload: dict) -> None:
@@ -357,6 +430,7 @@ async (creds) => {
     setNative(userInput, creds.email);
     if (passInput) setNative(passInput, creds.password);
     document.querySelector(".sbme-login-submit, button[type='submit']")?.click();
+    return { ok: false, checks: [], blockers: ["login_submitted"], loginSubmitted: true };
   }
   const app = await waitFor(() => document.querySelector(".sbme-mt-approved"));
   note("application_loaded", Boolean(app), app ? location.pathname : location.href);
@@ -399,6 +473,24 @@ async (creds) => {
 """
 
 
+def _api_login(api: str, email: str, password: str) -> str | None:
+    origin = api[:-4] if api.endswith("/api") else api
+    body = json.dumps({"email": email, "username": email, "password": password}).encode()
+    req = urllib.request.Request(
+        f"{origin}/api/auth/login",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode())
+    except urllib.error.HTTPError:
+        return None
+    token = payload.get("access_token") or (payload.get("data") or {}).get("access_token")
+    return token if isinstance(token, str) and token else None
+
+
 def run() -> dict:
     OUT.mkdir(parents=True, exist_ok=True)
     web = os.environ.get("SBME_E2E_WEB", "http://127.0.0.1:3000").rstrip("/")
@@ -407,6 +499,7 @@ def run() -> dict:
     password = os.environ.get("SBME_E2E_PASSWORD", "")
     if not email or not password:
         return {"blocker": "SBME_E2E_EMAIL and SBME_E2E_PASSWORD must be set", "desktop": None, "mobile": None}
+    seeded_token = _api_login(api, email, password)
     login_url = f"{web}/login?next={urllib.parse.quote('/market-tools')}"
     cdp_port = _free_port()
     _wait_http(f"{web}/login", timeout=90)
@@ -435,6 +528,7 @@ def run() -> dict:
         "desktop": None,
         "mobile": None,
         "blocker": None,
+        "token_seeded": bool(seeded_token),
     }
     creds = json.dumps({"email": email, "password": password, "api": api})
     try:
@@ -455,9 +549,24 @@ def run() -> dict:
                 "width": width, "height": height, "deviceScaleFactor": 1, "mobile": width < 800,
             })
             ws.call("Page.enable")
-            ws.call("Page.navigate", {"url": login_url})
-            time.sleep(6)
+            if seeded_token:
+                ws.call("Page.addScriptToEvaluateOnNewDocument", {
+                    "source": "localStorage.setItem('sbme_dfs_token', %s);" % json.dumps(seeded_token),
+                })
+            ws.call("Page.navigate", {"url": f"{web}/market-tools" if seeded_token else login_url})
+            time.sleep(5)
             ws.call("Runtime.enable")
+            if not seeded_token:
+                login_result = ws.call("Runtime.evaluate", {
+                    "expression": f"({LOGIN_SCRIPT})({creds})",
+                    "awaitPromise": True,
+                    "returnByValue": True,
+                }, timeout=60)
+                login_value = (((login_result.get("result") or {}).get("result") or {}).get("value")) or {}
+                if login_value.get("loginSubmitted") or not login_value.get("already"):
+                    time.sleep(4)
+                    ws.call("Page.navigate", {"url": f"{web}/market-tools"}, timeout=60)
+                    time.sleep(5)
             result = ws.call("Runtime.evaluate", {
                 "expression": f"({CUSTOMER_SCRIPT})({creds})",
                 "awaitPromise": True,
@@ -466,11 +575,14 @@ def run() -> dict:
             value = (result.get("result") or {}).get("result") or {}
             payload = value.get("value") if value.get("type") == "object" else None
             if os.environ.get("SBME_E2E_SHOTS") == "1":
-                shot = ws.call("Page.captureScreenshot", {"format": "png"})
-                b64 = ((shot.get("result") or {}).get("data")) or ""
+                shot = ws.call("Page.captureScreenshot", {"format": "png"}, timeout=60)
+                inner = shot.get("result") or shot
+                b64 = inner.get("data") or ""
                 if b64:
                     import base64
                     (OUT / f"e2e-app-{name}.png").write_bytes(base64.b64decode(b64))
+                else:
+                    (OUT / f"e2e-shot-{name}.json").write_text(json.dumps({"keys": list(shot.keys()), "inner": list(inner.keys())}) + "\n")
             return payload or {"ok": False, "checks": [], "error": result}
 
         report["desktop"] = run_viewport(1280, 800, "desktop")

@@ -344,7 +344,8 @@ async def get_sgo_current_events(
             "events": rows,
             "sgo_event_id": None,
             "note": (
-                "Odds API saved events. Live scores are unavailable."
+                "Odds API saved events. Scores and status come from the scores endpoint when a unique match exists. "
+                "Period, inning, and clock stay null unless the source supplies them."
                 if rows
                 else "No saved Odds API events for this league. Do not invent games, scores, or lines."
             ),
@@ -405,8 +406,8 @@ async def get_sgo_game_status(
             "available": bool(games),
             "source": "oddsapi_cache",
             "games": games,
-            "live_score": "unavailable",
-            "note": "Odds API saved events do not include live scores or period status.",
+            "live_score": games[0].get("live_score") if games else "unavailable",
+            "note": "Odds API scores when uniquely matched. Period, inning, and clock are not in the documented scores schema.",
         }
     events = await _cached_events(sport)
     if event_id:

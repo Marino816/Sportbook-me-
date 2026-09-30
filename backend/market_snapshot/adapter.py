@@ -28,6 +28,7 @@ from market_snapshot.leagues import (
     league_by_key,
 )
 from market_snapshot.source_record import SOURCE
+from market_snapshot.context import attach_context
 
 
 def load_payloads(*, root: Path | None = None) -> dict:
@@ -507,7 +508,7 @@ def build_preview(*, root: Path | None = None, payloads: dict | None = None, ret
     compare = enrich_compare_groups(compare_groups(game_rows + prop_rows))
     arb = scan_arbitrage(compare_groups(game_rows), events)
     quote_index = {row["id"]: row for row in game_rows + prop_rows if row.get("id")}
-    return {
+    preview = {
         "development": True,
         "live_data": False,
         "retrieved_at": retrieved,
@@ -552,3 +553,4 @@ def build_preview(*, root: Path | None = None, payloads: dict | None = None, ret
         "monthly_usage_estimate": estimate_monthly(),
         "http_requests_used": 0,
     }
+    return attach_context(preview)
