@@ -323,6 +323,75 @@ def _cdp_connect(port: int) -> _MiniWS:
     raise RuntimeError(f"No Chrome page target on {port}: {last}")
 
 
+PROPAGATION_SCRIPT = r"""
+async (creds) => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (fn, tries = 120) => {
+    for (let i = 0; i < tries; i++) {
+      const v = fn();
+      if (v) return v;
+      await wait(250);
+    }
+    return null;
+  };
+  const setNative = (el, val) => {
+    const proto = Object.getPrototypeOf(el);
+    const desc = Object.getOwnPropertyDescriptor(proto, "value");
+    desc.set.call(el, val);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const results = { ok: true, checks: [], blockers: [], not_customer_data: true, provider_http: 0 };
+  const note = (name, pass, detail) => { results.checks.push({ name, pass, detail }); if (!pass) results.ok = false; };
+
+  const userInput = await waitFor(() => document.querySelector('input[autocomplete="username"], .sbme-mt-approved'));
+  if (userInput && userInput.matches && userInput.matches("input")) {
+    const passInput = document.querySelector('input[type="password"]');
+    setNative(userInput, creds.email);
+    if (passInput) setNative(passInput, creds.password);
+    document.querySelector(".sbme-login-submit, button[type='submit']")?.click();
+  }
+  const app = await waitFor(() => document.querySelector(".sbme-mt-approved"));
+  note("application_loaded", Boolean(app), app ? location.pathname : location.href);
+  if (!app) return results;
+  const token = localStorage.getItem("sbme_dfs_token");
+  note("token", Boolean(token), token ? "present" : "missing");
+  if (!token) return results;
+
+  const ingest = async (name) => {
+    const res = await fetch(`${creds.api}/market-tools/internal/fixtures/${name}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    const json = await res.json().catch(() => ({}));
+    return { status: res.status, body: json };
+  };
+
+  const a = await ingest("fixture_a_baseline.json");
+  note("fixture_a_ingest", a.status === 200 && a.body?.data?.american === -148, JSON.stringify({ status: a.status, american: a.body?.data?.american, reason: a.body?.detail || a.body?.data?.reason }));
+  location.assign(creds.marketUrl || location.href);
+  await wait(800);
+  const afterA = await waitFor(() => document.querySelector('.sbme-mt-approved button.odd[data-market="h2h"][data-selection="Fixture Home"][data-american="-148"]'));
+  const priceA = afterA ? afterA.getAttribute("data-american") : (document.querySelector('.sbme-mt-approved button.odd[data-market="h2h"][data-selection="Fixture Home"]') || {}).getAttribute?.("data-american");
+  note("browser_price_a", priceA === "-148", `american=${priceA} fixture=${document.querySelector(".sbme-mt-approved")?.getAttribute("data-fixture") || ""}`);
+
+  const b = await ingest("fixture_b_price_change.json");
+  note("fixture_b_ingest", b.status === 200 && b.body?.data?.american === -155, JSON.stringify({ status: b.status, american: b.body?.data?.american }));
+  location.assign(creds.marketUrl || location.href);
+  await wait(800);
+  const afterB = await waitFor(() => document.querySelector('.sbme-mt-approved button.odd[data-market="h2h"][data-selection="Fixture Home"][data-american="-155"]'));
+  const priceB = afterB ? afterB.getAttribute("data-american") : (document.querySelector('.sbme-mt-approved button.odd[data-market="h2h"][data-selection="Fixture Home"]') || {}).getAttribute?.("data-american");
+  note("browser_price_b", priceB === "-155", `american=${priceB} fixture=${document.querySelector(".sbme-mt-approved")?.getAttribute("data-fixture") || ""}`);
+  note("price_changed_in_browser", priceA === "-148" && priceB === "-155", `${priceA} -> ${priceB}`);
+  results.price_a = priceA;
+  results.price_b = priceB;
+  results.fixture_a = a.body?.data || a.body;
+  results.fixture_b = b.body?.data || b.body;
+  return results;
+}
+"""
+
+
 def run() -> dict:
     OUT.mkdir(parents=True, exist_ok=True)
     web = os.environ.get("SBME_E2E_WEB", "http://127.0.0.1:3000").rstrip("/")
@@ -419,10 +488,195 @@ def run() -> dict:
     return report
 
 
+def entitle_local_sqlite_user(email: str) -> str:
+    url = os.environ.get("DATABASE_URL", "")
+    if "sqlite" not in url:
+        return "skipped_non_sqlite"
+    path = url.split("///")[-1].split("?")[0]
+    if not path or not Path(path).is_file():
+        return f"missing_db:{path}"
+    import sqlite3
+    con = sqlite3.connect(path)
+    try:
+        cur = con.execute("UPDATE users SET is_pro = 1 WHERE email = ?", (email,))
+        con.commit()
+        return f"updated={cur.rowcount} path={path}"
+    finally:
+        con.close()
+
+
+def run_price_propagation() -> dict:
+    """Prove labeled fixtures replace cache → API → browser prices. Zero provider HTTP."""
+    OUT.mkdir(parents=True, exist_ok=True)
+    web = os.environ.get("SBME_E2E_WEB", "http://127.0.0.1:3000").rstrip("/")
+    api = os.environ.get("SBME_E2E_API", "http://127.0.0.1:8000/api").rstrip("/")
+    email = os.environ.get("SBME_E2E_EMAIL", "")
+    password = os.environ.get("SBME_E2E_PASSWORD", "")
+    report = {
+        "ok": False,
+        "not_customer_data": True,
+        "provider_http": 0,
+        "blocker": None,
+        "checks": [],
+        "price_a": None,
+        "price_b": None,
+        "entitle": entitle_local_sqlite_user(email) if email else None,
+    }
+    if not email or not password:
+        report["blocker"] = "SBME_E2E_EMAIL and SBME_E2E_PASSWORD must be set"
+        return report
+    login_url = f"{web}/login?next={urllib.parse.quote('/market-tools')}"
+    market_url = f"{web}/market-tools"
+    cdp_port = _free_port()
+    _wait_http(f"{web}/login", timeout=90)
+    origin = api[:-4] if api.endswith("/api") else api
+    _wait_http(f"{origin}/health", timeout=30)
+    profile = tempfile.mkdtemp(prefix="sbme-mt-prop-")
+    chrome = subprocess.Popen(
+        [
+            CHROME,
+            "--headless=new",
+            "--disable-gpu",
+            "--no-first-run",
+            "--no-default-browser-check",
+            f"--remote-debugging-port={cdp_port}",
+            f"--user-data-dir={profile}",
+            login_url,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    creds = json.dumps({"email": email, "password": password, "api": api, "marketUrl": market_url})
+
+    def note(name, pass_, detail=""):
+        report["checks"].append({"name": name, "pass": pass_, "detail": detail})
+        if not pass_:
+            report["ok"] = False
+
+    try:
+        deadline = time.time() + 25
+        ws = None
+        while time.time() < deadline:
+            try:
+                ws = _cdp_connect(cdp_port)
+                break
+            except Exception:
+                time.sleep(0.3)
+        if ws is None:
+            report["blocker"] = f"Chrome CDP did not open on port {cdp_port}"
+            return report
+        ws.call("Page.enable")
+        ws.call("Runtime.enable")
+        ws.call("Page.navigate", {"url": login_url})
+        time.sleep(5)
+        login = ws.call("Runtime.evaluate", {
+            "expression": f"({CUSTOMER_SCRIPT})({creds})",
+            "awaitPromise": True,
+            "returnByValue": True,
+        }, timeout=90)
+        token_eval = ws.call("Runtime.evaluate", {
+            "expression": "localStorage.getItem('sbme_dfs_token')",
+            "returnByValue": True,
+        })
+        token = ((token_eval.get("result") or {}).get("result") or {}).get("value")
+        note("token", bool(token), "present" if token else "missing")
+        if not token:
+            report["blocker"] = "No auth token after login"
+            report["login"] = login
+            return report
+
+        def ingest(name: str) -> dict:
+            req = urllib.request.Request(
+                f"{api}/market-tools/internal/fixtures/{name}",
+                data=b"{}",
+                method="POST",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode())
+
+        def read_price() -> dict:
+            ws.call("Page.navigate", {"url": market_url})
+            time.sleep(4)
+            result = ws.call("Runtime.evaluate", {
+                "expression": """(() => {
+                  const el = document.querySelector('.sbme-mt-approved button.odd[data-market="h2h"][data-selection="Fixture Home"]');
+                  const root = document.querySelector('.sbme-mt-approved');
+                  return {
+                    american: el ? el.getAttribute('data-american') : null,
+                    text: el ? (el.innerText || '') : '',
+                    fixture: root ? root.getAttribute('data-fixture') : '',
+                    generation: root ? root.getAttribute('data-generation') : '',
+                    loadError: (document.querySelector('.sbme-mt-approved .warn') || {}).textContent || '',
+                  };
+                })()""",
+                "returnByValue": True,
+            }, timeout=20)
+            value = (result.get("result") or {}).get("result") or {}
+            return value.get("value") if value.get("type") == "object" else {}
+
+        try:
+            a_body = ingest("fixture_a_baseline.json")
+        except urllib.error.HTTPError as exc:
+            report["blocker"] = f"fixture A ingest HTTP {exc.code}: {exc.read().decode()[:400]}"
+            return report
+        a_data = a_body.get("data") or {}
+        note("fixture_a_ingest", a_data.get("american") == -148, str(a_data.get("american")))
+        price_a = read_price()
+        report["price_a"] = price_a
+        note("browser_price_a", price_a.get("american") == "-148", json.dumps(price_a))
+        shot = ws.call("Page.captureScreenshot", {"format": "png"})
+        b64 = ((shot.get("result") or {}).get("data")) or ""
+        if b64:
+            import base64
+            (OUT / "e2e-fixture-a.png").write_bytes(base64.b64decode(b64))
+
+        try:
+            b_body = ingest("fixture_b_price_change.json")
+        except urllib.error.HTTPError as exc:
+            report["blocker"] = f"fixture B ingest HTTP {exc.code}: {exc.read().decode()[:400]}"
+            return report
+        b_data = b_body.get("data") or {}
+        note("fixture_b_ingest", b_data.get("american") == -155, str(b_data.get("american")))
+        price_b = read_price()
+        report["price_b"] = price_b
+        note("browser_price_b", price_b.get("american") == "-155", json.dumps(price_b))
+        shot = ws.call("Page.captureScreenshot", {"format": "png"})
+        b64 = ((shot.get("result") or {}).get("data")) or ""
+        if b64:
+            import base64
+            (OUT / "e2e-fixture-b.png").write_bytes(base64.b64decode(b64))
+        changed = price_a.get("american") == "-148" and price_b.get("american") == "-155"
+        note("price_changed_in_browser", changed, f"{price_a.get('american')} -> {price_b.get('american')}")
+        report["ok"] = all(c["pass"] for c in report["checks"])
+        report["fixture_a"] = a_data
+        report["fixture_b"] = b_data
+        ws.close()
+    except Exception as exc:  # noqa: BLE001
+        report["blocker"] = str(exc)
+    finally:
+        chrome.terminate()
+    (OUT / "e2e-propagation.json").write_text(json.dumps(report, indent=2) + "\n")
+    return report
+
+
 def main() -> int:
     if not Path(CHROME).is_file():
         print(json.dumps({"blocker": f"Chrome not found at {CHROME}", "unverified": "all browser interactions"}))
         return 2
+    if os.environ.get("SBME_E2E_PROPAGATION") == "1":
+        report = run_price_propagation()
+        print(json.dumps({
+            "blocker": report.get("blocker"),
+            "ok": report.get("ok"),
+            "price_a": report.get("price_a"),
+            "price_b": report.get("price_b"),
+            "checks": report.get("checks"),
+            "path": str(OUT / "e2e-propagation.json"),
+        }, indent=2))
+        if report.get("blocker"):
+            return 2
+        return 0 if report.get("ok") else 1
     report = run()
     print(json.dumps({
         "blocker": report.get("blocker"),

@@ -13,6 +13,14 @@ COMPOSE = 'docker compose -f docker-compose.yml up -d'
 
 
 def main() -> int:
+    if "--prepare-only" in sys.argv:
+        print("status: blocked_until_docker")
+        print("required_step:", REQUIRED_STEP)
+        print("compose:", COMPOSE)
+        print("checks_prepared: postgres SELECT 1; redis PING; Market Tools Redis key sbme:mt:oddsapi:preview; collect lock sbme:mt:oddsapi:collect_lock")
+        print("connection_attempts: skipped")
+        return 3
+
     default_pg = "postgresql+asyncpg://postgres:password@127.0.0.1:5432/apex_dfs"
     db = os.getenv("DATABASE_URL", default_pg)
     redis_url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")

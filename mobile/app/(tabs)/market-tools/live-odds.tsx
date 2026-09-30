@@ -59,7 +59,13 @@ export default function LiveOddsScreen() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      setData(json.data || json);
+      const payload = json.data || json;
+      if (payload?.unavailable) {
+        setError(payload.reason || "Market Tools prices are unavailable.");
+        setData({ games: [], count: 0 });
+        return;
+      }
+      setData(payload);
     } catch (e: any) {
       setError(e.message);
       setData(null);

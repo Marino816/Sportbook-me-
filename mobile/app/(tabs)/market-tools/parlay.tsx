@@ -36,6 +36,11 @@ export default function ParlayBuilderScreen() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      if (json.data?.unavailable) {
+        setError(json.data.reason || "Market Tools prices are unavailable.");
+        setGames([]);
+        return;
+      }
       const gs = json.data?.games || json.games || [];
       setGames(gs);
     } catch (e: any) {

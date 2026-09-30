@@ -166,6 +166,14 @@ async def build_sgo_intelligence(sport: str, dfs_players: list[dict], event_date
     """
     sport_upper = sport.upper()
 
+    from market_snapshot.provider import blocks_sgo
+    if blocks_sgo():
+        logger.warning(
+            "SGO intelligence unavailable: Odds API Market Tools serving blocks SGO fetch. "
+            "No player projections were invented from Odds API markets."
+        )
+        return {}
+
     # Read cached SBEvent data
     from api.sgo_data import _rget
     cache_key = f"sgo:v2:sbevents:{sport_upper}"

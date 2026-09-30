@@ -7,8 +7,11 @@ from threading import Lock
 
 from market_snapshot.adapter import build_preview, combine_parlay
 from market_snapshot.compat import resolve_event, resolve_selection
+from market_snapshot.flags import requires_shared_redis
 
 REDIS_PREVIEW_KEY = "sbme:mt:oddsapi:preview"
+COLLECT_LOCK_KEY = "sbme:mt:oddsapi:collect_lock"
+COLLECT_LOCK_TTL_SECONDS = 120
 
 _LOCK = Lock()
 _PREVIEW: dict | None = None
@@ -17,6 +20,31 @@ _PARLAY_CALLS = 0
 _PROVIDER_HTTP = 0
 _GENERATION = 0
 _BACKEND = "memory"
+
+
+class CacheUnavailableError(Exception):
+    def __init__(self, reason: str, *, stale: bool = False):
+        super().__init__(reason)
+        self.reason = reason
+        self.stale = stale
+
+
+def unavailable_preview(*, reason: str, stale: bool = False) -> dict:
+    return {
+        "unavailable": True,
+        "stale": stale,
+        "reason": reason,
+        "events": [],
+        "compare": [],
+        "player_props": [],
+        "arbitrage": [],
+        "quote_index": {},
+        "http_requests_used": 0,
+        "browsing_triggers_upstream": False,
+        "sgo_event_id": None,
+        "cache_backend": "unavailable",
+        "generation": _GENERATION,
+    }
 
 
 def reset_for_tests() -> None:
@@ -32,6 +60,7 @@ def reset_for_tests() -> None:
     if client is not None:
         try:
             client.delete(REDIS_PREVIEW_KEY)
+            client.delete(COLLECT_LOCK_KEY)
         except Exception:
             pass
 
@@ -46,6 +75,15 @@ def _redis():
 
 def _store(preview: dict) -> str:
     encoded = json.dumps(preview)
+    if requires_shared_redis():
+        client = _redis()
+        if client is None:
+            raise CacheUnavailableError("redis_unavailable")
+        try:
+            client.set(REDIS_PREVIEW_KEY, encoded)
+            return "redis"
+        except Exception as exc:
+            raise CacheUnavailableError("redis_write_failed") from exc
     client = _redis()
     if client is not None:
         try:
@@ -56,19 +94,58 @@ def _store(preview: dict) -> str:
     return "memory"
 
 
-def _load_redis() -> dict | None:
+def _load_redis_status() -> tuple[dict | None, str]:
     client = _redis()
     if client is None:
-        return None
+        return None, "no_client"
     try:
         raw = client.get(REDIS_PREVIEW_KEY)
     except Exception:
-        return None
+        return None, "redis_error"
     if not raw:
-        return None
+        return None, "empty"
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")
-    return json.loads(raw)
+    try:
+        return json.loads(raw), "ok"
+    except Exception:
+        return None, "redis_error"
+
+
+def _load_redis() -> dict | None:
+    cached, status = _load_redis_status()
+    return cached if status == "ok" else None
+
+
+def acquire_collect_lock() -> tuple[bool, str]:
+    """SET NX lock so only one worker collects. Redis is required when Odds API serving is enabled."""
+    if requires_shared_redis():
+        client = _redis()
+        if client is None:
+            return False, "redis_unavailable"
+        try:
+            ok = client.set(COLLECT_LOCK_KEY, "1", nx=True, ex=COLLECT_LOCK_TTL_SECONDS)
+            return (True, "acquired") if ok else (False, "duplicate_worker")
+        except Exception:
+            return False, "redis_lock_failed"
+    from market_snapshot.scheduler import single_flight
+    if not single_flight("oddsapi_collect"):
+        return False, "duplicate_worker"
+    return True, "local"
+
+
+def release_collect_lock() -> None:
+    if requires_shared_redis():
+        client = _redis()
+        if client is None:
+            return
+        try:
+            client.delete(COLLECT_LOCK_KEY)
+        except Exception:
+            pass
+        return
+    from market_snapshot.scheduler import release_flight
+    release_flight("oddsapi_collect")
 
 
 def replace_from_payloads(
@@ -87,7 +164,12 @@ def replace_from_payloads(
     with _LOCK:
         _GENERATION += 1
         preview["generation"] = _GENERATION
-        backend = _store(preview)
+        try:
+            backend = _store(preview)
+        except CacheUnavailableError as exc:
+            _PREVIEW = None
+            _BACKEND = "unavailable"
+            return unavailable_preview(reason=exc.reason, stale=True)
         preview["cache_backend"] = backend
         _BACKEND = backend
         _PREVIEW = preview
@@ -104,6 +186,21 @@ def get_preview(*, root=None) -> dict:
             _PREVIEW = preview
             _HITS += 1
             return _PREVIEW
+        if requires_shared_redis():
+            cached, status = _load_redis_status()
+            if status in {"no_client", "redis_error"}:
+                _BACKEND = "unavailable"
+                _HITS += 1
+                reason = "redis_unavailable" if status == "no_client" else "redis_error"
+                return unavailable_preview(reason=reason)
+            if status == "empty":
+                _BACKEND = "unavailable"
+                _HITS += 1
+                return unavailable_preview(reason="cache_empty_stale", stale=True)
+            _PREVIEW = cached
+            _BACKEND = "redis"
+            _HITS += 1
+            return cached
         if _PREVIEW is None:
             cached = _load_redis()
             if cached is not None:
@@ -141,16 +238,28 @@ def stats() -> dict:
         "sgo_http": 0,
         "generation": _GENERATION,
         "cache_backend": _BACKEND,
+        "shared_redis_required": requires_shared_redis(),
     }
 
 
 def parlay_from_body(body: dict) -> dict:
     global _PARLAY_CALLS
     preview = get_preview()
+    _PARLAY_CALLS += 1
+    if preview.get("unavailable"):
+        return {
+            "ok": False,
+            "unavailable": True,
+            "stale": preview.get("stale", False),
+            "reason": preview.get("reason") or "Shared odds cache is unavailable.",
+            "unavailable_legs": [],
+            "bookmaker_confirmed_quote": False,
+            "combined_suppressed": True,
+            "http_requests_used": 0,
+        }
     index = preview.get("quote_index") or {}
     events = preview.get("events") or []
     resolved_legs, unavailable = _legs_from_body(body, index, events)
-    _PARLAY_CALLS += 1
     if unavailable:
         return {
             "ok": False,
@@ -225,6 +334,13 @@ def _legs_from_body(body: dict, index: dict, events: list[dict]) -> tuple[list[d
 
 def resolve_saved(raw: str | dict) -> dict:
     preview = get_preview()
+    if preview.get("unavailable"):
+        return {
+            "unavailable": True,
+            "stale": preview.get("stale", False),
+            "reason": preview.get("reason") or "Shared odds cache is unavailable.",
+            "sgo_event_id": None,
+        }
     if isinstance(raw, str):
         event = resolve_event(raw, preview.get("events") or [])
         if event.get("found"):

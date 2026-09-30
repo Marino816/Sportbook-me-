@@ -292,6 +292,9 @@ async def get_events(
 @router.get("/events/{event_id}/odds")
 async def get_event_odds(event_id: str, user: User = Depends(get_current_user)):
     """Moneyline/spread/total per bookmaker, extracted from cached event."""
+    blocked = _blocked_sgo("sgo_event_odds", event_id=event_id, books=[])
+    if blocked is not None:
+        return blocked
     try:
         events = await _get_raw_events("MLB")
     except Exception as e:
@@ -321,6 +324,9 @@ async def get_event_odds(event_id: str, user: User = Depends(get_current_user)):
 @router.get("/events/{event_id}/props")
 async def get_event_props(event_id: str, user: User = Depends(get_current_user)):
     """Player props extracted from cached event.odds."""
+    blocked = _blocked_sgo("sgo_event_props", event_id=event_id, players=[], team_props=[], prop_count=0)
+    if blocked is not None:
+        return blocked
     try:
         events = await _get_raw_events("MLB")
     except Exception as e:
@@ -354,6 +360,9 @@ async def get_bookmakers(
     user: User = Depends(get_current_user),
 ):
     """Available bookmakers from live SGO events."""
+    blocked = _blocked_sgo("sgo_bookmakers", bookmakers=[], count=0, league=league)
+    if blocked is not None:
+        return blocked
     try:
         events = await _get_raw_events(league.upper())
     except Exception as e:
@@ -379,6 +388,9 @@ async def get_bookmakers(
 
 @router.get("/sports")
 async def get_sports(user: User = Depends(get_current_user)):
+    blocked = _blocked_sgo("sgo_sports", sports=[], count=0)
+    if blocked is not None:
+        return blocked
     try:
         sgo = await _get_sgo()
         async with sgo:
@@ -399,6 +411,9 @@ async def get_teams(
     league: str = Query("MLB"),
     user: User = Depends(get_current_user),
 ):
+    blocked = _blocked_sgo("sgo_teams", teams=[], count=0, league=league)
+    if blocked is not None:
+        return blocked
     try:
         sgo = await _get_sgo()
         async with sgo:
@@ -423,6 +438,9 @@ async def get_players(
     league: str = Query("MLB"),
     user: User = Depends(get_current_user),
 ):
+    blocked = _blocked_sgo("sgo_players", players=[], count=0, league=league)
+    if blocked is not None:
+        return blocked
     try:
         sgo = await _get_sgo()
         async with sgo:

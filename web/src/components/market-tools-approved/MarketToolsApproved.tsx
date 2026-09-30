@@ -138,7 +138,7 @@ function OddButton({
 }) {
   if (!quote || quote.american == null) {
     return (
-      <button type="button" className="odd" disabled data-market={extra.market || ""} data-event-id={extra.event_id || ""}>
+      <button type="button" className="odd" disabled data-market={extra.market || ""} data-event-id={extra.event_id || ""} data-selection={extra.selection || extra.label || ""}>
         <span>{extra.label}</span>
         <b>unavailable</b>
       </button>
@@ -160,7 +160,7 @@ function OddButton({
     market_label: extra.market_label,
   };
   return (
-    <button type="button" className={`odd${selected ? " is-on" : ""}`} data-market={leg.market} data-event-id={leg.event_id} onClick={() => onAdd(leg)}>
+    <button type="button" className={`odd${selected ? " is-on" : ""}`} data-market={leg.market} data-event-id={leg.event_id} data-selection={leg.selection || ""} data-american={quote.american ?? ""} onClick={() => onAdd(leg)}>
       <span>{extra.label}{shown}</span>
       <b>{money(format, quote)}</b>
     </button>
@@ -197,7 +197,28 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
     let cancelled = false;
     (async () => {
       try {
-        const json = await api("/market-tools/internal/snapshot");
+        const token = getStoredToken();
+        const base = getApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
+        const res = await fetch(`${base}/market-tools/internal/snapshot`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (res.status === 401) {
+          if (!cancelled) setLoadError("Sign in is required for Market Tools.");
+          return;
+        }
+        if (res.status === 403) {
+          if (!cancelled) setLoadError("Market Tools requires an active paid plan. Sign-in alone is not enough.");
+          return;
+        }
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        const json = await res.json();
+        if (json?.data?.unavailable) {
+          if (!cancelled) setLoadError(json.data.reason || "Shared odds cache is unavailable.");
+          return;
+        }
         if (!cancelled) setData(json.data);
       } catch {
         if (!cancelled) setLoadError("Saved snapshot is unavailable. Existing SGO Market Tools stay on the default provider.");
@@ -433,7 +454,7 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
   const refresh = data.refresh || {};
 
   return (
-    <div className={`sbme-mt-approved${desktop ? " desktop-open" : ""}`}>
+    <div className={`sbme-mt-approved${desktop ? " desktop-open" : ""}`} data-generation={data.generation || ""} data-fixture={data.fixture_label || ""}>
       <header className="top">
         <div>
           <p className="kicker">SPORTBOOK ME <span>DFS.AI</span></p>

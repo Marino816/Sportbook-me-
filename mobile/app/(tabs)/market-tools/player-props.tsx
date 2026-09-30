@@ -27,7 +27,13 @@ export default function PlayerPropsScreen() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      const ps = json.data?.players || json.players || [];
+      const payload = json.data;
+      if (payload?.unavailable) {
+        setError(payload.reason || "Player list is unavailable while Odds API Market Tools serving is on.");
+        setPlayers([]);
+        return;
+      }
+      const ps = payload?.players || json.players || [];
       setPlayers(ps);
     } catch (e: any) {
       setError(e.message);
@@ -47,6 +53,11 @@ export default function PlayerPropsScreen() {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
+      if (json.data?.unavailable) {
+        setProps([]);
+        setError(json.data.reason || "Player props are unavailable.");
+        return;
+      }
       const pr = json.data?.props || json.props || json.data || [];
       setProps(Array.isArray(pr) ? pr : []);
     } catch (e: any) {

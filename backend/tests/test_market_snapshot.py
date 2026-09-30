@@ -619,15 +619,32 @@ class FixtureCacheReplacementTests(unittest.TestCase):
         self.assertEqual(CAPTURE_EVIDENCE["elapsed_props_seconds"], 0)
         self.assertFalse(CAPTURE_EVIDENCE["body_changed"])
         self.assertEqual(CAPTURE_EVIDENCE["provider_http_this_report"], 0)
+        self.assertEqual(CAPTURE_EVIDENCE["interval_verification"], "insufficient")
+        self.assertFalse(CAPTURE_EVIDENCE["proved_provider_freshness"])
 
         class Dummy:
             id = 1
-            is_pro = False
+            is_pro = True
             role = "user"
+            active_subscription_id = None
+
+        async def override_db():
+            class Sess:
+                async def execute(self, *a, **k):
+                    class R:
+                        def scalars(self):
+                            class S:
+                                def first(self):
+                                    return None
+                            return S()
+                    return R()
+            yield Sess()
 
         app = FastAPI()
         app.include_router(router, prefix="/api/market-tools")
         app.dependency_overrides[get_current_user] = lambda: Dummy()
+        from models.database import get_db
+        app.dependency_overrides[get_db] = override_db
         client = TestClient(app)
         from market_snapshot.collector import load_labeled_fixture
         from market_snapshot.cache import reset_for_tests
@@ -645,5 +662,239 @@ class FixtureCacheReplacementTests(unittest.TestCase):
         self.assertNotEqual(a["events"][0]["books"][0]["h2h"]["home"]["source_timestamp"], a["retrieved_at"])
         self.assertEqual(a["cache"]["odds_api_http"], 0)
         self.assertEqual(b["cache"]["odds_api_http"], 0)
+        from market_snapshot.timed_refresh_plan import timed_refresh_plan
+        plan = timed_refresh_plan()
+        self.assertFalse(plan["executable_now"])
+        self.assertEqual(plan["provider_http"], 0)
+        self.assertEqual(plan["minimum_wait_between_captures_seconds"]["featured_near_window"], 300)
+        self.assertEqual(plan["minimum_wait_between_captures_seconds"]["props_near_window"], 600)
+
+
+class SharedCacheFailureTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["NODE_ENV"] = "development"
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "true"
+        os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "false"
+        os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+        from market_snapshot.cache import reset_for_tests
+        reset_for_tests()
+
+    def tearDown(self):
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
+        os.environ.pop("NODE_ENV", None)
+        from market_snapshot.cache import reset_for_tests
+        reset_for_tests()
+
+    def test_enabled_mode_does_not_fall_back_to_memory(self):
+        from unittest.mock import patch
+        from market_snapshot.cache import get_preview, public_preview, acquire_collect_lock, release_collect_lock
+        from market_snapshot.collector import collect
+
+        with patch("market_snapshot.cache._redis", lambda: None):
+            preview = get_preview()
+            self.assertTrue(preview["unavailable"])
+            self.assertEqual(preview["reason"], "redis_unavailable")
+            self.assertEqual(preview["events"], [])
+            pub = public_preview()
+            self.assertTrue(pub["unavailable"])
+            skipped = collect()
+            self.assertTrue(skipped["skipped"])
+            self.assertEqual(skipped["http_requests"], 0)
+            os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "true"
+            skipped = collect()
+            self.assertTrue(skipped["skipped"])
+            self.assertEqual(skipped["http_requests"], 0)
+            self.assertEqual(skipped["reason"], "redis_unavailable")
+
+        class FakeRedis:
+            def __init__(self):
+                self.store = {}
+
+            def get(self, key):
+                return self.store.get(key)
+
+            def set(self, key, value, nx=False, ex=None):
+                if nx and key in self.store:
+                    return False
+                self.store[key] = value
+                return True
+
+            def delete(self, key):
+                self.store.pop(key, None)
+
+        fake = FakeRedis()
+        with patch("market_snapshot.cache._redis", lambda: fake):
+            empty = get_preview()
+            self.assertTrue(empty["unavailable"])
+            self.assertTrue(empty["stale"])
+            self.assertEqual(empty["reason"], "cache_empty_stale")
+            ok1, why1 = acquire_collect_lock()
+            ok2, why2 = acquire_collect_lock()
+            self.assertTrue(ok1)
+            self.assertEqual(why1, "acquired")
+            self.assertFalse(ok2)
+            self.assertEqual(why2, "duplicate_worker")
+            release_collect_lock()
+            ok3, why3 = acquire_collect_lock()
+            self.assertTrue(ok3)
+            release_collect_lock()
+
+        class DownRedis:
+            def get(self, key):
+                raise ConnectionError("down")
+
+            def set(self, *a, **k):
+                raise ConnectionError("down")
+
+            def delete(self, key):
+                raise ConnectionError("down")
+
+        with patch("market_snapshot.cache._redis", lambda: DownRedis()):
+            err = get_preview()
+            self.assertTrue(err["unavailable"])
+            self.assertEqual(err["reason"], "redis_error")
+
+
+class EntitlementTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["NODE_ENV"] = "development"
+        os.environ["MARKET_TOOLS_PROVIDER"] = "oddsapi_snapshot"
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "false"
+        from market_snapshot.collector import load_labeled_fixture
+        from market_snapshot.cache import reset_for_tests
+        reset_for_tests()
+        load_labeled_fixture("fixture_a_baseline.json")
+
+    def tearDown(self):
+        os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+        os.environ.pop("NODE_ENV", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
+        from market_snapshot.cache import reset_for_tests
+        reset_for_tests()
+
+    def _client(self, user):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from api.auth import get_current_user
+        from api.market_tools_internal import router
+        from models.database import get_db
+
+        async def override_db():
+            class Sess:
+                async def execute(self, *a, **k):
+                    class R:
+                        def scalars(self):
+                            class S:
+                                def first(self):
+                                    return None
+                            return S()
+                    return R()
+            yield Sess()
+
+        app = FastAPI()
+        app.include_router(router, prefix="/api/market-tools")
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_db] = override_db
+        return TestClient(app)
+
+    def test_auth_alone_does_not_grant_snapshot(self):
+        class Starter:
+            id = 9
+            is_pro = False
+            role = "user"
+            active_subscription_id = None
+
+        client = self._client(Starter())
+        status = client.get("/api/market-tools/internal/status")
+        self.assertEqual(status.status_code, 200)
+        auth = status.json()["data"]["auth"]
+        self.assertTrue(auth["authenticated"])
+        self.assertFalse(auth["entitled"])
+        snap = client.get("/api/market-tools/internal/snapshot")
+        self.assertEqual(snap.status_code, 403)
+        parlay = client.post("/api/market-tools/internal/parlay", json={"leg_ids": []})
+        self.assertEqual(parlay.status_code, 403)
+        resolve = client.post("/api/market-tools/internal/resolve", json={"id": "x"})
+        self.assertEqual(resolve.status_code, 403)
+
+    def test_pro_flag_can_read_snapshot(self):
+        class Pro:
+            id = 3
+            is_pro = True
+            role = "user"
+            active_subscription_id = None
+
+        client = self._client(Pro())
+        snap = client.get("/api/market-tools/internal/snapshot")
+        self.assertEqual(snap.status_code, 200)
+        self.assertEqual(snap.json()["data"]["events"][0]["books"][0]["h2h"]["home"]["american"], -148)
+
+    def test_active_subscription_is_entitled(self):
+        import asyncio
+        from market_snapshot.entitlement import plan_entitlement
+
+        class Sub:
+            plan_name = "Pro"
+            status = "active"
+
+        class Paid:
+            id = 4
+            is_pro = False
+            role = "user"
+            active_subscription_id = 77
+
+        class Sess:
+            async def execute(self, *a, **k):
+                class R:
+                    def scalars(self):
+                        class S:
+                            def first(self):
+                                return Sub()
+                        return S()
+                return R()
+
+        info = asyncio.run(plan_entitlement(Paid(), Sess()))
+        self.assertTrue(info["entitled"])
+        self.assertEqual(info["plan"], "Pro")
+
+
+class ConsumerProjectionTests(unittest.TestCase):
+    def test_mobile_game_row_and_unknown_book_and_odd_id(self):
+        os.environ["NODE_ENV"] = "development"
+        os.environ["MARKET_TOOLS_PROVIDER"] = "oddsapi_snapshot"
+        from market_snapshot.consumers import event_card_to_mobile_game, filter_events_for_league
+        from market_snapshot.books import map_oddsapi_book_key
+        from market_engine import sgo_odd_id_unavailable, identity_from_oddsapi_quote, MarketType
+
+        row = event_card_to_mobile_game({
+            "id": "oddsapi:americanfootball_nfl:ffffffffffffffffffffffffffffffff",
+            "home_team": "Fixture Home",
+            "away_team": "Fixture Away",
+            "commence_time": "2026-10-05T17:00:00Z",
+            "selector": "nfl",
+            "books": [{"bookmaker": "DraftKings", "h2h": {"home": {"american": -148}, "away": {"american": 130}}, "spreads": {"home": {"line": -3.5}}, "totals": {}}],
+        })
+        self.assertEqual(row["game_id"], "oddsapi:americanfootball_nfl:ffffffffffffffffffffffffffffffff")
+        self.assertEqual(row["home_team_name"], "Fixture Home")
+        self.assertEqual(row["moneyline_home"], -148)
+        self.assertIsNone(row["sgo_event_id"])
+        self.assertEqual(row["live_score"], "unavailable")
+        self.assertEqual(filter_events_for_league([{"selector": "nfl"}], "UFC"), [])
+        unknown = map_oddsapi_book_key("not_a_real_book")
+        self.assertTrue(unknown["unavailable"])
+        mapped = map_oddsapi_book_key("draftkings")
+        self.assertFalse(mapped["unavailable"])
+        self.assertEqual(mapped["catalog_name"], "DraftKings")
+        self.assertIsNone(mapped["sgo_id"])
+        blocked = sgo_odd_id_unavailable("sgo-odd-1")
+        self.assertTrue(blocked["unavailable"])
+        ident = identity_from_oddsapi_quote({"internal_event_id": "oddsapi:x:y", "selection": "Home", "period": "game"}, market_type=MarketType.MONEYLINE)
+        self.assertEqual(ident.odd_id, "")
+        self.assertEqual(ident.event_id, "oddsapi:x:y")
+        os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+        os.environ.pop("NODE_ENV", None)
 
 

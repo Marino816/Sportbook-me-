@@ -133,7 +133,7 @@ class MarketType(str, Enum):
 @dataclass
 class MarketIdentity:
     """Uniquely identifies a market across bookmakers."""
-    odd_id: str = ""  # SGO oddID
+    odd_id: str = ""  # SGO oddID only. Empty when serving Odds API namespaced quote ids.
     event_id: str = ""
     market_type: MarketType = MarketType.MONEYLINE
     period: str = "FULL_GAME"  # FULL_GAME, 1H, 2H, Q1, etc.
@@ -141,6 +141,34 @@ class MarketIdentity:
     stat_id: Optional[str] = None  # e.g., "hits", "homeRuns", "fantasyScore"
     selection: str = ""  # "over", "under", "home", "away", "draw"
     line: Optional[float] = None  # e.g., 228.5, -6.5, 1.5 (for props)
+
+
+def identity_from_oddsapi_quote(quote: dict, *, market_type: MarketType = MarketType.MONEYLINE) -> MarketIdentity:
+    """Build identity from an Odds API namespaced quote. Never copies an SGO oddID."""
+    return MarketIdentity(
+        odd_id="",
+        event_id=quote.get("internal_event_id") or quote.get("event_id") or "",
+        market_type=market_type,
+        period=quote.get("period") or "game",
+        player_id=quote.get("internal_player_id"),
+        stat_id=quote.get("market"),
+        selection=quote.get("selection") or "",
+        line=quote.get("line"),
+    )
+
+
+def sgo_odd_id_unavailable(odd_id: str, event_id: str = "") -> dict:
+    """SGO oddIDs are not Odds API selection ids. Do not invent a mapping."""
+    from market_snapshot.provider import serves_oddsapi
+    if not serves_oddsapi():
+        return {"unavailable": False, "odd_id": odd_id, "event_id": event_id}
+    return {
+        "unavailable": True,
+        "capability": "sgo_odd_id",
+        "sgo_odd_id": odd_id,
+        "event_id": event_id,
+        "reason": "SGO oddIDs are not Odds API selection identifiers. No mapping was invented.",
+    }
 
 
 @dataclass

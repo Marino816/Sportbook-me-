@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from market_snapshot.cache import replace_from_payloads, stats
+from market_snapshot.cache import acquire_collect_lock, release_collect_lock, replace_from_payloads, stats
 from market_snapshot.flags import collect_enabled, oddsapi_enabled
 from market_snapshot.scheduler import quota_allows
 
@@ -40,8 +40,25 @@ def collect(*, used_month: int = 0, used_day: int = 0, max_credit_cost: int = 3)
             "reason": "quota_stop",
             "browsing_triggers_upstream": False,
         }
+    acquired, lock_reason = acquire_collect_lock()
+    if not acquired:
+        return {
+            "ok": False,
+            "skipped": True,
+            "http_requests": 0,
+            "reason": lock_reason,
+            "browsing_triggers_upstream": False,
+            "duplicate_collection_prevented": lock_reason == "duplicate_worker",
+        }
+    try:
+        return _collect_locked(max_credit_cost=max_credit_cost)
+    finally:
+        release_collect_lock()
+
+
+def _collect_locked(*, max_credit_cost: int) -> dict:
     from market_snapshot.access import load_key
-    from market_snapshot.bounded_fetch import OddsImportError, get_json, _load_ledger
+    from market_snapshot.bounded_fetch import get_json, _load_ledger
 
     key = load_key()
     if not key:
@@ -68,6 +85,15 @@ def collect(*, used_month: int = 0, used_day: int = 0, max_credit_cost: int = 3)
         fixture_label=None,
         source="collector",
     )
+    if preview.get("unavailable"):
+        return {
+            "ok": False,
+            "skipped": True,
+            "http_requests": 0,
+            "reason": preview.get("reason") or "redis_unavailable",
+            "stale": preview.get("stale", False),
+            "browsing_triggers_upstream": False,
+        }
     return {
         "ok": True,
         "skipped": False,
@@ -92,6 +118,15 @@ def load_labeled_fixture(name: str) -> dict:
         fixture_label=label,
         source="fixture",
     )
+    if preview.get("unavailable"):
+        return {
+            "ok": False,
+            "unavailable": True,
+            "http_requests": 0,
+            "label": label,
+            "reason": preview.get("reason"),
+            "stale": preview.get("stale", False),
+        }
     home = _home_h2h(preview)
     return {
         "ok": True,

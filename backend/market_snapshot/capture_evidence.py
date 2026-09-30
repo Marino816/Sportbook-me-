@@ -22,9 +22,14 @@ CAPTURE_EVIDENCE = {
     "elapsed_featured_seconds": 1,
     "elapsed_props_seconds": 0,
     "body_changed": False,
+    "interval_verification": "insufficient",
+    "proved_provider_freshness": False,
+    "configured_near_window_seconds": {"featured": 300, "props": 600},
     "note": (
-        "Provider last_update lives on each bookmaker object in the saved payload "
-        "(source_timestamp). retrieved_at is the HTTP collection time. Captures 1 and 2 "
-        "returned identical bodies, so listed prices did not move in that 1s window."
+        "INSUFFICIENT FOR INTERVAL VERIFICATION. Featured elapsed 1 second and props 0 seconds, "
+        "both far below the configured near-window intervals (300s featured / 600s props). "
+        "Identical bodies in a 0–1s window do not prove provider last_update freshness. "
+        "source_timestamp is bookmaker last_update; retrieved_at is HTTP collection time. "
+        "A correctly timed later test must wait at least those intervals between captures."
     ),
 }

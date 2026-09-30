@@ -123,6 +123,7 @@ def _game_snapshot(
 ) -> MarketSnapshot:
     snap = MarketSnapshot(
         identity=MarketIdentity(
+            odd_id="",
             event_id=event_id,
             market_type=market_type,
             selection=selection,
@@ -354,6 +355,7 @@ def _build_prop_snapshots(event_id: str, props) -> dict[str, MarketSnapshot]:
         rows.sort(key=lambda bl: bookmaker_rank(bl.bookmaker))
         snapshots[f"prop:{pid}:{market}:over"] = MarketSnapshot(
             identity=MarketIdentity(
+                odd_id="",
                 event_id=event_id, market_type=MarketType.PLAYER_PROP,
                 player_id=pid, stat_id=market, selection="over",
                 line=(rows[0].line if rows else None),
@@ -364,6 +366,7 @@ def _build_prop_snapshots(event_id: str, props) -> dict[str, MarketSnapshot]:
         rows.sort(key=lambda bl: bookmaker_rank(bl.bookmaker))
         snapshots[f"prop:{pid}:{market}:under"] = MarketSnapshot(
             identity=MarketIdentity(
+                odd_id="",
                 event_id=event_id, market_type=MarketType.PLAYER_PROP,
                 player_id=pid, stat_id=market, selection="under",
                 line=(rows[0].line if rows else None),

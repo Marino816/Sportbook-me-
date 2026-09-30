@@ -8,9 +8,11 @@ from market_snapshot.flags import (  # noqa: F401
     PROVIDER_SNAPSHOT,
     blocks_sgo,
     collect_enabled,
+    fixture_ingest_allowed,
     flag_status,
     market_tools_provider,
     oddsapi_enabled,
+    requires_shared_redis,
     serves_oddsapi,
     snapshot_mode,
 )

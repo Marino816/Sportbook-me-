@@ -1,4 +1,4 @@
-"""Provider-independent Market Tools internal API. Auth required. Zero provider HTTP in snapshot mode."""
+"""Provider-independent Market Tools internal API. Auth + plan entitlement. Zero provider HTTP in snapshot mode."""
 
 from __future__ import annotations
 
@@ -7,10 +7,16 @@ from pydantic import BaseModel, Field
 
 from api.auth import get_current_user
 from api.utils import wrap_data
+from models.database import get_db
 from models.domain import User
+from sqlalchemy.ext.asyncio import AsyncSession
+from market_snapshot.entitlement import plan_entitlement, require_market_tools_entitlement
+from market_snapshot.flags import fixture_ingest_allowed
 from market_snapshot.provider import flag_status, serves_oddsapi, market_tools_provider
 
 router = APIRouter(tags=["SB-Me Market Tools Internal"])
+
+ALLOWED_FIXTURES = {"fixture_a_baseline.json", "fixture_b_price_change.json"}
 
 
 class ParlayInternalRequest(BaseModel):
@@ -34,11 +40,15 @@ def _require_oddsapi_serve() -> None:
 
 
 @router.get("/internal/status")
-async def market_tools_status(user: User = Depends(get_current_user)):
+async def market_tools_status(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     from market_snapshot.cache import stats
     from market_snapshot.cutover import activation_state
     from market_snapshot.scheduler import CONTINUOUS_FETCH_ENABLED, CONFIG
 
+    entitled = await plan_entitlement(user, db)
     provider = market_tools_provider()
     flags = flag_status()
     payload = {
@@ -48,7 +58,16 @@ async def market_tools_status(user: User = Depends(get_current_user)):
         "oddsapi_enabled": flags["oddsapi_enabled"],
         "collect_enabled": flags["collect_enabled"],
         "cutover_active": flags["cutover_active"],
-        "auth": {"user_id": user.id, "is_pro": bool(getattr(user, "is_pro", False)), "role": getattr(user, "role", "user")},
+        "auth": {
+            "user_id": user.id,
+            "is_pro": bool(getattr(user, "is_pro", False)),
+            "role": getattr(user, "role", "user"),
+            "authenticated": True,
+            "entitled": entitled["entitled"],
+            "plan": entitled["plan"],
+            "plan_status": entitled["status"],
+        },
+        "entitlement": entitled,
         "continuous_fetch_enabled": CONTINUOUS_FETCH_ENABLED,
         "browsing_triggers_upstream": False,
         "unsupported": {
@@ -71,18 +90,22 @@ async def market_tools_status(user: User = Depends(get_current_user)):
 
 
 @router.get("/internal/snapshot")
-async def market_tools_snapshot(user: User = Depends(get_current_user)):
+async def market_tools_snapshot(user: User = Depends(require_market_tools_entitlement)):
     _require_oddsapi_serve()
     from market_snapshot.cache import public_preview, stats
 
     data = public_preview()
-    data["auth"] = {"user_id": user.id, "is_pro": bool(getattr(user, "is_pro", False))}
+    data["auth"] = {
+        "user_id": user.id,
+        "is_pro": bool(getattr(user, "is_pro", False)),
+        "entitled": True,
+    }
     data["cache"] = stats()
     return wrap_data(data, source="cached")
 
 
 @router.post("/internal/parlay")
-async def market_tools_parlay(body: ParlayInternalRequest, user: User = Depends(get_current_user)):
+async def market_tools_parlay(body: ParlayInternalRequest, user: User = Depends(require_market_tools_entitlement)):
     _require_oddsapi_serve()
     from market_snapshot.cache import parlay_from_body, stats
 
@@ -93,7 +116,7 @@ async def market_tools_parlay(body: ParlayInternalRequest, user: User = Depends(
 
 
 @router.post("/internal/resolve")
-async def market_tools_resolve(body: ResolveRequest, user: User = Depends(get_current_user)):
+async def market_tools_resolve(body: ResolveRequest, user: User = Depends(require_market_tools_entitlement)):
     _require_oddsapi_serve()
     from market_snapshot.cache import resolve_saved
 
@@ -104,3 +127,19 @@ async def market_tools_resolve(body: ResolveRequest, user: User = Depends(get_cu
         }, source="cached")
     raw = body.id or body.event_id
     return wrap_data(resolve_saved(raw), source="cached")
+
+
+@router.post("/internal/fixtures/{name}")
+async def market_tools_load_fixture(name: str, user: User = Depends(require_market_tools_entitlement)):
+    """Load a labeled local fixture into the shared cache. No provider HTTP. Dev ingest only."""
+    _require_oddsapi_serve()
+    if not fixture_ingest_allowed():
+        raise HTTPException(status_code=404, detail="Fixture ingest is off.")
+    filename = name if name.endswith(".json") else f"{name}.json"
+    if filename not in ALLOWED_FIXTURES:
+        raise HTTPException(status_code=400, detail="Unknown labeled fixture.")
+    from market_snapshot.collector import load_labeled_fixture
+
+    result = load_labeled_fixture(filename)
+    result["not_customer_data"] = True
+    return wrap_data(result, source="fixture")

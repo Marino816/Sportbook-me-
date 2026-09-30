@@ -35,7 +35,11 @@ async function fetchLeague(league: string): Promise<SBEvent[]> {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
-    return normalizeEvents(json?.data);
+    const payload = json?.data as { unavailable?: boolean; reason?: string; events?: unknown } | unknown[] | undefined;
+    if (payload && typeof payload === "object" && !Array.isArray(payload) && payload.unavailable) {
+      throw new Error(payload.reason || "Live scores are unavailable.");
+    }
+    return normalizeEvents(Array.isArray(payload) ? payload : payload?.events);
   })();
   try { return await inflight[league]; } finally { delete inflight[league]; }
 }

@@ -38,6 +38,18 @@ def collect_enabled() -> bool:
     return oddsapi_enabled() and _truthy("MARKET_TOOLS_ODDSAPI_COLLECT", False)
 
 
+def requires_shared_redis() -> bool:
+    """Enabled production-capable Odds API serving must use Redis, not per-process memory."""
+    return oddsapi_enabled()
+
+
+def fixture_ingest_allowed() -> bool:
+    """Local labeled-fixture ingest. Not a production flag. Default OFF."""
+    if is_production():
+        return False
+    return _truthy("MARKET_TOOLS_FIXTURE_INGEST", False)
+
+
 def serves_oddsapi() -> bool:
     return snapshot_mode() or oddsapi_enabled()
 
@@ -62,6 +74,8 @@ def flag_status() -> dict:
         "snapshot_development_only": True,
         "oddsapi_enabled": oddsapi_enabled(),
         "collect_enabled": collect_enabled(),
+        "requires_shared_redis": requires_shared_redis(),
+        "fixture_ingest_allowed": fixture_ingest_allowed(),
         "browsing_triggers_upstream": False,
         "cutover_active": oddsapi_enabled() and is_production(),
         "production": is_production(),
