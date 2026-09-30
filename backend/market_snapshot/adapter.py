@@ -17,6 +17,7 @@ from market_snapshot.contracts import (
     line_key,
 )
 from market_snapshot.analysis import attach_fair_to_books, enrich_compare_groups, scan_arbitrage
+from market_snapshot.compat import internal_event_record, namespaced_quote_id, production_gaps
 from market_snapshot.cost_estimate import estimate_monthly
 from market_snapshot.scheduler import CONFIG, simulate_usage
 from market_snapshot.leagues import (
@@ -71,9 +72,10 @@ def flatten_odds(sport_key: str, sport_title: str, events: list) -> list[dict]:
                     player = outcome.get("description")
                     if meta.get("kind") == "outright" and not player:
                         player = selection
+                    ident = internal_event_record(sport_key, event_id)
                     rows.append({
-                        "id": "|".join(str(x) for x in (
-                            event_id,
+                        "id": namespaced_quote_id((
+                            ident["internal_event_id"],
                             market_key,
                             selection,
                             line_key(point),
@@ -81,7 +83,12 @@ def flatten_odds(sport_key: str, sport_title: str, events: list) -> list[dict]:
                             player or "",
                             period,
                         )),
-                        "event_id": event_id,
+                        "event_id": ident["internal_event_id"],
+                        "source_namespace": ident["source_namespace"],
+                        "source_event_id": ident["source_event_id"],
+                        "internal_event_id": ident["internal_event_id"],
+                        "sgo_event_id": None,
+                        "sgo_mapping": ident["sgo_mapping"],
                         "sport_key": sport_key,
                         "sport_title": sport_title,
                         "sport_group": meta.get("sport_group") or sport_title,
@@ -182,7 +189,7 @@ def _quote(row: dict) -> dict | None:
     if row.get("american") is None:
         return None
     return {
-        "id": "|".join(str(x) for x in (
+        "id": row.get("id") or namespaced_quote_id((
             row.get("event_id"),
             row.get("market"),
             row.get("selection"),
@@ -209,6 +216,11 @@ def build_event_cards(rows: list[dict]) -> list[dict]:
             continue
         event = events.setdefault(eid, {
             "id": eid,
+            "internal_event_id": row.get("internal_event_id") or eid,
+            "source_namespace": row.get("source_namespace") or "oddsapi",
+            "source_event_id": row.get("source_event_id"),
+            "sgo_event_id": None,
+            "sgo_mapping": "unavailable",
             "sport_key": row.get("sport_key"),
             "sport_title": row.get("sport_title"),
             "sport_group": row.get("sport_group"),
@@ -514,6 +526,7 @@ def build_preview(*, root: Path | None = None) -> dict:
         "player_props": prop_rows,
         "player_props_samples": prop_reports,
         "player_props_note": "One sampled event is not league-wide coverage. NCAAB had no saved events. Soccer props are documented only for listed leagues.",
+        "compatibility": production_gaps(),
         "quote_index": quote_index,
         "coverage": coverage,
         "coverage_by_title": {row["title"]: row for row in coverage},

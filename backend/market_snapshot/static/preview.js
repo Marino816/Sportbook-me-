@@ -268,7 +268,7 @@
       const prices = (g.prices || []).map((p) => `<div class="price${p.best_listed ? " best" : ""}">${esc(p.bookmaker)} <b>${esc(money(p))}</b>${p.best_listed ? " · Best listed price" : ""}</div>`).join("");
       const matchup = g.kind === "outright" ? (g.sport_title || "Tournament") : `${g.away_team || ""} @ ${g.home_team || ""}`;
       const cons = g.consensus
-        ? `<p class="note">Consensus ${esc(money({ american: g.consensus.american, decimal: g.consensus.decimal }))} · ${g.consensus.book_count} books · ${esc(g.consensus.timestamp_range?.earliest || "—")} to ${esc(g.consensus.timestamp_range?.latest || "—")}</p>`
+        ? `<p class="note">${esc(g.consensus.label || "Consensus")} ${esc(money({ american: g.consensus.american, decimal: g.consensus.decimal }))} · ${g.consensus.book_count} books · includes bookmaker margin · ${esc(g.consensus.timestamp_range?.earliest || "—")} to ${esc(g.consensus.timestamp_range?.latest || "—")}${g.settlement_note ? ` · ${esc(g.settlement_note)}` : ""}</p>`
         : `<p class="note">Consensus unavailable.</p>`;
       return `<article class="card">
         <div class="match"><div class="teams">${esc(matchup)}</div><div class="meta">${esc(g.market_label || g.market)} · ${esc(g.player || g.selection)} ${esc(signed(g.line))} · ${esc(g.period)}</div></div>
@@ -276,7 +276,7 @@
         ${cons}
       </article>`;
     }).join("");
-    $("panel-compare").innerHTML = `<p class="note">Compared only when event, market, selection, line, and period match. Different spreads and totals stay separate. Best listed price is the highest American odds in this snapshot, including ties. Fair odds are per sportsbook from a complete outcome set.</p>` + arbHtml + (cards || `<article class="card"><p class="empty">No comparable prices for this filter.</p></article>`);
+    $("panel-compare").innerHTML = `<p class="note">Compared only when event, market, selection, line, and period match. Different spreads and totals stay separate. Consensus is vig-inclusive and is not a normalized fair-probability distribution. Fair odds are per sportsbook from a complete outcome set after proportional margin removal. Missing settlement rules are not treated as compatible. Snapshot discrepancies are historical — not verified live.</p>` + arbHtml + (cards || `<article class="card"><p class="empty">No comparable prices for this filter.</p></article>`);
   }
 
   function renderProps() {
@@ -378,15 +378,16 @@
   function renderDev() {
     const r = state.data.retrieved || {};
     const cov = (state.data.coverage || []).map((c) => `<article><h3 style="margin:0 0 4px;color:var(--gold2)">${esc(c.title)}</h3><p>${esc(c.status)}${c.event_count != null ? ` · ${c.event_count} events` : ""}</p><p>${esc(JSON.stringify(c.markets))}</p></article>`).join("");
-    const est = state.data.monthly_usage_estimate || {};
     const refresh = state.data.refresh || {};
     const samples = (state.data.player_props_samples || []).map((s) => `<p>${esc(s.sport_key)} · requested ${esc((s.requested_markets || []).join(", "))} · returned ${esc((s.returned_markets || []).join(", "))} · players ${esc(s.player_count)} · books ${esc((s.bookmakers || []).join(", "))} · ${esc(s.season_label || "")} · missing ${esc((s.missing_markets || []).join(", ") || "none")}</p>`).join("");
     $("dev-body").innerHTML = `
       <p>Imported ${esc(r.imported_at || "—")}. Original HTTP ${esc(r.http_requests_used)} / credits ${esc(r.credits_used_from_headers)}. Expansion HTTP ${esc(r.expansion_http)} / credits ${esc(r.expansion_credits)}. Props HTTP ${esc(r.props_http)} / credits ${esc(r.props_credits)}. Remaining ${esc(r.remaining_credits_header)}.</p>
-      <p>Continuous fetch: ${esc(refresh.continuous_fetch_enabled)}. ${esc(refresh.recommendation || "")}</p>
-      <p>Scenario A monthly with reserve: ${esc(refresh.scenario_a_pregame && refresh.scenario_a_pregame.monthly_with_reserve)}. Scenario B: ${esc(refresh.scenario_b_faster && refresh.scenario_b_faster.monthly_with_reserve)}.</p>
+      <p>Continuous fetch: ${esc(refresh.continuous_fetch_enabled)}. ${esc(refresh.recommendation_note || "")}</p>
+      <p>Scenario A monthly with reserve: ${esc(refresh.scenario_a_pregame && refresh.scenario_a_pregame.monthly_with_reserve)}. $59 covers A: ${esc(refresh.scenario_a_pregame && refresh.scenario_a_pregame.plans && refresh.scenario_a_pregame.plans.plan_59 && refresh.scenario_a_pregame.plans.plan_59.covers)}. $119 covers A: ${esc(refresh.scenario_a_pregame && refresh.scenario_a_pregame.plans && refresh.scenario_a_pregame.plans.plan_119 && refresh.scenario_a_pregame.plans.plan_119.covers)}.</p>
+      <p>Scenario B monthly with reserve: ${esc(refresh.scenario_b_faster && refresh.scenario_b_faster.monthly_with_reserve)}. $59 covers B: ${esc(refresh.scenario_b_faster && refresh.scenario_b_faster.plans && refresh.scenario_b_faster.plans.plan_59 && refresh.scenario_b_faster.plans.plan_59.covers)}. $119 covers B: ${esc(refresh.scenario_b_faster && refresh.scenario_b_faster.plans && refresh.scenario_b_faster.plans.plan_119 && refresh.scenario_b_faster.plans.plan_119.covers)}.</p>
+      <p>${esc(refresh.five_event_prop_limit || "")}</p>
       <p>${esc(state.data.golf_coverage_note || "")}</p>
-      <p>Monthly estimate with reserve: ${esc(est.monthly_with_reserve)} credits. Plan: ${esc(JSON.stringify(est.cheapest_sufficient_under_149))}</p>
+      <p>Quoted prices await checkout confirmation. Coverage was not removed to fit a plan.</p>
       ${samples}
       <div class="cov">${cov}</div>
     `;

@@ -59,7 +59,7 @@ SOURCE = {
         "15m": {"price_usd": 249, "credits_per_month": 15000000},
     },
     "compatibility_gaps": [
-        "Production Market Tools identify events with SportsGameOdds ids; Odds API uses its own event ids.",
+        "Odds API source IDs are namespaced as oddsapi:{sport_key}:{id} and are never returned as SGO event IDs.",
         "No SGO event ids, Fair Odds from SGO, or nested /v2/events cache in this adapter.",
         "Period, alternate, and unsampled player-prop markets remain unavailable.",
         "Caesars and Fanatics are documented as paid-subscription-only on region us.",

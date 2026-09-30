@@ -224,6 +224,10 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(complete["label"], "Market-derived fair odds")
         self.assertFalse(complete["sbme_predictive"])
         self.assertEqual(complete["fair_american"], [100, 100])
+        self.assertTrue(complete["normalized"])
+        self.assertEqual(complete["probability_sum"], 1.0)
+        self.assertFalse(complete["includes_bookmaker_margin"])
+        self.assertTrue(complete["raw_implied_includes_margin"])
         self.assertIsNone(fair_from_complete([-110]))
 
     def test_consensus_dedupes_books_and_keeps_timestamp_range(self):
@@ -235,6 +239,9 @@ class AnalysisTests(unittest.TestCase):
         ]
         cons = consensus_prices(prices)
         self.assertEqual(cons["book_count"], 2)
+        self.assertTrue(cons["includes_bookmaker_margin"])
+        self.assertFalse(cons["is_complete_distribution"])
+        self.assertEqual(cons["settlement_rules"], "unconfirmed")
         self.assertEqual(cons["timestamp_range"]["earliest"], "2026-09-30T12:02:00Z")
         self.assertEqual(cons["timestamp_range"]["latest"], "2026-09-30T12:05:00Z")
 
@@ -306,9 +313,74 @@ class SchedulerTests(unittest.TestCase):
         sim = simulate_usage()
         self.assertGreater(sim["scenario_a_pregame"]["monthly_with_reserve"], 0)
         self.assertGreater(sim["scenario_b_faster"]["monthly_with_reserve"], sim["scenario_a_pregame"]["monthly_with_reserve"])
-        self.assertTrue(sim["scenario_b_faster"]["exceeds_100k"])
-        self.assertLess(sim["scenario_a_pregame"]["plan"]["price_usd"], 149)
+        self.assertFalse(sim["scenario_a_pregame"]["plans"]["coverage_removed_to_fit_59"])
+        self.assertEqual(len(sim["full_scope"]["requested_coverage"]["soccer_keys"]), 9)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class CostModelTests(unittest.TestCase):
+    def test_full_scope_partitions_hours_and_does_not_drop_coverage_for_59(self):
+        from market_snapshot.cost_estimate import HOURS_WEEK, full_scope_cost
+        from market_snapshot.leagues import LEAGUES
+        full = full_scope_cost()
+        self.assertEqual(full["requested_coverage"]["league_count"], len(LEAGUES))
+        self.assertEqual(full["requested_coverage"]["soccer_competitions"], 9)
+        a = full["scenario_a"]
+        for row in a["busy_week"]["leagues"]:
+            self.assertEqual(row["hours_accounted"], HOURS_WEEK)
+        self.assertFalse(a["plans"]["coverage_removed_to_fit_59"])
+        self.assertIn("price_status", a["plans"]["plan_59"])
+        self.assertGreater(a["busy_day"]["total"], a["typical_day"]["total"])
+        self.assertEqual(a["busy_week"]["props"]["events_per_refresh"], 5)
+
+
+class CompatTests(unittest.TestCase):
+    def test_sgo_ids_are_unavailable_and_oddsapi_ids_are_namespaced(self):
+        from market_snapshot.compat import namespaced_event_id, preserve_or_unavailable, resolve_event
+        events = [{
+            "id": "oddsapi:americanfootball_nfl:abc",
+            "internal_event_id": "oddsapi:americanfootball_nfl:abc",
+            "source_event_id": "abc",
+            "sport_key": "americanfootball_nfl",
+            "home_team": "Home",
+            "away_team": "Away",
+        }]
+        self.assertEqual(namespaced_event_id("americanfootball_nfl", "abc"), "oddsapi:americanfootball_nfl:abc")
+        sgo = resolve_event("sgo:mlb-123", events)
+        self.assertTrue(sgo["unavailable"])
+        self.assertIsNone(sgo.get("sgo_event_id") or None)
+        self.assertIn("SGO", sgo["reason"])
+        found = resolve_event("oddsapi:americanfootball_nfl:abc", events)
+        self.assertTrue(found["found"])
+        self.assertIsNone(found["sgo_event_id"])
+        missed = preserve_or_unavailable({"event_id": "sgo:nope", "selection": "Home"}, events)
+        self.assertTrue(missed["unavailable"])
+
+    def test_preview_does_not_emit_sgo_event_ids(self):
+        payloads = {
+            "sports": [{"key": "americanfootball_nfl", "title": "NFL"}],
+            "odds": {
+                "americanfootball_nfl": [{
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "commence_time": "2026-10-04T17:00:00Z",
+                    "home_team": "Home",
+                    "away_team": "Away",
+                    "bookmakers": [{
+                        "key": "draftkings",
+                        "title": "DraftKings",
+                        "last_update": "2026-09-30T12:00:00Z",
+                        "markets": [{"key": "h2h", "outcomes": [{"name": "Home", "price": -130}, {"name": "Away", "price": 110}]}],
+                    }],
+                }],
+            },
+            "index": {},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "latest_payloads.json").write_text(json.dumps(payloads))
+            preview = build_preview(root=root)
+        ev = preview["events"][0]
+        self.assertTrue(ev["id"].startswith("oddsapi:"))
+        self.assertEqual(ev["source_event_id"], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        self.assertIsNone(ev["sgo_event_id"])
+        self.assertFalse(preview["compatibility"]["sgo_fields_fabricated"])
+        self.assertIn("Lookup by SGO event ID", " ".join(preview["compatibility"]["unsupported_production_features"]))

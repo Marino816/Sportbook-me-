@@ -6,9 +6,10 @@ import argparse
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from market_snapshot.adapter import build_preview, combine_parlay
+from market_snapshot.compat import resolve_event
 
 STATIC = Path(__file__).resolve().parent / "static"
 DEFAULT_HOST = "127.0.0.1"
@@ -47,6 +48,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/snapshot":
             payload = {k: v for k, v in self.preview.items() if k != "quote_index"}
             return self._json(200, payload)
+        if path == "/api/compat/resolve":
+            qs = parse_qs(urlparse(self.path).query)
+            eid = (qs.get("event_id") or [""])[0]
+            return self._json(200, resolve_event(eid, self.preview.get("events") or []))
         name = path.lstrip("/")
         if (STATIC / name).is_file():
             return self._file(name)

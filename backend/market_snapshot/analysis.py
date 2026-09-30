@@ -14,8 +14,10 @@ DEVIG_METHOD = (
     "sum of implied probabilities from the same bookmaker, market, line, and period."
 )
 CONSENSUS_METHOD = (
-    "Median implied probability across unique bookmakers for the same event, market, "
-    "selection, line, and period. Duplicate book records are not independent observations."
+    "Median vig-inclusive implied probability across unique bookmakers for the same "
+    "event, market, selection, line, and period. Duplicate book records are not "
+    "independent observations. This is not a complete outcome distribution and is "
+    "not de-vigged."
 )
 
 
@@ -41,6 +43,7 @@ def fair_from_complete(americans: list) -> dict | None:
     if total <= 0:
         return None
     fair_probs = [p / total for p in imps]
+    summed = round(sum(fair_probs), 6)
     fair_decimal = [round(1.0 / p, 4) if p > 0 else None for p in fair_probs]
     fair_american = [decimal_to_american(d) if d else None for d in fair_decimal]
     return {
@@ -48,6 +51,10 @@ def fair_from_complete(americans: list) -> dict | None:
         "label": FAIR_LABEL,
         "overround": round(total - 1.0, 4),
         "fair_probabilities": [round(p, 4) for p in fair_probs],
+        "probability_sum": summed,
+        "normalized": True,
+        "includes_bookmaker_margin": False,
+        "raw_implied_includes_margin": True,
         "fair_american": fair_american,
         "fair_decimal": fair_decimal,
         "sbme_predictive": False,
@@ -85,8 +92,21 @@ def consensus_prices(prices: list[dict]) -> dict | None:
         "book_count": len(unique),
         "american": decimal_to_american(round(1.0 / mid, 4)),
         "decimal": round(1.0 / mid, 4),
+        "implied_probability": round(mid, 4),
+        "includes_bookmaker_margin": True,
+        "is_complete_distribution": False,
+        "normalized": False,
+        "equivalent_market": {
+            "event": True,
+            "market": True,
+            "selection": True,
+            "line": True,
+            "period": True,
+            "player": True,
+        },
+        "settlement_rules": "unconfirmed",
         "timestamp_range": rng,
-        "label": "Book consensus (median implied probability)",
+        "label": "Book consensus (median vig-inclusive implied probability — not de-vigged)",
     }
 
 
@@ -127,8 +147,26 @@ def attach_fair_to_books(event: dict) -> None:
 def enrich_compare_groups(groups: list[dict]) -> list[dict]:
     for group in groups:
         group["consensus"] = consensus_prices(group.get("prices") or [])
+        group["equivalent_market"] = {
+            "event_id": group.get("event_id"),
+            "market": group.get("market"),
+            "selection": group.get("selection"),
+            "line": group.get("line"),
+            "period": group.get("period"),
+            "player": group.get("player"),
+        }
+        integer = False
+        try:
+            integer = float(group.get("line")).is_integer() if group.get("line") not in (None, "") else False
+        except (TypeError, ValueError):
+            integer = False
+        group["settlement_rules"] = "unconfirmed"
+        group["settlement_compatible"] = False if integer or group.get("period") not in {None, "", MARKET_PERIOD, "game"} else None
+        if integer:
+            group["settlement_note"] = "Integer line may push/void. Missing settlement rules are not treated as confirmed compatibility."
         group["fair_odds_note"] = (
-            "Fair odds are calculated per sportsbook from a complete outcome set, not from this comparison row."
+            "Fair odds are a normalized complete-set distribution per sportsbook after proportional margin removal. "
+            "Consensus on this row includes bookmaker margin and is not that distribution."
         )
     return groups
 
@@ -278,7 +316,8 @@ def _arb_row(event_id, market, period, line, bests, implied, kind) -> dict:
         "kind": kind,
         "implied_total": round(implied, 4),
         "discrepancy_pct": round((1.0 - implied) * 100, 2),
-        "legs": [{"bookmaker": b.get("bookmaker"), "american": b.get("american")} for b in bests],
+        "legs": [{"bookmaker": b.get("bookmaker"), "american": b.get("american"), "source_timestamp": b.get("source_timestamp")} for b in bests],
+        "source_timestamps": [b.get("source_timestamp") for b in bests],
         "label": ARB_LABEL,
         "executable": False,
         "guaranteed_profit": False,
