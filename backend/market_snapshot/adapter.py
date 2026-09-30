@@ -49,7 +49,7 @@ def _period_for_market(market_key: str | None) -> str:
     return MARKET_PERIOD
 
 
-def flatten_odds(sport_key: str, sport_title: str, events: list) -> list[dict]:
+def flatten_odds(sport_key: str, sport_title: str, events: list, *, retrieved_at: str | None = None) -> list[dict]:
     meta = league_by_key(sport_key) or {}
     rows = []
     for event in events or []:
@@ -114,6 +114,7 @@ def flatten_odds(sport_key: str, sport_title: str, events: list) -> list[dict]:
                         "american": price,
                         "decimal": american_to_decimal(price),
                         "source_timestamp": market_update,
+                        "retrieved_at": retrieved_at,
                         "period": period,
                         "snapshot": True,
                     })
@@ -178,13 +179,13 @@ def compare_groups(rows: list[dict]) -> list[dict]:
     return groups
 
 
-def flatten_player_props(payload: dict | None, *, sport_key: str = "", sport_title: str = "") -> list[dict]:
+def flatten_player_props(payload: dict | None, *, sport_key: str = "", sport_title: str = "", retrieved_at: str | None = None) -> list[dict]:
     if not isinstance(payload, dict):
         return []
     key = sport_key or payload.get("sport_key") or ""
     meta = league_by_key(key) or {}
     title = sport_title or payload.get("sport_title") or meta.get("title") or key
-    rows = flatten_odds(key, title, [payload])
+    rows = flatten_odds(key, title, [payload], retrieved_at=retrieved_at)
     for row in rows:
         row["prop_market"] = row.get("market")
         row["market_label"] = PROP_MARKET_NAMES.get(row.get("market") or "", row.get("market"))
@@ -209,6 +210,7 @@ def _quote(row: dict) -> dict | None:
         "decimal": row.get("decimal"),
         "line": row.get("line"),
         "source_timestamp": row.get("source_timestamp"),
+        "retrieved_at": row.get("retrieved_at"),
         "bookmaker": row.get("bookmaker"),
         "bookmaker_key": row.get("bookmaker_key"),
         "period": row.get("period"),
@@ -464,8 +466,9 @@ def _coverage_row(league: dict, catalog: dict, odds_map: dict, tested_keys: set[
     }
 
 
-def build_preview(*, root: Path | None = None) -> dict:
-    payloads = load_payloads(root=root)
+def build_preview(*, root: Path | None = None, payloads: dict | None = None, retrieved_at: str | None = None, fixture_label: str | None = None) -> dict:
+    payloads = payloads if payloads is not None else load_payloads(root=root)
+    retrieved = retrieved_at or payloads.get("retrieved_at") or (payloads.get("index") or {}).get("imported_at")
     index = payloads.get("index") or {}
     odds_map = payloads.get("odds") or {}
     sports_payload = payloads.get("sports") or []
@@ -476,7 +479,7 @@ def build_preview(*, root: Path | None = None) -> dict:
         events = odds_map.get(league["key"])
         if not isinstance(events, list):
             continue
-        game_rows.extend(flatten_odds(league["key"], league["title"], events))
+        game_rows.extend(flatten_odds(league["key"], league["title"], events, retrieved_at=retrieved))
     coverage = [_coverage_row(league, catalog, odds_map, tested_keys) for league in LEAGUES]
     samples = payloads.get("player_props_samples")
     if not isinstance(samples, list) or not samples:
@@ -486,7 +489,7 @@ def build_preview(*, root: Path | None = None) -> dict:
     prop_reports = []
     for sample in samples:
         payload = sample.get("payload") if isinstance(sample, dict) else None
-        rows = flatten_player_props(payload, sport_key=sample.get("sport_key") or "", sport_title="")
+        rows = flatten_player_props(payload, sport_key=sample.get("sport_key") or "", sport_title="", retrieved_at=retrieved)
         for row in rows:
             row["season_label"] = sample.get("season_label")
         prop_rows.extend(rows)
@@ -507,6 +510,10 @@ def build_preview(*, root: Path | None = None) -> dict:
     return {
         "development": True,
         "live_data": False,
+        "retrieved_at": retrieved,
+        "fixture_label": fixture_label,
+        "bookmaker_timestamp_field": "source_timestamp",
+        "retrieval_timestamp_field": "retrieved_at",
         "label": SNAPSHOT_LABEL,
         "notice": "Saved odds—not live",
         "not_live_label": NOT_LIVE,

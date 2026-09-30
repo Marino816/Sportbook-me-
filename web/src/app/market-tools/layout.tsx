@@ -10,7 +10,7 @@ export default function MarketToolsLayout({ children }: { children: React.ReactN
   const atmosphere = pathname === "/market-tools" ? "tools" : "app";
   const { provider } = useMarketToolsMode();
 
-  if (provider === "oddsapi_snapshot") {
+  if (provider === "oddsapi_snapshot" || provider === "oddsapi") {
     return (
       <AppShell atmosphere={atmosphere}>
         <MarketToolsApproved initialTab={tabFromPath(pathname)} />

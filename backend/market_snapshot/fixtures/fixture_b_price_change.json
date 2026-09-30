@@ -1,0 +1,44 @@
+{
+  "label": "FIXTURE_B_PRICE_CHANGE",
+  "not_customer_data": true,
+  "retrieved_at": "2026-09-30T15:35:44+00:00",
+  "note": "Same fixture event as A with changed listed prices. retrieved_at copied from provider capture 2. Bookmaker last_update is later than capture retrieval.",
+  "sports": [{"key": "americanfootball_nfl", "title": "NFL", "active": true}],
+  "odds": {
+    "americanfootball_nfl": [
+      {
+        "id": "ffffffffffffffffffffffffffffffff",
+        "sport_key": "americanfootball_nfl",
+        "commence_time": "2026-10-05T17:00:00Z",
+        "home_team": "Fixture Home",
+        "away_team": "Fixture Away",
+        "bookmakers": [
+          {
+            "key": "draftkings",
+            "title": "DraftKings",
+            "last_update": "2026-09-30T15:20:00Z",
+            "markets": [
+              {
+                "key": "h2h",
+                "last_update": "2026-09-30T15:20:00Z",
+                "outcomes": [
+                  {"name": "Fixture Away", "price": 140},
+                  {"name": "Fixture Home", "price": -155}
+                ]
+              },
+              {
+                "key": "spreads",
+                "last_update": "2026-09-30T15:20:00Z",
+                "outcomes": [
+                  {"name": "Fixture Away", "price": -105, "point": 3.5},
+                  {"name": "Fixture Home", "price": -115, "point": -3.5}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "index": {"imported_at": "2026-09-30T15:35:44+00:00", "http_requests_used": 0}
+}

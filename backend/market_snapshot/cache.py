@@ -1,36 +1,124 @@
-"""In-process Market Tools snapshot cache. Zero provider HTTP on browse or click."""
+"""Shared Market Tools Odds API cache. Browsing never triggers upstream HTTP."""
 
 from __future__ import annotations
 
+import json
 from threading import Lock
 
 from market_snapshot.adapter import build_preview, combine_parlay
 from market_snapshot.compat import resolve_event, resolve_selection
+
+REDIS_PREVIEW_KEY = "sbme:mt:oddsapi:preview"
 
 _LOCK = Lock()
 _PREVIEW: dict | None = None
 _HITS = 0
 _PARLAY_CALLS = 0
 _PROVIDER_HTTP = 0
+_GENERATION = 0
+_BACKEND = "memory"
 
 
 def reset_for_tests() -> None:
-    global _PREVIEW, _HITS, _PARLAY_CALLS, _PROVIDER_HTTP
+    global _PREVIEW, _HITS, _PARLAY_CALLS, _PROVIDER_HTTP, _GENERATION, _BACKEND
     with _LOCK:
         _PREVIEW = None
         _HITS = 0
         _PARLAY_CALLS = 0
         _PROVIDER_HTTP = 0
+        _GENERATION = 0
+        _BACKEND = "memory"
+    client = _redis()
+    if client is not None:
+        try:
+            client.delete(REDIS_PREVIEW_KEY)
+        except Exception:
+            pass
+
+
+def _redis():
+    try:
+        from providers.redis_client import get_redis_client
+        return get_redis_client()
+    except Exception:
+        return None
+
+
+def _store(preview: dict) -> str:
+    encoded = json.dumps(preview)
+    client = _redis()
+    if client is not None:
+        try:
+            client.set(REDIS_PREVIEW_KEY, encoded)
+            return "redis"
+        except Exception:
+            pass
+    return "memory"
+
+
+def _load_redis() -> dict | None:
+    client = _redis()
+    if client is None:
+        return None
+    try:
+        raw = client.get(REDIS_PREVIEW_KEY)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+    return json.loads(raw)
+
+
+def replace_from_payloads(
+    payloads: dict,
+    *,
+    retrieved_at: str | None = None,
+    fixture_label: str | None = None,
+    source: str = "replace",
+) -> dict:
+    """Replace the shared cache. Never calls a provider."""
+    global _PREVIEW, _GENERATION, _BACKEND
+    preview = build_preview(payloads=payloads, retrieved_at=retrieved_at, fixture_label=fixture_label)
+    preview["http_requests_used"] = 0
+    preview["browsing_triggers_upstream"] = False
+    preview["ingest_source"] = source
+    with _LOCK:
+        _GENERATION += 1
+        preview["generation"] = _GENERATION
+        backend = _store(preview)
+        preview["cache_backend"] = backend
+        _BACKEND = backend
+        _PREVIEW = preview
+        return preview
 
 
 def get_preview(*, root=None) -> dict:
-    global _PREVIEW, _HITS
+    global _PREVIEW, _HITS, _BACKEND
     with _LOCK:
-        if _PREVIEW is None:
-            preview = build_preview(root=root) if root is not None else build_preview()
+        if root is not None:
+            preview = build_preview(root=root)
             preview["http_requests_used"] = 0
             preview["browsing_triggers_upstream"] = False
             _PREVIEW = preview
+            _HITS += 1
+            return _PREVIEW
+        if _PREVIEW is None:
+            cached = _load_redis()
+            if cached is not None:
+                _PREVIEW = cached
+                _BACKEND = "redis"
+            else:
+                preview = build_preview()
+                preview["http_requests_used"] = 0
+                preview["browsing_triggers_upstream"] = False
+                preview["ingest_source"] = "saved_snapshot"
+                preview["generation"] = _GENERATION
+                backend = _store(preview)
+                preview["cache_backend"] = backend
+                _BACKEND = backend
+                _PREVIEW = preview
         _HITS += 1
         return _PREVIEW
 
@@ -51,6 +139,8 @@ def stats() -> dict:
         "browsing_triggers_upstream": False,
         "odds_api_http": 0,
         "sgo_http": 0,
+        "generation": _GENERATION,
+        "cache_backend": _BACKEND,
     }
 
 
@@ -89,6 +179,7 @@ def parlay_from_body(body: dict) -> dict:
             "american": leg.get("american"),
             "period": leg.get("period"),
             "source_timestamp": leg.get("source_timestamp"),
+            "retrieved_at": leg.get("retrieved_at"),
         }
         for leg in resolved_legs
     ]

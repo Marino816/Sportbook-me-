@@ -431,21 +431,42 @@ class ProviderSwitchTests(unittest.TestCase):
     def tearDown(self):
         os.environ.pop("MARKET_TOOLS_PROVIDER", None)
         os.environ.pop("NODE_ENV", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
 
     def test_default_is_sgo_and_production_ignores_snapshot(self):
-        from market_snapshot.provider import is_snapshot, market_tools_provider, snapshot_blocks_sgo
+        from market_snapshot.provider import is_snapshot, market_tools_provider, snapshot_blocks_sgo, oddsapi_enabled, collect_enabled, serves_oddsapi
 
         os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
         os.environ["NODE_ENV"] = "development"
         self.assertEqual(market_tools_provider(), "sgo")
         self.assertFalse(snapshot_blocks_sgo())
+        self.assertFalse(oddsapi_enabled())
+        self.assertFalse(collect_enabled())
         os.environ["MARKET_TOOLS_PROVIDER"] = "oddsapi_snapshot"
         os.environ["NODE_ENV"] = "production"
         self.assertEqual(market_tools_provider(), "sgo")
         self.assertFalse(is_snapshot())
+        self.assertFalse(serves_oddsapi())
         os.environ["NODE_ENV"] = "development"
         self.assertTrue(is_snapshot())
         self.assertTrue(snapshot_blocks_sgo())
+
+    def test_production_oddsapi_flag_is_off_by_default(self):
+        from market_snapshot.collector import collect
+        from market_snapshot.cutover import activation_state
+
+        os.environ["NODE_ENV"] = "production"
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
+        skipped = collect()
+        self.assertTrue(skipped["skipped"])
+        self.assertEqual(skipped["http_requests"], 0)
+        state = activation_state()
+        self.assertFalse(state["cutover_applied"])
+        self.assertTrue(state["rollback_applied"])
 
 
 class SelectionMappingTests(unittest.TestCase):
@@ -553,4 +574,76 @@ class InternalApiTests(unittest.TestCase):
         self.assertTrue(unmapped.get("unavailable"))
         self.assertEqual(self.cache.stats()["provider_http_this_process"], 0)
         self.assertFalse(self.cache.stats()["browsing_triggers_upstream"])
+
+
+class FixtureCacheReplacementTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["NODE_ENV"] = "development"
+        os.environ["MARKET_TOOLS_PROVIDER"] = "oddsapi_snapshot"
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "false"
+        from market_snapshot.cache import reset_for_tests
+        reset_for_tests()
+
+    def tearDown(self):
+        os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+        os.environ.pop("NODE_ENV", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
+
+    def test_labeled_fixtures_replace_cache_and_ui_payload(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from api.auth import get_current_user
+        from api.market_tools_internal import router
+        from market_snapshot.capture_evidence import CAPTURE_EVIDENCE
+        from market_snapshot.collector import collect, verify_fixture_replacement
+
+        skipped = collect()
+        self.assertTrue(skipped["skipped"])
+        self.assertEqual(skipped["http_requests"], 0)
+
+        report = verify_fixture_replacement()
+        self.assertEqual(report["http_requests"], 0)
+        self.assertEqual(report["labels"], ["FIXTURE_A_BASELINE", "FIXTURE_B_PRICE_CHANGE"])
+        self.assertTrue(report["price_changed"])
+        self.assertEqual(report["ui_payload_home_american_a"], -148)
+        self.assertEqual(report["ui_payload_home_american_b"], -155)
+        self.assertTrue(report["source_timestamp_changed"])
+        self.assertTrue(report["retrieved_at_changed"])
+        self.assertTrue(report["source_timestamp_distinct_from_retrieved_a"])
+        self.assertTrue(report["source_timestamp_distinct_from_retrieved_b"])
+        self.assertTrue(report["generation_advanced"])
+        self.assertEqual(CAPTURE_EVIDENCE["elapsed_featured_seconds"], 1)
+        self.assertEqual(CAPTURE_EVIDENCE["elapsed_props_seconds"], 0)
+        self.assertFalse(CAPTURE_EVIDENCE["body_changed"])
+        self.assertEqual(CAPTURE_EVIDENCE["provider_http_this_report"], 0)
+
+        class Dummy:
+            id = 1
+            is_pro = False
+            role = "user"
+
+        app = FastAPI()
+        app.include_router(router, prefix="/api/market-tools")
+        app.dependency_overrides[get_current_user] = lambda: Dummy()
+        client = TestClient(app)
+        from market_snapshot.collector import load_labeled_fixture
+        from market_snapshot.cache import reset_for_tests
+        reset_for_tests()
+        load_labeled_fixture("fixture_a_baseline.json")
+        a = client.get("/api/market-tools/internal/snapshot").json()["data"]
+        load_labeled_fixture("fixture_b_price_change.json")
+        b = client.get("/api/market-tools/internal/snapshot").json()["data"]
+        self.assertEqual(a["events"][0]["books"][0]["h2h"]["home"]["american"], -148)
+        self.assertEqual(b["events"][0]["books"][0]["h2h"]["home"]["american"], -155)
+        self.assertEqual(a["events"][0]["books"][0]["h2h"]["home"]["source_timestamp"], "2026-09-30T15:00:00Z")
+        self.assertEqual(b["events"][0]["books"][0]["h2h"]["home"]["source_timestamp"], "2026-09-30T15:20:00Z")
+        self.assertEqual(a["retrieved_at"], "2026-09-30T15:35:43+00:00")
+        self.assertEqual(b["retrieved_at"], "2026-09-30T15:35:44+00:00")
+        self.assertNotEqual(a["events"][0]["books"][0]["h2h"]["home"]["source_timestamp"], a["retrieved_at"])
+        self.assertEqual(a["cache"]["odds_api_http"], 0)
+        self.assertEqual(b["cache"]["odds_api_http"], 0)
+
 

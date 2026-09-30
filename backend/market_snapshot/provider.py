@@ -1,31 +1,25 @@
-"""Development-only Market Tools provider switch. Defaults to existing SGO behavior."""
+"""Market Tools provider switch. SGO remains the default."""
 
 from __future__ import annotations
 
-import os
-
-PROVIDER_SGO = "sgo"
-PROVIDER_SNAPSHOT = "oddsapi_snapshot"
-
-
-def market_tools_provider() -> str:
-    """Return the active Market Tools data provider.
-
-    Production always uses existing SGO behavior. Snapshot mode is local
-    development only and never implied by an empty env var.
-    """
-    if os.getenv("NODE_ENV", "").strip().lower() == "production":
-        return PROVIDER_SGO
-    raw = (os.getenv("MARKET_TOOLS_PROVIDER") or PROVIDER_SGO).strip().lower()
-    if raw in {PROVIDER_SNAPSHOT, "oddsapi", "snapshot"}:
-        return PROVIDER_SNAPSHOT
-    return PROVIDER_SGO
+from market_snapshot.flags import (  # noqa: F401
+    PROVIDER_ODDSAPI,
+    PROVIDER_SGO,
+    PROVIDER_SNAPSHOT,
+    blocks_sgo,
+    collect_enabled,
+    flag_status,
+    market_tools_provider,
+    oddsapi_enabled,
+    serves_oddsapi,
+    snapshot_mode,
+)
 
 
 def is_snapshot() -> bool:
-    return market_tools_provider() == PROVIDER_SNAPSHOT
+    return snapshot_mode()
 
 
 def snapshot_blocks_sgo() -> bool:
-    """When the local snapshot replacement is on, do not call SGO."""
-    return is_snapshot()
+    """When Odds API snapshot or flagged Odds API serving is on, do not call SGO."""
+    return blocks_sgo()

@@ -4,7 +4,7 @@ import { getApiBaseUrl } from "@/lib/api-base-url";
 import { getStoredToken } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
 
-export type MarketToolsProvider = "sgo" | "oddsapi_snapshot";
+export type MarketToolsProvider = "sgo" | "oddsapi_snapshot" | "oddsapi";
 
 export function tabFromPath(pathname: string): "live" | "compare" | "props" | "parlay" {
   if (pathname.includes("/compare") || pathname.includes("/arbitrage")) return "compare";
@@ -33,7 +33,10 @@ export function useMarketToolsMode() {
         return;
       }
       const json = await res.json();
-      const next = json?.data?.provider === "oddsapi_snapshot" ? "oddsapi_snapshot" : "sgo";
+      const next =
+        json?.data?.provider === "oddsapi_snapshot" || json?.data?.provider === "oddsapi"
+          ? json.data.provider
+          : "sgo";
       setProvider(next);
     } catch {
       setError("status_unavailable");
