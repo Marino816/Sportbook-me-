@@ -41,22 +41,10 @@ WEATHER = {
     "kind": "forecast",
     "observation_not_fetched": True,
     "update_frequency": "NWS grid forecasts; cache-friendly expiry. Not polled continuously here.",
-    "venue_coords": "SB ME curated catalog, not official league GIS.",
+    "venue_coords": "Used only to stamp saved NWS collection-target coordinates. Not an event venue.",
 }
 
-INJURIES = {
-    "provider": None,
-    "status": "blocked",
-    "live_http": False,
-    "reason": (
-        "No permitted commercial injury or player-availability API was established "
-        "without creating an account or purchasing a feed. Official league HTML injury "
-        "pages are not documented as a commercial API. Public reachability is not "
-        "permission. ESPN.txt is product goals, not API documentation. Live injury "
-        "HTTP was not sent."
-    ),
-    "fixture_only": True,
-}
+from market_snapshot.injury_sources import INJURIES
 
 ASSIGNMENT_BUDGET = {
     "max_additional_odds_credits": 10,

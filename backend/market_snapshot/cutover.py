@@ -71,8 +71,8 @@ COMPATIBLE_CONSUMERS = (
 INCOMPATIBLE_CONSUMERS = ()
 
 HANDLED_UNAVAILABLE_CAPABILITIES = (
-    {"capability": "live_scores", "reason": "Odds API scores are attached when a unique event match exists. Period, inning, and clock are not in the documented scores schema."},
-    {"capability": "sourced_injuries", "reason": "No permitted commercial injury API was established; live injury HTTP was not sent."},
+    {"capability": "live_scores", "reason": "Odds API scores attach on unique id + commence_time. Completed unmatched games render as score-only cards. Period, inning, and clock are not in the documented scores schema."},
+    {"capability": "sourced_injuries", "reason": "NFL.com and NBA.com terms do not permit automated collection and commercial display without consent. Official report links only. Live injury HTTP was not sent."},
     {"capability": "sgo_odd_id", "reason": "SGO oddIDs are not Odds API selection ids."},
     {"capability": "sgo_team_props", "reason": "Nested SGO team props are not in the Odds API snapshot."},
     {"capability": "sbme_game_environment", "reason": "Environment is derived from nested SGO markets."},
@@ -118,7 +118,12 @@ FEATURE_IMPACT = (
     {
         "surface": "Live scores",
         "class": "working_replacement",
-        "note": "Odds API GET /scores for sampled NFL and MLB. Unique id match only. Period/clock not supplied. Other leagues untested.",
+        "note": "Saved Odds API NFL/MLB scores. Unique id plus identical commence_time. Completed games without matching odds render as Odds unavailable. Period/clock not supplied.",
+    },
+    {
+        "surface": "Completed score-only events",
+        "class": "working_replacement",
+        "note": "Unmatched completed scores keep event id, league, teams, start time, score, and last_update. Labeled Saved result—not a live refresh. Same-team future matchups are not scored from old results.",
     },
     {
         "surface": "Schedules in customer timezone",
@@ -128,12 +133,12 @@ FEATURE_IMPACT = (
     {
         "surface": "Venue weather",
         "class": "working_replacement",
-        "note": "NWS hourly forecast for one outdoor US venue sample plus indoor/retractable labels. Horizon and missing coords handled.",
+        "note": "Shown only with an event-specific verified venue. Home-team stadium mapping is not used. Saved NWS hourly forecast reused when coordinates and event time match. Forecasts are not observations.",
     },
     {
         "surface": "Sourced injuries",
         "class": "unavailable_capability",
-        "note": "Live injury collection blocked: no permitted commercial API without account/purchase. Labeled fixtures only.",
+        "note": "NFL.com and NBA.com terms: source-link-only. Official report links plus Live injury feed not connected. Zero injury HTTP. Labeled fixtures are not live coverage.",
     },
     {
         "surface": "Line movement / steam",

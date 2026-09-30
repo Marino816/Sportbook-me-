@@ -265,6 +265,31 @@ async (creds) => {
   }).then((r) => r.json()).catch((e) => ({ error: String(e) }));
   note("legacy_unmapped", Boolean(resolved.data && resolved.data.unavailable), JSON.stringify(resolved.data || resolved));
 
+  clickChip("NFL");
+  await wait(350);
+  const realNfl = [...document.querySelectorAll("[data-game-context]")].find((el) => !(el.getAttribute("data-fixture-label") || ""));
+  if (realNfl) {
+    const detailsEl = realNfl.querySelector("details");
+    if (detailsEl) detailsEl.open = true;
+  }
+  const nflInjuryText = realNfl ? realNfl.textContent : "";
+  note("injury_feed_not_connected", /Live injury feed not connected/i.test(nflInjuryText), nflInjuryText.slice(0, 200));
+  note("official_nfl_injury_link", (realNfl ? realNfl.innerHTML : "").includes("nfl.com/injuries"), "official report link");
+
+  clickChip("MLB");
+  await wait(400);
+  const saved = document.querySelector("article[data-saved-result]");
+  if (saved) {
+    const det = saved.querySelector("details");
+    if (det) det.open = true;
+    saved.scrollIntoView();
+  }
+  const savedText = saved ? saved.textContent : "";
+  note("saved_mlb_result", Boolean(saved) && /Odds unavailable/i.test(savedText) && /Saved result—not a live refresh/i.test(savedText), savedText.slice(0, 240));
+  note("saved_result_not_live_refresh", /Saved result—not a live refresh/i.test(savedText), "labeled saved result");
+  note("saved_actual_score", /Phillies|Braves|Yankees|Astros|Padres|Cubs|White Sox|Red Sox/i.test(savedText) && /\d/.test(savedText), savedText.slice(0, 180));
+  results.screenshot_view = "mlb_saved_result_not_live_refresh";
+
   const slip = document.querySelector(".slip");
   const toggle = document.querySelector(".slip-toggle");
   note("selection_panel", Boolean(slip && toggle), slip ? `width=${window.innerWidth}` : "missing");
@@ -580,7 +605,9 @@ def run() -> dict:
                 b64 = inner.get("data") or ""
                 if b64:
                     import base64
-                    (OUT / f"e2e-app-{name}.png").write_bytes(base64.b64decode(b64))
+                    png = base64.b64decode(b64)
+                    (OUT / f"e2e-app-{name}.png").write_bytes(png)
+                    (OUT / f"e2e-saved-result-{name}.png").write_bytes(png)
                 else:
                     (OUT / f"e2e-shot-{name}.json").write_text(json.dumps({"keys": list(shot.keys()), "inner": list(inner.keys())}) + "\n")
             return payload or {"ok": False, "checks": [], "error": result}
@@ -770,6 +797,22 @@ def run_price_propagation() -> dict:
                 (OUT / "e2e-fixture-b.png").write_bytes(base64.b64decode(b64))
         changed = price_a.get("american") == "-148" and price_b.get("american") == "-155"
         note("price_changed_in_browser", changed, f"{price_a.get('american')} -> {price_b.get('american')}")
+        try:
+            req = urllib.request.Request(
+                f"{api}/market-tools/internal/restore-saved-preview",
+                data=b"{}",
+                method="POST",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                restored = json.loads(resp.read().decode())
+            restored_data = restored.get("data") or {}
+            note("preview_restored", bool(restored_data.get("restored")), json.dumps({
+                "ingest_source": restored_data.get("ingest_source"),
+                "event_count": restored_data.get("event_count"),
+            }))
+        except Exception as exc:  # noqa: BLE001
+            note("preview_restored", False, str(exc))
         report["ok"] = all(c["pass"] for c in report["checks"])
         report["fixture_a"] = a_data
         report["fixture_b"] = b_data

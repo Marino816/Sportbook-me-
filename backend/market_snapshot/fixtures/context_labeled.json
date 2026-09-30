@@ -12,7 +12,18 @@
       "selector": "nfl",
       "home_team": "Fixture Outdoor",
       "away_team": "Fixture Visitor",
-      "commence_time": "2026-10-02T00:15:00Z"
+      "commence_time": "2026-10-02T00:15:00Z",
+      "event_venue": {
+        "verified": true,
+        "source": "Labeled fixture schedule (not an official league GIS feed)",
+        "name": "Huntington Bank Field",
+        "lat": 41.5061,
+        "lon": -81.6995,
+        "city": "Cleveland, OH",
+        "neutral_site": false,
+        "indoor": false,
+        "roof": "outdoor"
+      }
     },
     {
       "label": "CTX_IN_PROGRESS",
@@ -22,7 +33,18 @@
       "selector": "mlb",
       "home_team": "Atlanta Braves",
       "away_team": "Philadelphia Phillies",
-      "commence_time": "2026-09-30T18:00:00Z"
+      "commence_time": "2026-09-30T18:00:00Z",
+      "event_venue": {
+        "verified": true,
+        "source": "Labeled fixture schedule (not an official league GIS feed)",
+        "name": "Truist Park",
+        "lat": 33.8908,
+        "lon": -84.4678,
+        "city": "Atlanta, GA",
+        "neutral_site": false,
+        "indoor": false,
+        "roof": "outdoor"
+      }
     },
     {
       "label": "CTX_FINAL",
@@ -82,7 +104,18 @@
       "selector": "nfl",
       "home_team": "Fixture Horizon",
       "away_team": "Fixture Far",
-      "commence_time": "2026-11-20T18:00:00Z"
+      "commence_time": "2026-11-20T18:00:00Z",
+      "event_venue": {
+        "verified": true,
+        "source": "Labeled fixture schedule (not an official league GIS feed)",
+        "name": "Lambeau Field",
+        "lat": 44.5013,
+        "lon": -88.0622,
+        "city": "Green Bay, WI",
+        "neutral_site": false,
+        "indoor": false,
+        "roof": "outdoor"
+      }
     },
     {
       "label": "CTX_INDOOR",
@@ -92,7 +125,18 @@
       "selector": "nba",
       "home_team": "Boston Celtics",
       "away_team": "Detroit Pistons",
-      "commence_time": "2026-10-20T19:00:00Z"
+      "commence_time": "2026-10-20T19:00:00Z",
+      "event_venue": {
+        "verified": true,
+        "source": "Labeled fixture schedule (not an official league GIS feed)",
+        "name": "TD Garden",
+        "lat": 42.3662,
+        "lon": -71.0621,
+        "city": "Boston, MA",
+        "neutral_site": false,
+        "indoor": true,
+        "roof": "indoor"
+      }
     },
     {
       "label": "CTX_TZ_BOUNDARY",
@@ -244,6 +288,8 @@
     "Atlanta Braves": {
       "retrieved_at": "2026-09-30T16:00:00Z",
       "source_updated_at": "2026-09-30T15:45:00Z",
+      "lat": 33.8908,
+      "lon": -84.4678,
       "periods": [
         {
           "startTime": "2026-09-30T17:00:00+00:00",
@@ -270,6 +316,8 @@
     "Fixture Horizon": {
       "retrieved_at": "2026-09-30T16:00:00Z",
       "source_updated_at": "2026-09-30T15:45:00Z",
+      "lat": 44.5013,
+      "lon": -88.0622,
       "horizon_unavailable": true,
       "periods": [
         {
@@ -283,6 +331,8 @@
     "Fixture Outdoor": {
       "retrieved_at": "2026-09-30T16:00:00Z",
       "source_updated_at": "2026-09-30T15:45:00Z",
+      "lat": 41.5061,
+      "lon": -81.6995,
       "periods": [
         {
           "startTime": "2026-10-01T23:00:00+00:00",

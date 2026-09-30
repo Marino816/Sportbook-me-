@@ -143,3 +143,22 @@ async def market_tools_load_fixture(name: str, user: User = Depends(require_mark
     result = load_labeled_fixture(filename)
     result["not_customer_data"] = True
     return wrap_data(result, source="fixture")
+
+
+@router.post("/internal/restore-saved-preview")
+async def market_tools_restore_saved(user: User = Depends(require_market_tools_entitlement)):
+    """Replace labeled-fixture cache with the saved Odds API snapshot. Zero provider HTTP."""
+    _require_oddsapi_serve()
+    if not fixture_ingest_allowed():
+        raise HTTPException(status_code=404, detail="Fixture ingest is off.")
+    from market_snapshot.cache import restore_saved_preview, stats
+
+    preview = restore_saved_preview()
+    return wrap_data({
+        "restored": True,
+        "ingest_source": preview.get("ingest_source"),
+        "event_count": len(preview.get("events") or []),
+        "unavailable": preview.get("unavailable", False),
+        "cache": stats(),
+        "not_customer_data": False,
+    }, source="saved_snapshot")

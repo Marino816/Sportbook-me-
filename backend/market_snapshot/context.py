@@ -7,10 +7,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from market_snapshot.compat import parse_internal_event_id
-from market_snapshot.context_sources import INJURIES, SCHEDULED_FETCH_ENABLED, SCORES, WEATHER
+from market_snapshot.compat import namespaced_event_id, parse_internal_event_id
+from market_snapshot.context_sources import SCHEDULED_FETCH_ENABLED, SCORES, WEATHER
 from market_snapshot.flags import context_fixtures_enabled, is_production
-from market_snapshot.venues import indoor_label, venue_for_home
+from market_snapshot.injury_sources import INJURIES, injury_board_for_selector
+from market_snapshot.leagues import league_by_key
 
 FIXTURES_PATH = Path(__file__).resolve().parent / "fixtures" / "context_labeled.json"
 PRIVATE_CONTEXT = Path.home() / ".sbme-dev" / "odds-api" / "context" / "latest.json"
@@ -173,6 +174,8 @@ def match_score_row(event: dict, scores: list[dict]) -> dict | None:
                 return None
             if event.get("away_team") and row.get("away_team") and event["away_team"] != row["away_team"]:
                 return None
+            if event.get("commence_time") and row.get("commence_time") and event["commence_time"] != row["commence_time"]:
+                return None
             return row
     fallback = []
     home = event.get("home_team")
@@ -274,55 +277,104 @@ def pick_hourly_period(periods: list, event_dt: datetime) -> dict:
     return {"unavailable": False, "period": nearest[2]}
 
 
+def _coords_match(a: dict | None, b: dict | None, *, tol: float = 0.02) -> bool:
+    if not a or not b:
+        return False
+    try:
+        return abs(float(a["lat"]) - float(b["lat"])) <= tol and abs(float(a["lon"]) - float(b["lon"])) <= tol
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def venue_record(event: dict) -> dict:
+    """Event-specific venue only. Home-team stadium catalogs are not sufficient."""
+    raw = event.get("event_venue")
+    if isinstance(raw, dict) and raw.get("verified"):
+        return {
+            "verified": True,
+            "source": raw.get("source"),
+            "name": raw.get("name"),
+            "lat": raw.get("lat"),
+            "lon": raw.get("lon"),
+            "neutral_site": raw.get("neutral_site"),
+            "indoor": raw.get("indoor"),
+            "city": raw.get("city"),
+            "roof": raw.get("roof") or ("indoor" if raw.get("indoor") else "unknown"),
+            "reason": None,
+        }
+    return {
+        "verified": False,
+        "source": None,
+        "name": None,
+        "lat": None,
+        "lon": None,
+        "neutral_site": None,
+        "indoor": None,
+        "roof": "unknown",
+        "reason": (
+            "Event venue is not confirmed from an event-specific record or authoritative "
+            "schedule. Home-team stadium mapping is not used."
+        ),
+    }
+
+
 def weather_block(event: dict, weather_by_home: dict | None, *, retrieved_at: str | None, now: datetime | None = None) -> dict:
-    sport_key = event.get("sport_key")
-    indoor = indoor_label(sport_key)
-    venue = venue_for_home(event.get("home_team"))
-    if indoor:
-        return {
-            "kind": "indoor",
-            "label": indoor,
-            "source": "SB ME venue catalog",
-            "source_updated_at": None,
-            "retrieved_at": retrieved_at,
-            "freshness": "fresh",
-            "note": "Indoor venue. Outdoor forecast is not shown.",
-        }
-    if venue and venue.get("roof") == "indoor":
-        return {
-            "kind": "indoor",
-            "label": "Indoor",
-            "venue_name": venue.get("name"),
-            "source": venue.get("catalog_source"),
-            "source_updated_at": None,
-            "retrieved_at": retrieved_at,
-            "freshness": "fresh",
-            "note": "Verified indoor roof in the venue catalog. Outdoor forecast is not shown.",
-        }
-    if not venue:
+    venue = venue_record(event)
+    if not venue.get("verified"):
         return {
             "kind": "unavailable",
             "label": "Weather unavailable",
-            "reason": "No verified venue coordinates for this home team.",
+            "venue_verified": False,
+            "venue": venue,
+            "reason": venue.get("reason"),
             "source": WEATHER["provider"],
             "retrieved_at": retrieved_at,
             "freshness": "unknown",
         }
+    if venue.get("indoor"):
+        return {
+            "kind": "indoor",
+            "label": "Indoor",
+            "venue_verified": True,
+            "venue": venue,
+            "venue_name": venue.get("name"),
+            "source": venue.get("source"),
+            "source_updated_at": None,
+            "retrieved_at": retrieved_at,
+            "freshness": "fresh",
+            "note": "Verified indoor venue for this event. Outdoor forecast is not shown.",
+        }
     roof_note = None
     if venue.get("roof") == "retractable":
         roof_note = "Retractable roof; open or closed was not supplied."
-    payload = (weather_by_home or {}).get(event.get("home_team")) or (weather_by_home or {}).get(venue.get("name"))
+    elif venue.get("roof") == "unknown":
+        roof_note = "Roof status unknown."
+    payload = None
+    for key in (event.get("home_team"), venue.get("name")):
+        if key and (weather_by_home or {}).get(key):
+            candidate = weather_by_home[key]
+            stored = {"lat": candidate.get("lat"), "lon": candidate.get("lon")}
+            if stored.get("lat") is None:
+                if event.get("context_demo") or event.get("fixture_label"):
+                    payload = candidate
+                    break
+                continue
+            if _coords_match(venue, stored):
+                payload = candidate
+                break
     event_dt = parse_iso(event.get("commence_time"))
     if payload is None:
         return {
             "kind": "unavailable",
             "label": "Weather unavailable",
+            "venue_verified": True,
+            "venue": venue,
             "venue_name": venue.get("name"),
             "lat": venue.get("lat"),
             "lon": venue.get("lon"),
             "roof": venue.get("roof"),
             "roof_note": roof_note,
-            "reason": "No forecast stored for this venue.",
+            "reason": "No forecast stored for this verified venue and event time.",
             "source": WEATHER["provider"],
             "retrieved_at": retrieved_at,
             "freshness": "unknown",
@@ -331,6 +383,8 @@ def weather_block(event: dict, weather_by_home: dict | None, *, retrieved_at: st
         return {
             "kind": "forecast",
             "label": "Forecast not yet available.",
+            "venue_verified": True,
+            "venue": venue,
             "venue_name": venue.get("name"),
             "roof": venue.get("roof"),
             "roof_note": roof_note,
@@ -338,21 +392,27 @@ def weather_block(event: dict, weather_by_home: dict | None, *, retrieved_at: st
             "source_updated_at": payload.get("source_updated_at"),
             "retrieved_at": payload.get("retrieved_at") or retrieved_at,
             "freshness": "unknown",
+            "not_observation": True,
         }
     periods = payload.get("periods") or []
     if event_dt is None:
         return {
             "kind": "forecast",
             "label": "Forecast not yet available.",
+            "venue_verified": True,
+            "venue": venue,
             "reason": "Event start time unavailable.",
             "source": WEATHER["provider"],
             "retrieved_at": retrieved_at,
+            "not_observation": True,
         }
     picked = pick_hourly_period(periods, event_dt)
     if picked.get("unavailable"):
         return {
             "kind": "forecast",
             "label": "Forecast not yet available.",
+            "venue_verified": True,
+            "venue": venue,
             "venue_name": venue.get("name"),
             "roof": venue.get("roof"),
             "roof_note": roof_note,
@@ -365,12 +425,15 @@ def weather_block(event: dict, weather_by_home: dict | None, *, retrieved_at: st
                 status="scheduled",
                 now=now,
             ),
+            "not_observation": True,
         }
     period = picked["period"]
     return {
         "kind": "forecast",
         "label": "Forecast",
         "not_observation": True,
+        "venue_verified": True,
+        "venue": venue,
         "venue_name": venue.get("name"),
         "city": venue.get("city"),
         "lat": venue.get("lat"),
@@ -463,6 +526,7 @@ def _empty_context(event: dict, retrieved_at: str | None) -> dict:
         "schedule": schedule_block(event.get("commence_time")),
         "score": score_block(event, None, retrieved_at=retrieved_at),
         "weather": weather_block(event, {}, retrieved_at=retrieved_at),
+        "venue": venue_record(event),
         "injuries": [],
         "injuries_note": "No report does not mean healthy or available.",
         "scheduled_fetch_enabled": SCHEDULED_FETCH_ENABLED,
@@ -475,17 +539,27 @@ def attach_event_context(event: dict, bundle: dict, *, now: datetime | None = No
     matched = match_score_row(event, scores)
     weather_by_home = bundle.get("weather_by_home") or {}
     reports = bundle.get("injuries") or []
+    board = None if event.get("context_demo") or event.get("fixture_label") else injury_board_for_selector(event.get("selector"))
+    injuries = injury_rows_for_event(event, reports) if event.get("context_demo") or event.get("fixture_label") else []
     event["context"] = {
         "schedule": schedule_block(event.get("commence_time")),
         "score": score_block(event, matched, retrieved_at=retrieved, now=now),
         "weather": weather_block(event, weather_by_home, retrieved_at=retrieved, now=now),
-        "injuries": injury_rows_for_event(event, reports),
-        "injuries_note": "No report does not mean healthy or available.",
+        "venue": venue_record(event),
+        "injuries": injuries,
+        "injury_board": board,
+        "injuries_note": (
+            (board or {}).get("message")
+            or "No report does not mean healthy or available."
+        ),
         "scheduled_fetch_enabled": SCHEDULED_FETCH_ENABLED,
         "bundle_label": bundle.get("label"),
     }
     if matched is None:
         event["context"]["score"]["match"] = "none"
+    if event.get("saved_result"):
+        event["context"]["score"]["saved_result"] = True
+        event["context"]["odds_unavailable"] = True
     return event
 
 
@@ -507,12 +581,85 @@ def labeled_demo_events(fixtures: dict) -> list[dict]:
             "stale": False,
             "fixture_label": row.get("label"),
             "context_demo": True,
+            "event_venue": row.get("event_venue"),
         })
     return extra
 
 
+def _known_score_ids(events: list[dict]) -> set[tuple]:
+    known = set()
+    for event in events:
+        parsed = parse_internal_event_id(event.get("id"))
+        if not parsed.get("ok"):
+            continue
+        known.add((parsed.get("sport_key") or event.get("sport_key"), parsed.get("source_event_id")))
+    return known
+
+
+def score_only_event_card(row: dict) -> dict:
+    league = league_by_key(row.get("sport_key") or "") or {}
+    source_id = row.get("id")
+    return {
+        "id": namespaced_event_id(row.get("sport_key") or "unknown", source_id),
+        "sport_key": row.get("sport_key"),
+        "sport_title": row.get("sport_title") or league.get("title"),
+        "selector": league.get("selector"),
+        "home_team": row.get("home_team"),
+        "away_team": row.get("away_team"),
+        "commence_time": row.get("commence_time"),
+        "kind": "game",
+        "period": "game",
+        "books": [],
+        "book_names": [],
+        "stale": False,
+        "odds_unavailable": True,
+        "saved_result": True,
+        "score_only": True,
+        "source_event_id": source_id,
+        "sgo_event_id": None,
+        "last_update": row.get("last_update"),
+        "source_updated_at": row.get("last_update"),
+        "notice": "Saved result—not a live refresh.",
+        "odds_notice": "Odds unavailable.",
+    }
+
+
+def unmatched_completed_scores(events: list[dict], scores: list[dict]) -> list[dict]:
+    known = _known_score_ids(events)
+    out = []
+    for row in scores or []:
+        if not row.get("completed"):
+            continue
+        key = (row.get("sport_key"), row.get("id"))
+        alt = (None, row.get("id"))
+        if key in known or alt in known:
+            continue
+        out.append(row)
+    return out
+
+
+def _stamp_collected_weather(collected: dict) -> dict:
+    """Keep saved NWS coords from the collection target. No new HTTP."""
+    from market_snapshot.venues import venue_for_home
+
+    weather = dict(collected.get("weather_by_home") or {})
+    out = {}
+    for home, payload in weather.items():
+        blob = dict(payload or {})
+        venue = venue_for_home(home)
+        if venue and blob.get("lat") is None:
+            blob["lat"] = venue.get("lat")
+            blob["lon"] = venue.get("lon")
+            blob["collection_target"] = venue.get("name")
+        out[home] = blob
+    collected = dict(collected)
+    collected["weather_by_home"] = out
+    return collected
+
+
 def attach_context(preview: dict, *, collected: dict | None = None, fixtures: dict | None = None, now: datetime | None = None) -> dict:
     collected = collected if collected is not None else load_collected_context()
+    collected = _stamp_collected_weather(collected)
     fixtures = fixtures if fixtures is not None else load_labeled_fixtures()
     include_demo = context_fixtures_enabled() and not is_production()
     events = list(preview.get("events") or [])
@@ -539,14 +686,19 @@ def attach_context(preview: dict, *, collected: dict | None = None, fixtures: di
             attach_event_context(event, fixture_bundle, now=now)
         else:
             attach_event_context(event, live_bundle, now=now)
-            if include_demo:
-                # Labeled injuries never overlay real events unless event_id matches a fixture id.
-                pass
+    score_only = []
+    for row in unmatched_completed_scores(events, live_bundle["scores"]):
+        card = score_only_event_card(row)
+        attach_event_context(card, live_bundle, now=now)
+        score_only.append(card)
+    demo_count = sum(1 for event in events if event.get("context_demo") or event.get("fixture_label"))
+    events = events[:demo_count] + score_only + events[demo_count:]
     if include_demo:
         for row in preview.get("player_props") or []:
             inj = injury_for_player(row.get("player"), row.get("home_team") or row.get("away_team"), fixture_bundle["injuries"])
             if inj:
                 row["availability"] = inj
+                row["availability_is_fixture"] = True
     preview["events"] = events
     preview["game_context"] = {
         "scores": SCORES,
@@ -554,7 +706,9 @@ def attach_context(preview: dict, *, collected: dict | None = None, fixtures: di
         "injuries": INJURIES,
         "scheduled_fetch_enabled": SCHEDULED_FETCH_ENABLED,
         "collected_present": bool(collected.get("scores") or collected.get("weather_by_home")),
+        "score_only_events": len(score_only),
         "fixtures_attached": include_demo,
         "postgres_redis": "blocked_until_docker",
+        "public_source_downloads": 0,
     }
     return preview

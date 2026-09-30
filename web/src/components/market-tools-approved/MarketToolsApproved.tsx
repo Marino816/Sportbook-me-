@@ -92,7 +92,9 @@ function GameContext({ ev }: { ev: any }) {
   const schedule = ctx.schedule || {};
   const score = ctx.score || {};
   const weather = ctx.weather || {};
+  const venue = ctx.venue || {};
   const injuries = ctx.injuries || [];
+  const board = ctx.injury_board;
   const periodBits = [score.period, score.inning, score.clock].filter((v: unknown) => v != null && v !== "");
   const scoreLine = (score.away_score != null || score.home_score != null)
     ? `${score.away_score ?? "—"}–${score.home_score ?? "—"}`
@@ -105,7 +107,7 @@ function GameContext({ ev }: { ev: any }) {
         ? `${weather.temperature}°${weather.temperature_unit || "F"}`
         : weather.label || "Weather unavailable";
   return (
-    <div className="game-context" data-game-context data-fixture-label={ev.fixture_label || ""} data-status={score.status || ""}>
+    <div className="game-context" data-game-context data-fixture-label={ev.fixture_label || ""} data-status={score.status || ""} data-saved-result={ev.saved_result ? "true" : undefined}>
       <p className="context-line">
         <span data-local-time>{localTime(schedule.commence_time_utc || ev.commence_time)}</span>
         {score.status_display ? <span> · {score.status_display}</span> : null}
@@ -120,6 +122,7 @@ function GameContext({ ev }: { ev: any }) {
         {score.note ? <p className="note">{score.note}</p> : null}
         {periodBits.length ? <p className="meta">Period/clock {periodBits.join(" · ")}</p> : <p className="note">Period, inning, and clock were not supplied.</p>}
         {score.source ? <p className="meta">Scores source {score.source}{score.source_updated_at ? ` · updated ${localTime(score.source_updated_at)}` : ""}{score.retrieved_at ? ` · retrieved ${localTime(score.retrieved_at)}` : ""} · {score.freshness || "unknown"}</p> : null}
+        {venue.verified ? <p className="meta" data-venue-verified>Venue {venue.name || "named"} · source {venue.source}{venue.lat != null && venue.lon != null ? ` · ${venue.lat}, ${venue.lon}` : ""}{venue.neutral_site ? " · neutral site" : ""} · roof {venue.roof || "unknown"}</p> : <p className="note" data-venue-unverified>{venue.reason || "Event venue is not confirmed."}</p>}
         {weather.kind === "indoor" ? <p className="meta">{weather.label || "Indoor"}{weather.venue_name ? ` · ${weather.venue_name}` : ""} · {weather.note || ""}</p> : null}
         {weather.kind === "forecast" && weather.label === "Forecast not yet available." ? <p className="note">Forecast not yet available.</p> : null}
         {weather.kind === "forecast" && weather.temperature != null ? (
@@ -131,8 +134,21 @@ function GameContext({ ev }: { ev: any }) {
             {weather.roof_note ? ` · ${weather.roof_note}` : ""}
           </p>
         ) : null}
-        {weather.kind === "unavailable" ? <p className="note">{weather.reason || "Weather unavailable"}</p> : null}
-        {injuries.length === 0 ? <p className="note">{ctx.injuries_note || "No report does not mean healthy or available."}</p> : injuries.map((row: any, i: number) => (
+        {weather.kind === "unavailable" && weather.reason && weather.reason !== venue.reason ? <p className="note">{weather.reason}</p> : null}
+        {board ? (
+          <div data-injury-board>
+            <p className="warn" data-injury-feed>{board.message}</p>
+            {board.practice_note ? <p className="note">{board.practice_note}</p> : null}
+            {(board.official_links || []).map((link: any) => (
+              <p className="meta" key={link.url}>
+                <a href={link.url} target="_blank" rel="noreferrer">{link.label}</a>
+                {link.note ? ` · ${link.note}` : ""}
+              </p>
+            ))}
+          </div>
+        ) : null}
+        {ev.fixture_label && injuries.length ? <p className="note">Labeled fixture — not live injury coverage.</p> : null}
+        {!board && injuries.length === 0 ? <p className="note">{ctx.injuries_note || "No report does not mean healthy or available."}</p> : injuries.map((row: any, i: number) => (
           <p className="meta" key={i} data-injury>
             {row.player} ({row.team}) · {row.source_wording || row.reported_status} · {row.certainty_label}
             {row.source_url ? <> · <a href={row.source_url} target="_blank" rel="noreferrer">Source</a></> : null}
@@ -435,11 +451,13 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
       );
     }
     return (
-      <article className="card" key={ev.id}>
+      <article className="card" key={ev.id} {...(ev.saved_result ? { "data-saved-result": "true" } : {})} {...(ev.odds_unavailable ? { "data-odds-unavailable": "true" } : {})}>
         <div className="match"><div className="teams">{matchup}</div><div className="meta">{localTime(ev.commence_time)}</div></div>
         <GameContext ev={ev} />
+        {ev.saved_result ? <p className="note" data-saved-result-label>Saved result—not a live refresh.</p> : null}
+        {ev.odds_unavailable ? <p className="warn" data-odds-unavailable>Odds unavailable.</p> : null}
         {ev.stale ? <p className="warn">Saved odds—not live</p> : null}
-        {listed.map((bookRow: any) => {
+        {ev.odds_unavailable ? null : listed.map((bookRow: any) => {
           const h2h = bookRow.h2h || {};
           const spreads = bookRow.spreads || {};
           const totals = bookRow.totals || {};
@@ -671,8 +689,8 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
 
       <details className="dev">
         <summary>How it works</summary>
-        <p><b>Saved odds—not live.</b> Game start times are stored in UTC and shown in your timezone. Scores come from The Odds API scores endpoint when a unique match exists. Period and clock stay hidden unless supplied.</p>
-        <p>Venue weather is an NWS forecast for outdoor US catalogs, or Indoor when the venue is documented as indoor. Injury notes are sourced reports only; missing notes are not a healthy listing.</p>
+        <p><b>Saved odds—not live.</b> Game start times are stored in UTC and shown in your timezone. Scores come from The Odds API scores endpoint when a unique event id and start time match. Completed games without matching odds are labeled Odds unavailable. Period and clock stay hidden unless supplied.</p>
+        <p>Event weather is shown only when that game’s venue is verified. A home-team stadium list is not enough. Saved NWS forecasts are reused when venue coordinates and event time match; they are not station observations. Injury notes are official-report links unless a labeled fixture says otherwise. Live injury feed not connected. Missing notes are not a healthy listing.</p>
         <p><b>Market-derived fair odds</b> remove that sportsbook’s margin from a complete set of outcomes for the same market, line, and period. They are not SB ME win probabilities.</p>
         <p><b>Sportsbook consensus</b> is the typical listed price across unique books for the same selection. It still includes each book’s margin.</p>
         <p>Price discrepancies are historical and not a live or guaranteed profit. Incomplete markets, mismatched lines, integer lines that can push, and stale mixed timestamps stay unavailable.</p>

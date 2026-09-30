@@ -176,6 +176,13 @@ def replace_from_payloads(
         return preview
 
 
+def restore_saved_preview() -> dict:
+    """Replace fixture/test cache with the saved Odds API snapshot. Zero provider HTTP."""
+    from market_snapshot.adapter import load_payloads
+
+    return replace_from_payloads(load_payloads(), source="restore_saved_preview")
+
+
 def get_preview(*, root=None) -> dict:
     global _PREVIEW, _HITS, _BACKEND
     with _LOCK:

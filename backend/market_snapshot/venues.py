@@ -1,8 +1,8 @@
-"""Curated US venue coordinates for outdoor weather matching.
+"""Curated US venue coordinates for collection-target matching only.
 
-These coordinates are an SB ME catalog for local Market Tools, not an official
-league GIS feed. Roof status is typical stadium design, not a live roof sensor.
-Unlisted teams do not get weather.
+These coordinates are an SB ME catalog, not an official league GIS feed and not
+an event-specific venue. Roof status is typical stadium design, not a live roof
+sensor. Market Tools does not show event weather from this mapping alone.
 """
 
 from __future__ import annotations
