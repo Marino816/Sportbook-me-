@@ -32,6 +32,23 @@
     if (Number.isNaN(n)) return String(line);
     return n > 0 ? `+${n}` : String(n);
   }
+  function threshold(line) {
+    if (line == null || line === "") return "";
+    const n = Number(line);
+    if (Number.isNaN(n)) return String(line);
+    return String(n);
+  }
+  function lineLabel(market, selection, line) {
+    if (line == null || line === "") return "";
+    const mk = String(market || "").toLowerCase();
+    const sel = String(selection || "").toLowerCase();
+    if (mk === "spreads") return signed(line);
+    if (mk === "h2h" || mk === "outrights") return "";
+    if (mk === "totals" || mk.startsWith("player_") || mk.startsWith("batter_") || mk.startsWith("pitcher_") || sel === "over" || sel === "under") {
+      return threshold(line);
+    }
+    return threshold(line);
+  }
   function localTime(iso) {
     if (!iso) return "Time unavailable";
     const d = new Date(iso);
@@ -110,7 +127,7 @@
       return `<button type="button" class="odd" disabled><span>${esc(extra.label)}</span><b>unavailable</b></button>`;
     }
     const on = selected(quote.id) ? " is-on" : "";
-    const line = extra.line != null ? ` ${signed(extra.line)}` : "";
+    const shown = extra.lineInLabel || extra.line == null || extra.line === "" ? "" : ` ${lineLabel(extra.market, extra.selection, extra.line)}`;
     return `<button type="button" class="odd${on}" data-add="${esc(quote.id)}" data-payload="${esc(JSON.stringify({
       id: quote.id,
       event_id: extra.event_id,
@@ -124,7 +141,7 @@
       period: quote.period || extra.period || "game",
       matchup: extra.matchup,
       market_label: extra.market_label,
-    }))}"><span>${esc(extra.label)}${esc(line)}</span><b>${esc(money(quote))}</b></button>`;
+    }))}"><span>${esc(extra.label)}${esc(shown)}</span><b>${esc(money(quote))}</b></button>`;
   }
 
   function filteredEvents() {
@@ -208,8 +225,8 @@
         + oddButton(totals.under, { label: "Under", line: totals.under?.line, event_id: ev.id, market: "totals", selection: "Under", matchup, market_label: labels.totals });
       const ts = h2h.home?.source_timestamp || spreads.home?.source_timestamp || totals.over?.source_timestamp;
       const fair = book.fair_h2h && book.fair_h2h.sides
-        ? `<p class="note">Market-derived fair odds · Away ${esc(money(book.fair_h2h.sides.away || {}))}${book.fair_h2h.sides.draw ? ` · Draw ${esc(money(book.fair_h2h.sides.draw))}` : ""} · Home ${esc(money(book.fair_h2h.sides.home || {}))} · not an SB ME prediction</p>`
-        : (book.fair_h2h_unavailable ? `<p class="note">Market-derived fair odds unavailable (incomplete outcome set).</p>` : "");
+        ? `<p class="note">Market-derived fair odds · Away ${esc(money(book.fair_h2h.sides.away || {}))}${book.fair_h2h.sides.draw ? ` · Draw ${esc(money(book.fair_h2h.sides.draw))}` : ""} · Home ${esc(money(book.fair_h2h.sides.home || {}))}</p>`
+        : (book.fair_h2h_unavailable ? `<p class="note">Market-derived fair odds unavailable.</p>` : "");
       return `<div class="book-name">${esc(book.bookmaker)}</div>
         <div class="markets">
           <div class="mrow"><div class="mlabel">${esc(labels.h2h)}</div><div class="odds">${mlBtns}</div></div>
@@ -219,7 +236,7 @@
         ${fair}
         <p class="meta">Source ${esc(localTime(ts))} · Period ${esc(ev.period || "game")}</p>`;
     }).join("");
-    const stale = ev.stale ? `<p class="warn">${esc(ev.stale_label || "Saved snapshot — stale relative to the configured refresh window.")}</p>` : "";
+    const stale = ev.stale ? `<p class="warn">Saved odds—not live</p>` : "";
     return `<article class="card">
       <div class="match"><div class="teams">${esc(matchup)}</div><div class="meta">${esc(localTime(ev.commence_time))}</div></div>
       ${stale}
@@ -231,10 +248,10 @@
     const events = filteredEvents();
     let status = "";
     if (state.sport === "soccer" && !state.soccer) {
-      status = `<p class="note">Soccer leagues in this snapshot were sampled in region us. Missing handicap or total prices stay unavailable.</p>`;
+      status = `<p class="note">Soccer in this snapshot is region us. Missing prices stay unavailable.</p>`;
     } else {
       const cov = (state.data.coverage || []).find((c) => state.sport === "soccer" ? c.key === state.soccer : c.sport_group && c.sport_group.toLowerCase() === state.sport);
-      if (cov) status = `<p class="note">${esc(cov.title)}: ${esc(cov.status)}${cov.empty_does_not_prove_no_coverage ? ". Empty results do not prove coverage is permanently unavailable." : ""}</p>`;
+      if (cov && cov.empty_does_not_prove_no_coverage) status = `<p class="note">${esc(cov.title)}: no events in this snapshot. That does not prove the sport is uncovered.</p>`;
     }
     if (!events.length) {
       $("panel-live").innerHTML = status + `<article class="card"><p class="empty">No saved events for this filter. Documented coverage may still exist outside this snapshot.</p></article>`;
@@ -261,22 +278,28 @@
       const ev = (state.data.events || []).find((e) => e.id === a.event_id);
       return ev && ev.selector === state.sport;
     }).slice(0, 8);
-    const arbHtml = arbs.length
-      ? `<article class="card"><p class="warn">${esc(state.data.arbitrage_label || "")} Not executable and not guaranteed profit.</p>${arbs.map((a) => `<p class="meta">${esc(a.market)} · ${esc(a.kind || "")} · ${a.ok ? `${a.discrepancy_pct}% snapshot discrepancy` : esc(a.reason || "unavailable")}</p>`).join("")}</article>`
+    const opportunities = arbs.filter((a) => a.ok && Number(a.discrepancy_pct) > 0);
+    const unavailable = arbs.filter((a) => a.unavailable);
+    const arbHtml = (opportunities.length || unavailable.length)
+      ? `<article class="card"><p class="warn">${esc(state.data.arbitrage_label || "Historical price discrepancy—not verified live.")}</p>${opportunities.map((a) => {
+        const legs = (a.legs || []).map((leg) => `${esc(leg.selection || "")} ${esc(lineLabel(a.market, leg.selection, leg.line))} ${esc(leg.bookmaker || "")} ${esc(money(leg))} · ${esc(localTime(leg.source_timestamp))}`).join(" · ");
+        return `<p class="meta"><b>${esc(a.matchup || "")}</b> · ${esc(a.market)} ${esc(lineLabel(a.market, "", a.line))} · ${a.discrepancy_pct}% · ${legs}</p>`;
+      }).join("")}${unavailable.map((a) => `<p class="meta">Unavailable · ${esc(a.reason || "")}</p>`).join("")}</article>`
       : "";
     const cards = groups.map((g) => {
-      const prices = (g.prices || []).map((p) => `<div class="price${p.best_listed ? " best" : ""}">${esc(p.bookmaker)} <b>${esc(money(p))}</b>${p.best_listed ? " · Best listed price" : ""}</div>`).join("");
+      const prices = (g.prices || []).map((p) => `<div class="price${p.best_listed ? " best" : ""}">${esc(p.bookmaker)} <b>${esc(money(p))}</b>${p.best_listed ? " · Best listed" : ""}</div>`).join("");
       const matchup = g.kind === "outright" ? (g.sport_title || "Tournament") : `${g.away_team || ""} @ ${g.home_team || ""}`;
       const cons = g.consensus
-        ? `<p class="note">${esc(g.consensus.label || "Consensus")} ${esc(money({ american: g.consensus.american, decimal: g.consensus.decimal }))} · ${g.consensus.book_count} books · includes bookmaker margin · ${esc(g.consensus.timestamp_range?.earliest || "—")} to ${esc(g.consensus.timestamp_range?.latest || "—")}${g.settlement_note ? ` · ${esc(g.settlement_note)}` : ""}</p>`
-        : `<p class="note">Consensus unavailable.</p>`;
+        ? `<p class="note">Sportsbook consensus ${esc(money({ american: g.consensus.american, decimal: g.consensus.decimal }))} · ${g.consensus.book_count} books · ${esc(localTime(g.consensus.timestamp_range?.latest))}</p>`
+        : `<p class="note">Sportsbook consensus unavailable.</p>`;
+      const lineShown = lineLabel(g.market, g.selection, g.line);
       return `<article class="card">
-        <div class="match"><div class="teams">${esc(matchup)}</div><div class="meta">${esc(g.market_label || g.market)} · ${esc(g.player || g.selection)} ${esc(signed(g.line))} · ${esc(g.period)}</div></div>
+        <div class="match"><div class="teams">${esc(matchup)}</div><div class="meta">${esc(g.market_label || g.market)} · ${esc(g.player || g.selection)} ${esc(lineShown)}</div></div>
         <div class="cmp-books">${prices || '<span class="empty">unavailable</span>'}</div>
         ${cons}
       </article>`;
     }).join("");
-    $("panel-compare").innerHTML = `<p class="note">Compared only when event, market, selection, line, and period match. Different spreads and totals stay separate. Consensus is vig-inclusive and is not a normalized fair-probability distribution. Fair odds are per sportsbook from a complete outcome set after proportional margin removal. Missing settlement rules are not treated as compatible. Snapshot discrepancies are historical — not verified live.</p>` + arbHtml + (cards || `<article class="card"><p class="empty">No comparable prices for this filter.</p></article>`);
+    $("panel-compare").innerHTML = `<p class="note">Same event, market, selection, line, and period only. Historical prices—not live.</p>` + arbHtml + (cards || `<article class="card"><p class="empty">No comparable prices for this filter.</p></article>`);
   }
 
   function renderProps() {
@@ -290,7 +313,7 @@
       if (state.book && row.bookmaker !== state.book) return false;
       return true;
     });
-    const note = `<p class="note">${esc(state.data.player_props_note || "")}</p>`;
+    const note = `<p class="note">Sampled player props from saved odds. One event is not league coverage.</p>`;
     if (state.sport === "ncaab") {
       $("panel-props").innerHTML = note + `<article class="card"><p class="empty">NCAAB player props are documented with NBA/WNBA markets, but this snapshot has no NCAAB events. Not tested.</p></article>`;
       return;
@@ -314,8 +337,7 @@
       const under = list.find((r) => (r.selection || "").toLowerCase() === "under");
       const rest = list.filter((r) => r !== over && r !== under);
       const btns = [over, under, ...rest].filter(Boolean).map((row) => oddButton(row, {
-        label: `${row.selection} · ${row.bookmaker || ""}`.trim(),
-        line: row.line,
+        label: `${row.selection} ${threshold(row.line)} · ${row.bookmaker || "Sportsbook unavailable"}`.trim(),
         event_id: row.event_id,
         market: row.market,
         selection: row.selection,
@@ -323,13 +345,16 @@
         matchup,
         market_label: row.market_label,
         period: row.period,
+        line: row.line,
+        lineInLabel: true,
       })).join("");
+      const books = [...new Set(list.map((r) => r.bookmaker).filter(Boolean))];
       return `<article class="card">
         <div class="player">${esc(sample.player || "Unknown player")}</div>
         ${season}
-        <p class="meta">${esc(matchup)} · ${esc(sample.market_label || "Player market")} · ${esc(sample.period || "game")} · ${esc(sample.bookmaker || "")}</p>
+        <p class="meta">${esc(matchup)} · ${esc(sample.market_label || "Player market")}</p>
         <div class="odds">${btns}</div>
-        <p class="meta">Source ${esc(localTime(sample.source_timestamp))}</p>
+        <p class="meta">${books.length > 1 ? `${books.length} sportsbooks` : esc(books[0] || "Sportsbook unavailable")} · ${esc(localTime(sample.source_timestamp))}</p>
       </article>`;
     }).join("");
     $("panel-props").innerHTML = note + cards;
@@ -352,7 +377,7 @@
     const legs = state.legs.map((leg) => `<div class="leg">
       <div>
         <div><b>${esc(leg.matchup || "")}</b></div>
-        <div class="meta">${esc(leg.market_label || leg.market)} · ${esc(leg.player || "")} ${esc(leg.selection || "")} ${esc(signed(leg.line))} · ${esc(leg.bookmaker)} · ${esc(money(leg))}</div>
+        <div class="meta">${esc(leg.market_label || leg.market)} · ${esc(leg.player || "")} ${esc(leg.selection || "")} ${esc(lineLabel(leg.market, leg.selection, leg.line))} · ${esc(leg.bookmaker || "Sportsbook unavailable")} · ${esc(money(leg))}</div>
       </div>
       <button type="button" class="x" data-remove="${esc(leg.id)}" aria-label="Remove">Remove</button>
     </div>`).join("");
@@ -372,6 +397,18 @@
       <p style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
         <button type="button" class="btn ghost" id="clear-legs">Clear All</button>
       </p>
+    `;
+  }
+
+  function renderHow() {
+    const el = $("how-body");
+    if (!el) return;
+    el.innerHTML = `
+      <p><b>Saved odds—not live.</b> Times shown are the sportsbook update times in this snapshot.</p>
+      <p><b>Market-derived fair odds</b> remove that sportsbook’s margin from a complete set of outcomes for the same market, line, and period. They are not SB ME win probabilities.</p>
+      <p><b>Sportsbook consensus</b> is the typical listed price across unique books for the same selection. It still includes each book’s margin.</p>
+      <p>Price discrepancies are historical and not a live or guaranteed profit. Incomplete markets, mismatched lines, integer lines that can push, and stale mixed timestamps stay unavailable.</p>
+      <p>Player props in this preview are sampled events, not every game. Combined parlay prices are illustrative except when same-game legs suppress a combined price.</p>
     `;
   }
 
@@ -407,6 +444,7 @@
     renderProps();
     renderParlay();
     renderSlip();
+    renderHow();
     renderDev();
   }
 

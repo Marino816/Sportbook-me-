@@ -194,7 +194,7 @@ class PreviewTests(unittest.TestCase):
             (root / "latest_payloads.json").write_text(json.dumps(payloads))
             preview = build_preview(root=root)
         self.assertFalse(preview["live_data"])
-        self.assertEqual(preview["notice"], "Preview • Saved odds • Not live.")
+        self.assertEqual(preview["notice"], "Saved odds—not live")
         nfl = preview["coverage_by_title"]["NFL"]
         self.assertEqual(nfl["markets"]["h2h"], "present")
         self.assertEqual(preview["coverage_by_title"]["NCAAF"]["event_count"], 0)
@@ -263,6 +263,9 @@ class AnalysisTests(unittest.TestCase):
         found = scan_arbitrage(groups, [{"id": "s1", "selector": "soccer"}])
         self.assertTrue(found)
         self.assertTrue(found[0]["ok"])
+        self.assertGreater(found[0]["discrepancy_pct"], 0)
+        self.assertTrue(found[0]["legs"])
+        self.assertTrue(found[0]["source_timestamps"])
         self.assertEqual(found[0]["label"], "Historical price discrepancy—not verified live.")
         self.assertFalse(found[0]["executable"])
         self.assertFalse(found[0]["guaranteed_profit"])
@@ -286,6 +289,29 @@ class AnalysisTests(unittest.TestCase):
              "prices": [{"bookmaker_key": "fd", "bookmaker": "FD", "american": 150, "source_timestamp": "2026-09-30T13:00:00Z"}]},
         ]
         self.assertEqual(scan_arbitrage(stale, [{"id": "e2", "selector": "nfl"}]), [])
+
+    def test_discrepancy_never_defaults_to_zero_opportunity(self):
+        from market_snapshot.analysis import _positive_discrepancy, scan_arbitrage
+        self.assertIsNone(_positive_discrepancy(None))
+        self.assertIsNone(_positive_discrepancy(1.0))
+        self.assertIsNone(_positive_discrepancy(1.2))
+        tiny = _positive_discrepancy(0.99995)
+        self.assertIsNotNone(tiny)
+        self.assertGreater(tiny["discrepancy_pct"], 0)
+        self.assertGreaterEqual(tiny["discrepancy_precision"], 2)
+        even = _positive_discrepancy(0.5 + 0.5)
+        self.assertIsNone(even)
+        ts = "2026-09-30T12:00:00Z"
+        # -110 / -110 is not an opportunity
+        groups = [
+            {"event_id": "e3", "market": "h2h", "period": "game", "line": None, "player": "", "selection": "Home",
+             "prices": [{"bookmaker_key": "dk", "bookmaker": "DK", "american": -110, "source_timestamp": ts}]},
+            {"event_id": "e3", "market": "h2h", "period": "game", "line": None, "player": "", "selection": "Away",
+             "prices": [{"bookmaker_key": "fd", "bookmaker": "FD", "american": -110, "source_timestamp": ts}]},
+        ]
+        found = scan_arbitrage(groups, [{"id": "e3", "selector": "nfl", "away_team": "Away", "home_team": "Home"}])
+        self.assertTrue(all(not a.get("ok") or a.get("discrepancy_pct", 0) > 0 for a in found))
+        self.assertFalse(any(a.get("ok") and a.get("discrepancy_pct") == 0 for a in found))
 
 
 class SchedulerTests(unittest.TestCase):

@@ -106,7 +106,7 @@ def consensus_prices(prices: list[dict]) -> dict | None:
         },
         "settlement_rules": "unconfirmed",
         "timestamp_range": rng,
-        "label": "Book consensus (median vig-inclusive implied probability — not de-vigged)",
+        "label": "Sportsbook consensus",
     }
 
 
@@ -213,9 +213,12 @@ def scan_arbitrage(groups: list[dict], events: list[dict]) -> list[dict]:
             if any(d is None or d <= 1 for d in decs):
                 continue
             implied = sum(1.0 / d for d in decs)
-            if implied >= 1.0:
+            disc = _positive_discrepancy(implied)
+            if disc is None:
                 continue
-            found.append(_arb_row(event_id, "h2h", period, line, bests, implied, "3-way including draw"))
+            row = _arb_row(event_id, "h2h", period, line, bests, implied, "3-way including draw", pair=(others[0], others[1], draw))
+            if row:
+                found.append(row)
             continue
         if market == "h2h" and event_id not in soccer_events:
             if len(by_sel) != 2:
@@ -229,7 +232,46 @@ def scan_arbitrage(groups: list[dict], events: list[dict]) -> list[dict]:
             push = _integer_line(line)
             found.extend(_two_way(event_id, market, period, line, pair, push=push))
     found.extend(_spread_arbs(groups))
-    return found[:40]
+    _attach_event_context(found, events, groups)
+    return [row for row in found if row.get("unavailable") or (row.get("ok") and (row.get("discrepancy_pct") or 0) > 0)][:40]
+
+
+def _positive_discrepancy(implied) -> dict | None:
+    if implied is None:
+        return None
+    try:
+        imp = float(implied)
+    except (TypeError, ValueError):
+        return None
+    if imp <= 0 or imp >= 1.0:
+        return None
+    raw = (1.0 - imp) * 100.0
+    if raw <= 0:
+        return None
+    for digits in (2, 4, 6):
+        rounded = round(raw, digits)
+        if rounded > 0:
+            return {
+                "discrepancy_pct": rounded,
+                "discrepancy_precision": digits,
+                "implied_total": round(imp, 6),
+            }
+    return None
+
+
+def _attach_event_context(found: list[dict], events: list[dict], groups: list[dict]) -> None:
+    by_id = {e.get("id"): e for e in events or []}
+    for row in found:
+        ev = by_id.get(row.get("event_id"))
+        if ev:
+            away = ev.get("away_team") or ""
+            home = ev.get("home_team") or ""
+            row["matchup"] = f"{away} @ {home}".strip(" @")
+            row["commence_time"] = ev.get("commence_time")
+        else:
+            sample = next((g for g in groups if g.get("event_id") == row.get("event_id")), None)
+            if sample:
+                row["matchup"] = f"{sample.get('away_team') or ''} @ {sample.get('home_team') or ''}".strip(" @")
 
 
 def _spread_arbs(groups: list[dict]) -> list[dict]:
@@ -290,7 +332,8 @@ def _two_way(event_id, market, period, line, pair, *, push: bool) -> list[dict]:
     if any(d is None or d <= 1 for d in decs):
         return []
     implied = sum(1.0 / d for d in decs)
-    if implied >= 1.0:
+    disc = _positive_discrepancy(implied)
+    if disc is None:
         return []
     if push:
         return [{
@@ -303,10 +346,25 @@ def _two_way(event_id, market, period, line, pair, *, push: bool) -> list[dict]:
             "reason": "Push/void is possible on this integer line and is not separately quoted. Arbitrage is unsupported.",
             "label": ARB_LABEL,
         }]
-    return [_arb_row(event_id, market, period, line, bests, implied, "2-way")]
+    row = _arb_row(event_id, market, period, line, bests, implied, "2-way", pair=pair)
+    return [row] if row else []
 
 
-def _arb_row(event_id, market, period, line, bests, implied, kind) -> dict:
+def _arb_row(event_id, market, period, line, bests, implied, kind, pair=None) -> dict | None:
+    disc = _positive_discrepancy(implied)
+    if disc is None:
+        return None
+    legs = []
+    for i, b in enumerate(bests):
+        group = pair[i] if pair and i < len(pair) else {}
+        legs.append({
+            "bookmaker": b.get("bookmaker"),
+            "american": b.get("american"),
+            "source_timestamp": b.get("source_timestamp"),
+            "selection": group.get("selection"),
+            "player": group.get("player"),
+            "line": group.get("line") if group.get("line") is not None else line,
+        })
     return {
         "ok": True,
         "event_id": event_id,
@@ -314,9 +372,8 @@ def _arb_row(event_id, market, period, line, bests, implied, kind) -> dict:
         "period": period,
         "line": line,
         "kind": kind,
-        "implied_total": round(implied, 4),
-        "discrepancy_pct": round((1.0 - implied) * 100, 2),
-        "legs": [{"bookmaker": b.get("bookmaker"), "american": b.get("american"), "source_timestamp": b.get("source_timestamp")} for b in bests],
+        **disc,
+        "legs": legs,
         "source_timestamps": [b.get("source_timestamp") for b in bests],
         "label": ARB_LABEL,
         "executable": False,

@@ -501,7 +501,7 @@ def build_preview(*, root: Path | None = None) -> dict:
         "development": True,
         "live_data": False,
         "label": SNAPSHOT_LABEL,
-        "notice": "Preview • Saved odds • Not live.",
+        "notice": "Saved odds—not live",
         "not_live_label": NOT_LIVE,
         "odds_format_default": "american",
         "parlay_note": "Illustrative combined odds—not a sportsbook quote.",
