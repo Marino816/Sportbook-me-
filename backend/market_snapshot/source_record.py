@@ -1,0 +1,58 @@
+"""Official The Odds API source record. No secrets. Isolated development only."""
+
+SOURCE = {
+    "provider": "The Odds API",
+    "docs": "https://the-odds-api.com/liveapi/guides/v4/",
+    "terms": "https://the-odds-api.com/terms-and-conditions.html",
+    "markets_list": "https://the-odds-api.com/sports-odds-data/betting-markets.html",
+    "host": "https://api.the-odds-api.com",
+    "sports_sampled": {
+        "americanfootball_nfl": "NFL",
+        "americanfootball_ncaaf": "NCAAF",
+        "baseball_mlb": "MLB",
+    },
+    "featured_markets": ["h2h", "spreads", "totals"],
+    "region_this_test": "us",
+    "credit_formula_featured": "markets_specified × regions (empty body costs 0)",
+    "credit_formula_event_odds": "unique_markets_returned × regions (empty body costs 0)",
+    "sports_endpoint_cost": 0,
+    "events_endpoint_cost": 0,
+    "event_markets_endpoint_cost": 1,
+    "historical_endpoints": "paid plans only — not called",
+    "empty_featured_odds_cost": 0,
+    "empty_event_odds_cost": 0,
+    "us_region_bookmakers_documented": [
+        "betonlineag", "betmgm", "betrivers", "betus", "bovada",
+        "williamhill_us", "draftkings", "fanatics", "fanduel", "lowvig", "mybookieag",
+    ],
+    "us_paid_subscription_only_books": ["williamhill_us (Caesars)", "fanatics"],
+    "us2_region": "documented, not sampled this test",
+    "customer_facing_use": (
+        "Terms (updated 31 August 2026) permit storing data indefinitely and displaying it in a UI, "
+        "including commercial use, provided the data is not resold as a standalone data feed/API."
+    ),
+    "storage": "Storing and retaining data indefinitely is permitted.",
+    "key_handling": "Keep API key private; quota depletes if leaked. Never put the key in browser code.",
+    "homepage_plans_usd": {
+        "source": "https://the-odds-api.com/ (homepage fetch 403 this session; prices from official homepage search snippets)",
+        "free": {"price_usd": 0, "credits_per_month": 500},
+        "20k": {"price_usd": 30, "credits_per_month": 20000},
+        "100k": {"price_usd": 59, "credits_per_month": 100000},
+    },
+    "compatibility_gaps": [
+        "Production Market Tools identify events with SportsGameOdds ids; Odds API uses its own event ids.",
+        "No Fair Odds, book consensus, or arbitrage scanner in this adapter.",
+        "Period, alternate, and most player-prop markets are unavailable until sampled.",
+        "Caesars and Fanatics are documented as paid-subscription-only on region us.",
+        "Parlay math is an SB ME product of decimals, not a bookmaker SGP quote.",
+    ],
+    "untested_coverage": [
+        "uk/eu/au/ca/fr/se/fi regions",
+        "us2, us_dfs, us_ex bookmakers",
+        "outrights/futures",
+        "period markets",
+        "alternate lines",
+        "player props for sports other than the one event sampled",
+        "NCAAF and MLB player props",
+    ],
+}

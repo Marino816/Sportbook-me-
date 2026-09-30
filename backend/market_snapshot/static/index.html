@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SB ME Market Tools — Snapshot</title>
+  <link rel="stylesheet" href="/preview.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="head">
+      <div>
+        <p class="kicker">SPORTBOOK ME <span>DFS.AI</span> · LOCAL DEVELOPMENT</p>
+        <h1>Market Tools</h1>
+        <p class="sub">Provider-independent adapter · The Odds API snapshot · SGO unchanged</p>
+      </div>
+      <span class="chip">Snapshot</span>
+    </header>
+    <div class="banner">Snapshot — not a live update. Prices are from saved responses. No SB ME value edges.</div>
+    <p class="stamp" id="stamp"></p>
+    <section class="coverage" id="coverage"></section>
+    <nav class="tabs" id="tabs">
+      <button type="button" class="tab is-on" data-tab="live">Live Odds</button>
+      <button type="button" class="tab" data-tab="compare">Compare</button>
+      <button type="button" class="tab" data-tab="props">Player Props</button>
+      <button type="button" class="tab" data-tab="parlay">Parlay</button>
+    </nav>
+    <section id="panel-live" class="panel"></section>
+    <section id="panel-compare" class="panel" hidden></section>
+    <section id="panel-props" class="panel" hidden></section>
+    <section id="panel-parlay" class="panel" hidden></section>
+  </div>
+  <script src="/preview.js"></script>
+</body>
+</html>
