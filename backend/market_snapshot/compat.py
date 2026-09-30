@@ -143,6 +143,58 @@ def preserve_or_unavailable(leg: dict, events: list[dict]) -> dict:
     }
 
 
+def resolve_selection(leg: dict, quote_index: dict, events: list[dict]) -> dict:
+    """Map a saved quote by namespaced id only. Never match on team/player names."""
+    quote_id = (leg.get("id") or "").strip()
+    event_id = leg.get("event_id") or leg.get("internal_event_id")
+    if quote_id in (quote_index or {}):
+        quote = quote_index[quote_id]
+        return {
+            **leg,
+            **{k: quote.get(k) for k in ("id", "event_id", "market", "selection", "player", "line", "bookmaker", "bookmaker_key", "american", "period", "source_event_id", "source_timestamp")},
+            "mapped": True,
+            "unavailable": False,
+            "namespace": ODDSAPI_NS,
+            "sgo_event_id": None,
+        }
+    parsed = parse_internal_event_id(str(event_id or quote_id or ""))
+    if parsed.get("namespace") == SGO_NS or (not quote_id.startswith(f"{ODDSAPI_NS}|") and str(event_id or "").startswith(f"{SGO_NS}:")):
+        return {
+            "mapped": False,
+            "unavailable": True,
+            "reason": "Legacy SGO selection has no verified mapping. Displayed as unavailable.",
+            "sgo_event_id": None,
+            "saved_id": quote_id or None,
+            "saved_event_id": event_id,
+        }
+    event = resolve_event(event_id, events) if event_id else {"found": False, "reason": "missing_event_id"}
+    if not event.get("found"):
+        return {
+            "mapped": False,
+            "unavailable": True,
+            "reason": event.get("reason") or "Selection cannot be mapped reliably. Nothing was substituted.",
+            "sgo_event_id": None,
+            "saved_id": quote_id or None,
+            "saved_event_id": event_id,
+        }
+    if quote_id:
+        return {
+            "mapped": False,
+            "unavailable": True,
+            "reason": "Event is present but this selection id is not in the snapshot. Nothing was substituted.",
+            "sgo_event_id": None,
+            "saved_id": quote_id,
+            "saved_event_id": event_id,
+        }
+    return {
+        "mapped": False,
+        "unavailable": True,
+        "reason": "Saved selection is missing a namespaced quote id. Ambiguous recovery is not allowed.",
+        "sgo_event_id": None,
+        "saved_event_id": event_id,
+    }
+
+
 def internal_event_record(sport_key: str, source_event_id: str) -> dict:
     return {
         "source_namespace": ODDSAPI_NS,

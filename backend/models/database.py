@@ -24,15 +24,15 @@ def _init_engine():
         return
     url = _get_database_url()
     is_production = os.getenv("NODE_ENV") == "production"
-    connect_args = {"ssl": "require"} if is_production else {}
-    _engine = create_async_engine(
-        url,
-        echo=False,
-        connect_args=connect_args,
-        pool_pre_ping=True,
-        pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
-        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
-    )
+    kwargs = {"echo": False, "pool_pre_ping": True}
+    if url.startswith("sqlite"):
+        from sqlalchemy.pool import NullPool
+        kwargs["poolclass"] = NullPool
+    else:
+        kwargs["connect_args"] = {"ssl": "require"} if is_production else {}
+        kwargs["pool_size"] = int(os.getenv("DB_POOL_SIZE", "5"))
+        kwargs["max_overflow"] = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+    _engine = create_async_engine(url, **kwargs)
     _SessionLocal = sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
 

@@ -73,16 +73,23 @@ def flatten_odds(sport_key: str, sport_title: str, events: list) -> list[dict]:
                     if meta.get("kind") == "outright" and not player:
                         player = selection
                     ident = internal_event_record(sport_key, event_id)
+                    quote_id = namespaced_quote_id((
+                        ident["internal_event_id"],
+                        market_key,
+                        selection,
+                        line_key(point),
+                        book_key,
+                        player or "",
+                        period,
+                    ))
                     rows.append({
-                        "id": namespaced_quote_id((
-                            ident["internal_event_id"],
-                            market_key,
-                            selection,
-                            line_key(point),
-                            book_key,
-                            player or "",
-                            period,
-                        )),
+                        "id": quote_id,
+                        "internal_selection_id": quote_id,
+                        "internal_market_id": f"{ident['source_namespace']}:market:{sport_key}:{market_key}",
+                        "internal_bookmaker_id": f"{ident['source_namespace']}:bookmaker:{book_key}",
+                        "internal_player_id": (
+                            f"{ident['source_namespace']}:player:{sport_key}:{player}" if player else None
+                        ),
                         "event_id": ident["internal_event_id"],
                         "source_namespace": ident["source_namespace"],
                         "source_event_id": ident["source_event_id"],

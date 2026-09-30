@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -134,10 +135,17 @@ class ParlayTests(unittest.TestCase):
     def test_conflict_and_duplicate(self):
         a = {"event_id": "e1", "market": "h2h", "selection": "Home", "period": "game", "line": None, "player": ""}
         b = {"event_id": "e1", "market": "h2h", "selection": "Away", "period": "game", "line": None, "player": ""}
+        spread = {"event_id": "e1", "market": "spreads", "selection": "Home", "period": "game", "line": -3.5, "player": ""}
         self.assertTrue(parlay_conflict(a, b))
+        self.assertFalse(parlay_conflict(a, spread))
         self.assertTrue(parlay_duplicate(a, dict(a)))
         blocked = combine_parlay([{**a, "american": -110}, {**b, "american": 120}])
         self.assertTrue(blocked.get("conflict"))
+        compatible = combine_parlay([{**a, "american": -110}, {**spread, "american": -105}])
+        self.assertFalse(compatible.get("conflict"))
+        self.assertTrue(compatible.get("same_game"))
+        self.assertTrue(compatible.get("combined_suppressed"))
+        self.assertFalse(compatible.get("ok"))
 
 
 class PreviewTests(unittest.TestCase):
@@ -356,7 +364,14 @@ class CostModelTests(unittest.TestCase):
         self.assertFalse(a["plans"]["coverage_removed_to_fit_59"])
         self.assertIn("price_status", a["plans"]["plan_59"])
         self.assertGreater(a["busy_day"]["total"], a["typical_day"]["total"])
-        self.assertEqual(a["busy_week"]["props"]["events_per_refresh"], 5)
+        self.assertGreater(a["busy_week"]["props"]["events_modeled"], 5)
+        self.assertFalse(full["live_test_budget"]["used_in_cost_model"])
+        self.assertIn("all_eligible_events", a["busy_week"]["props"]["model"])
+        self.assertGreater(a["busiest_30_day"]["prop_credits"], a["typical_30_day"]["prop_credits"])
+        cov = a["busy_week"]["props"]["coverage"]
+        self.assertIn("americanfootball_nfl", cov["supported"])
+        self.assertIn("basketball_ncaab", cov["unknown"])
+        self.assertIn("americanfootball_nfl", cov["sampled_in_live_test"])
 
 
 class CompatTests(unittest.TestCase):
@@ -410,3 +425,132 @@ class CompatTests(unittest.TestCase):
         self.assertIsNone(ev["sgo_event_id"])
         self.assertFalse(preview["compatibility"]["sgo_fields_fabricated"])
         self.assertIn("Lookup by SGO event ID", " ".join(preview["compatibility"]["unsupported_production_features"]))
+
+
+class ProviderSwitchTests(unittest.TestCase):
+    def tearDown(self):
+        os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+        os.environ.pop("NODE_ENV", None)
+
+    def test_default_is_sgo_and_production_ignores_snapshot(self):
+        from market_snapshot.provider import is_snapshot, market_tools_provider, snapshot_blocks_sgo
+
+        os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+        os.environ["NODE_ENV"] = "development"
+        self.assertEqual(market_tools_provider(), "sgo")
+        self.assertFalse(snapshot_blocks_sgo())
+        os.environ["MARKET_TOOLS_PROVIDER"] = "oddsapi_snapshot"
+        os.environ["NODE_ENV"] = "production"
+        self.assertEqual(market_tools_provider(), "sgo")
+        self.assertFalse(is_snapshot())
+        os.environ["NODE_ENV"] = "development"
+        self.assertTrue(is_snapshot())
+        self.assertTrue(snapshot_blocks_sgo())
+
+
+class SelectionMappingTests(unittest.TestCase):
+    def test_legacy_sgo_and_missing_quote_are_unavailable(self):
+        from market_snapshot.compat import resolve_selection
+        events = [{
+            "id": "oddsapi:americanfootball_nfl:abc",
+            "internal_event_id": "oddsapi:americanfootball_nfl:abc",
+            "source_event_id": "abc",
+            "sport_key": "americanfootball_nfl",
+        }]
+        index = {"oddsapi|oddsapi:americanfootball_nfl:abc|h2h|Home|none|dk||game": {
+            "id": "oddsapi|oddsapi:americanfootball_nfl:abc|h2h|Home|none|dk||game",
+            "event_id": "oddsapi:americanfootball_nfl:abc",
+            "selection": "Home",
+        }}
+        legacy = resolve_selection({"id": "sgo:old", "event_id": "sgo:old"}, index, events)
+        self.assertTrue(legacy["unavailable"])
+        self.assertIsNone(legacy["sgo_event_id"])
+        missing = resolve_selection({
+            "id": "oddsapi|oddsapi:americanfootball_nfl:abc|h2h|Away|none|dk||game",
+            "event_id": "oddsapi:americanfootball_nfl:abc",
+        }, index, events)
+        self.assertTrue(missing["unavailable"])
+        self.assertIn("not in the snapshot", missing["reason"])
+        named = resolve_selection({"event_id": "oddsapi:americanfootball_nfl:abc", "selection": "Home"}, index, events)
+        self.assertTrue(named["unavailable"])
+        self.assertIn("Ambiguous", named["reason"])
+
+
+class InternalApiTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["NODE_ENV"] = "development"
+        os.environ["MARKET_TOOLS_PROVIDER"] = "oddsapi_snapshot"
+        payloads = {
+            "sports": [{"key": "americanfootball_nfl", "title": "NFL"}],
+            "odds": {
+                "americanfootball_nfl": [
+                    {
+                        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "commence_time": "2026-10-04T17:00:00Z",
+                        "home_team": "Home",
+                        "away_team": "Away",
+                        "bookmakers": [{
+                            "key": "draftkings",
+                            "title": "DraftKings",
+                            "last_update": "2026-09-30T12:00:00Z",
+                            "markets": [
+                                {"key": "h2h", "outcomes": [{"name": "Home", "price": -130}, {"name": "Away", "price": 110}]},
+                                {"key": "totals", "outcomes": [{"name": "Over", "price": -110, "point": 45.5}, {"name": "Under", "price": -110, "point": 45.5}]},
+                            ],
+                        }],
+                    },
+                    {
+                        "id": "cccccccccccccccccccccccccccccccc",
+                        "commence_time": "2026-10-04T20:00:00Z",
+                        "home_team": "North",
+                        "away_team": "South",
+                        "bookmakers": [{
+                            "key": "fanduel",
+                            "title": "FanDuel",
+                            "last_update": "2026-09-30T12:00:00Z",
+                            "markets": [{"key": "h2h", "outcomes": [{"name": "North", "price": -115}, {"name": "South", "price": -105}]}],
+                        }],
+                    },
+                ],
+            },
+            "index": {},
+        }
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        (root / "latest_payloads.json").write_text(json.dumps(payloads))
+        from market_snapshot import cache
+        cache.reset_for_tests()
+        self.preview = cache.get_preview(root=root)
+        self.cache = cache
+
+    def tearDown(self):
+        self.cache.reset_for_tests()
+        self.tmp.cleanup()
+        os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+
+    def test_snapshot_and_legacy_and_no_sgo(self):
+        public = self.cache.public_preview()
+        self.assertEqual(public["http_requests_used"], 0)
+        self.assertTrue(public["events"][0]["id"].startswith("oddsapi:"))
+        self.assertIsNone(public["events"][0]["sgo_event_id"])
+        self.assertIn("internal_bookmaker_id", self.preview["quote_index"][next(iter(self.preview["quote_index"]))])
+        legacy = self.cache.resolve_saved("sgo:not-real")
+        self.assertTrue(legacy["unavailable"])
+        self.assertIsNone(legacy.get("sgo_event_id"))
+        home = public["events"][0]["books"][0]["h2h"]["home"]["id"]
+        over = public["events"][0]["books"][0]["totals"]["over"]["id"]
+        other = public["events"][1]["books"][0]["h2h"]["home"]["id"]
+        dup = self.cache.parlay_from_body({"leg_ids": [home, home]})
+        self.assertTrue(dup.get("duplicate") or not dup["ok"])
+        same = self.cache.parlay_from_body({"leg_ids": [home, over]})
+        self.assertTrue(same.get("same_game"))
+        self.assertTrue(same.get("combined_suppressed"))
+        cross = self.cache.parlay_from_body({"leg_ids": [home, other]})
+        self.assertTrue(cross.get("ok"))
+        self.assertFalse(cross.get("combined_suppressed"))
+        self.assertIn("Illustrative", cross.get("label") or "")
+        unmapped = self.cache.parlay_from_body({"legs": [{"id": "sgo:legacy", "event_id": "sgo:legacy"}]})
+        self.assertTrue(unmapped.get("unavailable"))
+        self.assertEqual(self.cache.stats()["provider_http_this_process"], 0)
+        self.assertFalse(self.cache.stats()["browsing_triggers_upstream"])
+

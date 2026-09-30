@@ -13,6 +13,8 @@
     parlay: null,
     parlayError: "",
   };
+  const API = window.SBME_MARKET_TOOLS_API || { snapshot: "/api/snapshot", parlay: "/api/parlay" };
+  const SLIP_KEY = "sbme_mt_slip_v1";
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -94,6 +96,7 @@
     state.legs.push(leg);
     state.parlayError = "";
     state.parlay = null;
+    persistLegs();
     renderAll();
     calcParlay();
   }
@@ -101,6 +104,7 @@
     state.legs = state.legs.filter((l) => l.id !== id);
     state.parlay = null;
     state.parlayError = "";
+    persistLegs();
     renderAll();
     calcParlay();
   }
@@ -108,17 +112,35 @@
     state.legs = [];
     state.parlay = null;
     state.parlayError = "";
+    persistLegs();
     renderAll();
+  }
+
+  async function apiFetch(url, opts) {
+    const headers = Object.assign({}, (opts && opts.headers) || {});
+    if (API.token) headers.Authorization = `Bearer ${API.token}`;
+    const res = await fetch(url, Object.assign({}, opts || {}, { headers }));
+    const json = await res.json();
+    return API.unwrap && json && json.data !== undefined ? json.data : json;
+  }
+
+  function persistLegs() {
+    try { localStorage.setItem(SLIP_KEY, JSON.stringify({ legs: state.legs })); } catch (e) { /* ignore */ }
+  }
+  function restoreLegs() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SLIP_KEY) || "null");
+      if (saved && Array.isArray(saved.legs)) state.legs = saved.legs;
+    } catch (e) { /* ignore */ }
   }
 
   async function calcParlay() {
     if (state.legs.length < 2) { state.parlay = null; renderSlip(); return; }
-    const res = await fetch("/api/parlay", {
+    state.parlay = await apiFetch(API.parlay, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ leg_ids: state.legs.map((l) => l.id) }),
     });
-    state.parlay = await res.json();
     renderSlip();
   }
 
@@ -474,7 +496,8 @@
     if (t instanceof HTMLInputElement && t.id === "team-search") { state.search = t.value; renderLive(); renderCompare(); renderProps(); }
   });
 
-  fetch("/api/snapshot").then((r) => r.json()).then((data) => {
+  restoreLegs();
+  apiFetch(API.snapshot).then((data) => {
     state.data = data;
     renderAll();
     show(state.tab);

@@ -25,6 +25,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/sgo", tags=["SGO Data"])
 
 
+def _blocked_sgo(capability: str, **extra):
+    """Refuse nested SGO only when Odds API serving is globally on. Default is SGO."""
+    from market_snapshot.consumers import unavailable
+    from market_snapshot.provider import snapshot_blocks_sgo
+
+    if not snapshot_blocks_sgo():
+        return None
+    return wrap_data(unavailable(
+        capability=capability,
+        reason=(
+            "SportsGameOdds nested data is not used while Odds API Market Tools serving is on. "
+            "Nothing was invented."
+        ),
+        **extra,
+    ), source="oddsapi")
+
+
 # ── Redis helpers ────────────────────────────────────────────
 
 def _rget(key: str):
@@ -244,6 +261,9 @@ async def get_events(
     user: User = Depends(get_current_user),
 ):
     """Canonical SDK Event → SBEvent JSON array for every SGO consumer."""
+    blocked = _blocked_sgo("sgo_nested_events", events=[], league=league)
+    if blocked is not None:
+        return blocked
     normalized_league = league.upper()
     cache_key = f"sgo:v2:sbevents:{normalized_league}"
     cached = _rget(cache_key)
