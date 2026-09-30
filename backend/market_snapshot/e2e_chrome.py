@@ -1,4 +1,11 @@
-"""Headless Chrome / CDP customer-interaction tests for Market Tools snapshot app."""
+"""Headless Chrome / CDP customer-interaction tests for Market Tools snapshot app.
+
+Credentials and screenshot writes are never hardcoded. Set:
+  SBME_E2E_WEB, SBME_E2E_API, SBME_E2E_EMAIL, SBME_E2E_PASSWORD
+  SBME_E2E_PROPAGATION=1 for labeled-fixture price replacement
+  SBME_E2E_ENTITLE=1 to mark a local sqlite user is_pro (dev only)
+  SBME_E2E_SHOTS=1 to write PNGs under screenshots/ (gitignored)
+"""
 
 from __future__ import annotations
 
@@ -458,11 +465,12 @@ def run() -> dict:
             }, timeout=90)
             value = (result.get("result") or {}).get("result") or {}
             payload = value.get("value") if value.get("type") == "object" else None
-            shot = ws.call("Page.captureScreenshot", {"format": "png"})
-            b64 = ((shot.get("result") or {}).get("data")) or ""
-            if b64:
-                import base64
-                (OUT / f"e2e-app-{name}.png").write_bytes(base64.b64decode(b64))
+            if os.environ.get("SBME_E2E_SHOTS") == "1":
+                shot = ws.call("Page.captureScreenshot", {"format": "png"})
+                b64 = ((shot.get("result") or {}).get("data")) or ""
+                if b64:
+                    import base64
+                    (OUT / f"e2e-app-{name}.png").write_bytes(base64.b64decode(b64))
             return payload or {"ok": False, "checks": [], "error": result}
 
         report["desktop"] = run_viewport(1280, 800, "desktop")
@@ -520,7 +528,7 @@ def run_price_propagation() -> dict:
         "checks": [],
         "price_a": None,
         "price_b": None,
-        "entitle": entitle_local_sqlite_user(email) if email else None,
+        "entitle": entitle_local_sqlite_user(email) if email and os.environ.get("SBME_E2E_ENTITLE") == "1" else None,
     }
     if not email or not password:
         report["blocker"] = "SBME_E2E_EMAIL and SBME_E2E_PASSWORD must be set"
@@ -625,11 +633,12 @@ def run_price_propagation() -> dict:
         price_a = read_price()
         report["price_a"] = price_a
         note("browser_price_a", price_a.get("american") == "-148", json.dumps(price_a))
-        shot = ws.call("Page.captureScreenshot", {"format": "png"})
-        b64 = ((shot.get("result") or {}).get("data")) or ""
-        if b64:
-            import base64
-            (OUT / "e2e-fixture-a.png").write_bytes(base64.b64decode(b64))
+        if os.environ.get("SBME_E2E_SHOTS") == "1":
+            shot = ws.call("Page.captureScreenshot", {"format": "png"})
+            b64 = ((shot.get("result") or {}).get("data")) or ""
+            if b64:
+                import base64
+                (OUT / "e2e-fixture-a.png").write_bytes(base64.b64decode(b64))
 
         try:
             b_body = ingest("fixture_b_price_change.json")
@@ -641,11 +650,12 @@ def run_price_propagation() -> dict:
         price_b = read_price()
         report["price_b"] = price_b
         note("browser_price_b", price_b.get("american") == "-155", json.dumps(price_b))
-        shot = ws.call("Page.captureScreenshot", {"format": "png"})
-        b64 = ((shot.get("result") or {}).get("data")) or ""
-        if b64:
-            import base64
-            (OUT / "e2e-fixture-b.png").write_bytes(base64.b64decode(b64))
+        if os.environ.get("SBME_E2E_SHOTS") == "1":
+            shot = ws.call("Page.captureScreenshot", {"format": "png"})
+            b64 = ((shot.get("result") or {}).get("data")) or ""
+            if b64:
+                import base64
+                (OUT / "e2e-fixture-b.png").write_bytes(base64.b64decode(b64))
         changed = price_a.get("american") == "-148" and price_b.get("american") == "-155"
         note("price_changed_in_browser", changed, f"{price_a.get('american')} -> {price_b.get('american')}")
         report["ok"] = all(c["pass"] for c in report["checks"])

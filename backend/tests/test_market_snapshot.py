@@ -624,8 +624,8 @@ class FixtureCacheReplacementTests(unittest.TestCase):
 
         class Dummy:
             id = 1
-            is_pro = True
-            role = "user"
+            is_pro = False
+            role = "admin"
             active_subscription_id = None
 
         async def override_db():
@@ -775,7 +775,7 @@ class EntitlementTests(unittest.TestCase):
         from market_snapshot.cache import reset_for_tests
         reset_for_tests()
 
-    def _client(self, user):
+    def _client(self, user, sub=None):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
         from api.auth import get_current_user
@@ -789,7 +789,7 @@ class EntitlementTests(unittest.TestCase):
                         def scalars(self):
                             class S:
                                 def first(self):
-                                    return None
+                                    return sub
                             return S()
                     return R()
             yield Sess()
@@ -820,25 +820,28 @@ class EntitlementTests(unittest.TestCase):
         resolve = client.post("/api/market-tools/internal/resolve", json={"id": "x"})
         self.assertEqual(resolve.status_code, 403)
 
-    def test_pro_flag_can_read_snapshot(self):
-        class Pro:
+    def test_is_pro_without_plan_does_not_grant_snapshot(self):
+        class ProFlag:
             id = 3
             is_pro = True
             role = "user"
             active_subscription_id = None
 
-        client = self._client(Pro())
+        client = self._client(ProFlag())
         snap = client.get("/api/market-tools/internal/snapshot")
-        self.assertEqual(snap.status_code, 200)
-        self.assertEqual(snap.json()["data"]["events"][0]["books"][0]["h2h"]["home"]["american"], -148)
+        self.assertEqual(snap.status_code, 403)
 
-    def test_active_subscription_is_entitled(self):
+    def test_eligible_and_ineligible_plans(self):
         import asyncio
-        from market_snapshot.entitlement import plan_entitlement
+        from market_snapshot.entitlement import plan_entitlement, plan_includes_market_tools
 
-        class Sub:
-            plan_name = "Pro"
-            status = "active"
+        self.assertTrue(plan_includes_market_tools("Pro Arena"))
+        self.assertTrue(plan_includes_market_tools("Pro Arena Annual"))
+        self.assertTrue(plan_includes_market_tools("Elite Stack"))
+        self.assertTrue(plan_includes_market_tools("SBME_PRO_MONTHLY"))
+        self.assertFalse(plan_includes_market_tools("Starter"))
+        self.assertFalse(plan_includes_market_tools("Pro"))
+        self.assertFalse(plan_includes_market_tools("DFS Only"))
 
         class Paid:
             id = 4
@@ -846,19 +849,54 @@ class EntitlementTests(unittest.TestCase):
             role = "user"
             active_subscription_id = 77
 
-        class Sess:
-            async def execute(self, *a, **k):
-                class R:
-                    def scalars(self):
-                        class S:
-                            def first(self):
-                                return Sub()
-                        return S()
-                return R()
+        def session_for(plan_name, sub_status):
+            class Sub:
+                pass
+            sub = Sub()
+            sub.plan_name = plan_name
+            sub.status = sub_status
 
-        info = asyncio.run(plan_entitlement(Paid(), Sess()))
-        self.assertTrue(info["entitled"])
-        self.assertEqual(info["plan"], "Pro")
+            class Sess:
+                async def execute(self, *a, **k):
+                    class R:
+                        def scalars(self):
+                            class S:
+                                def first(self):
+                                    return sub
+                            return S()
+                    return R()
+            return Sess()
+
+        eligible = asyncio.run(plan_entitlement(Paid(), session_for("Pro Arena", "active")))
+        self.assertTrue(eligible["entitled"])
+        elite = asyncio.run(plan_entitlement(Paid(), session_for("Elite Stack", "trialing")))
+        self.assertTrue(elite["entitled"])
+        ineligible_name = asyncio.run(plan_entitlement(Paid(), session_for("Pro", "active")))
+        self.assertFalse(ineligible_name["entitled"])
+        self.assertFalse(ineligible_name["plan_includes_market_tools"])
+        starter_active = asyncio.run(plan_entitlement(Paid(), session_for("Starter", "active")))
+        self.assertFalse(starter_active["entitled"])
+        canceled = asyncio.run(plan_entitlement(Paid(), session_for("Pro Arena", "canceled")))
+        self.assertFalse(canceled["entitled"])
+
+        class ArenaUser:
+            id = 8
+            is_pro = False
+            role = "user"
+            active_subscription_id = 12
+
+        class ArenaSub:
+            plan_name = "Pro Arena"
+            status = "active"
+
+        class UnknownSub:
+            plan_name = "Pro"
+            status = "active"
+
+        ok = self._client(ArenaUser(), ArenaSub()).get("/api/market-tools/internal/snapshot")
+        self.assertEqual(ok.status_code, 200)
+        denied = self._client(ArenaUser(), UnknownSub()).get("/api/market-tools/internal/snapshot")
+        self.assertEqual(denied.status_code, 403)
 
 
 class ConsumerProjectionTests(unittest.TestCase):

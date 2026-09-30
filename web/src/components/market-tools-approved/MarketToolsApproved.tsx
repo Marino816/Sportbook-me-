@@ -210,7 +210,7 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
           return;
         }
         if (res.status === 403) {
-          if (!cancelled) setLoadError("Market Tools requires an active paid plan. Sign-in alone is not enough.");
+          if (!cancelled) setLoadError("Market Tools requires an active Pro Arena or Elite Stack plan. Sign-in alone is not enough.");
           return;
         }
         if (!res.ok) throw new Error(`API ${res.status}`);
