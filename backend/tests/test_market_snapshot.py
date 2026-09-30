@@ -209,6 +209,105 @@ class PreviewTests(unittest.TestCase):
         self.assertLess(cheapest["price_usd"], 149)
         self.assertGreaterEqual(cheapest["credits_per_month"], est["monthly_with_reserve"])
         self.assertEqual(len(LEAGUES), 20)
+        self.assertEqual(preview["fair_odds_label"], "Market-derived fair odds")
+        self.assertFalse(preview["refresh"]["continuous_fetch_enabled"])
+        self.assertFalse(preview["refresh"]["config"]["browsing_triggers_upstream"])
+        fair = preview["events"][0]["books"][0]["fair_h2h"]
+        self.assertEqual(fair["label"], "Market-derived fair odds")
+        self.assertFalse(fair["sbme_predictive"])
+
+
+class AnalysisTests(unittest.TestCase):
+    def test_fair_complete_set_and_incomplete_unavailable(self):
+        from market_snapshot.analysis import fair_from_complete
+        complete = fair_from_complete([-110, -110])
+        self.assertEqual(complete["label"], "Market-derived fair odds")
+        self.assertFalse(complete["sbme_predictive"])
+        self.assertEqual(complete["fair_american"], [100, 100])
+        self.assertIsNone(fair_from_complete([-110]))
+
+    def test_consensus_dedupes_books_and_keeps_timestamp_range(self):
+        from market_snapshot.analysis import consensus_prices
+        prices = [
+            {"bookmaker_key": "dk", "bookmaker": "DraftKings", "american": -110, "source_timestamp": "2026-09-30T12:00:00Z"},
+            {"bookmaker_key": "dk", "bookmaker": "DraftKings", "american": -105, "source_timestamp": "2026-09-30T12:05:00Z"},
+            {"bookmaker_key": "fd", "bookmaker": "FanDuel", "american": -120, "source_timestamp": "2026-09-30T12:02:00Z"},
+        ]
+        cons = consensus_prices(prices)
+        self.assertEqual(cons["book_count"], 2)
+        self.assertEqual(cons["timestamp_range"]["earliest"], "2026-09-30T12:02:00Z")
+        self.assertEqual(cons["timestamp_range"]["latest"], "2026-09-30T12:05:00Z")
+
+    def test_soccer_requires_draw_and_rejects_two_way(self):
+        from market_snapshot.analysis import scan_arbitrage
+        ts = "2026-09-30T12:00:00Z"
+        groups = [
+            {"event_id": "s1", "market": "h2h", "period": "game", "line": None, "player": "", "selection": "Arsenal",
+             "prices": [{"bookmaker_key": "dk", "bookmaker": "DK", "american": 250, "source_timestamp": ts}]},
+            {"event_id": "s1", "market": "h2h", "period": "game", "line": None, "player": "", "selection": "Chelsea",
+             "prices": [{"bookmaker_key": "fd", "bookmaker": "FD", "american": 250, "source_timestamp": ts}]},
+        ]
+        found = scan_arbitrage(groups, [{"id": "s1", "selector": "soccer"}])
+        self.assertEqual(found, [])
+        groups.append({
+            "event_id": "s1", "market": "h2h", "period": "game", "line": None, "player": "", "selection": "Draw",
+            "prices": [{"bookmaker_key": "mgm", "bookmaker": "MGM", "american": 250, "source_timestamp": ts}],
+        })
+        found = scan_arbitrage(groups, [{"id": "s1", "selector": "soccer"}])
+        self.assertTrue(found)
+        self.assertTrue(found[0]["ok"])
+        self.assertEqual(found[0]["label"], "Historical price discrepancy—not verified live.")
+        self.assertFalse(found[0]["executable"])
+        self.assertFalse(found[0]["guaranteed_profit"])
+
+    def test_integer_line_push_unsupported_and_stale_timestamps(self):
+        from market_snapshot.analysis import scan_arbitrage
+        groups = [
+            {"event_id": "e1", "market": "totals", "period": "game", "line": 44, "player": "", "selection": "Over",
+             "prices": [{"bookmaker_key": "dk", "bookmaker": "DK", "american": 150, "source_timestamp": "2026-09-30T12:00:00Z"}]},
+            {"event_id": "e1", "market": "totals", "period": "game", "line": 44, "player": "", "selection": "Under",
+             "prices": [{"bookmaker_key": "fd", "bookmaker": "FD", "american": 150, "source_timestamp": "2026-09-30T12:00:00Z"}]},
+        ]
+        found = scan_arbitrage(groups, [{"id": "e1", "selector": "nfl"}])
+        self.assertTrue(found)
+        self.assertFalse(found[0]["ok"])
+        self.assertIn("Push/void", found[0]["reason"])
+        stale = [
+            {"event_id": "e2", "market": "h2h", "period": "game", "line": None, "player": "", "selection": "Home",
+             "prices": [{"bookmaker_key": "dk", "bookmaker": "DK", "american": 150, "source_timestamp": "2026-09-30T10:00:00Z"}]},
+            {"event_id": "e2", "market": "h2h", "period": "game", "line": None, "player": "", "selection": "Away",
+             "prices": [{"bookmaker_key": "fd", "bookmaker": "FD", "american": 150, "source_timestamp": "2026-09-30T13:00:00Z"}]},
+        ]
+        self.assertEqual(scan_arbitrage(stale, [{"id": "e2", "selector": "nfl"}]), [])
+
+
+class SchedulerTests(unittest.TestCase):
+    def test_quota_stop_and_single_flight_and_disabled_fetch(self):
+        from market_snapshot.scheduler import (
+            CONFIG,
+            CONTINUOUS_FETCH_ENABLED,
+            quota_allows,
+            release_flight,
+            simulate_usage,
+            single_flight,
+        )
+        self.assertFalse(CONTINUOUS_FETCH_ENABLED)
+        self.assertFalse(CONFIG["enabled"])
+        self.assertFalse(CONFIG["browsing_triggers_upstream"])
+        self.assertFalse(quota_allows(1, used_month=80000, used_day=0))
+        self.assertFalse(quota_allows(1, used_month=0, used_day=2500))
+        self.assertTrue(quota_allows(10, used_month=100, used_day=10))
+        key = "nfl|h2h|us|"
+        self.assertTrue(single_flight(key))
+        self.assertFalse(single_flight(key))
+        release_flight(key)
+        self.assertTrue(single_flight(key))
+        release_flight(key)
+        sim = simulate_usage()
+        self.assertGreater(sim["scenario_a_pregame"]["monthly_with_reserve"], 0)
+        self.assertGreater(sim["scenario_b_faster"]["monthly_with_reserve"], sim["scenario_a_pregame"]["monthly_with_reserve"])
+        self.assertTrue(sim["scenario_b_faster"]["exceeds_100k"])
+        self.assertLess(sim["scenario_a_pregame"]["plan"]["price_usd"], 149)
 
 
 if __name__ == "__main__":

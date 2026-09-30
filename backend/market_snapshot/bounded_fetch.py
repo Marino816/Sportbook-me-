@@ -19,7 +19,7 @@ from market_snapshot.source_record import SOURCE
 HOST = "https://api.the-odds-api.com"
 MAX_HTTP = 12
 MAX_CREDITS = 30
-STOP_STATUS = {401, 403, 429}
+STOP_STATUS = {401, 402, 403, 429}
 PRIVATE = Path.home() / ".sbme-dev" / "odds-api"
 LEDGER = PRIVATE / "ledger.json"
 USAGE_HEADERS = (

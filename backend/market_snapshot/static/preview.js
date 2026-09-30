@@ -207,16 +207,22 @@
       const totBtns = oddButton(totals.over, { label: "Over", line: totals.over?.line, event_id: ev.id, market: "totals", selection: "Over", matchup, market_label: labels.totals })
         + oddButton(totals.under, { label: "Under", line: totals.under?.line, event_id: ev.id, market: "totals", selection: "Under", matchup, market_label: labels.totals });
       const ts = h2h.home?.source_timestamp || spreads.home?.source_timestamp || totals.over?.source_timestamp;
+      const fair = book.fair_h2h && book.fair_h2h.sides
+        ? `<p class="note">Market-derived fair odds · Away ${esc(money(book.fair_h2h.sides.away || {}))}${book.fair_h2h.sides.draw ? ` · Draw ${esc(money(book.fair_h2h.sides.draw))}` : ""} · Home ${esc(money(book.fair_h2h.sides.home || {}))} · not an SB ME prediction</p>`
+        : (book.fair_h2h_unavailable ? `<p class="note">Market-derived fair odds unavailable (incomplete outcome set).</p>` : "");
       return `<div class="book-name">${esc(book.bookmaker)}</div>
         <div class="markets">
           <div class="mrow"><div class="mlabel">${esc(labels.h2h)}</div><div class="odds">${mlBtns}</div></div>
           <div class="mrow"><div class="mlabel">${esc(labels.spreads)}</div><div class="odds">${spBtns}</div></div>
           <div class="mrow"><div class="mlabel">${esc(labels.totals)}</div><div class="odds">${totBtns}</div></div>
         </div>
+        ${fair}
         <p class="meta">Source ${esc(localTime(ts))} · Period ${esc(ev.period || "game")}</p>`;
     }).join("");
+    const stale = ev.stale ? `<p class="warn">${esc(ev.stale_label || "Saved snapshot — stale relative to the configured refresh window.")}</p>` : "";
     return `<article class="card">
       <div class="match"><div class="teams">${esc(matchup)}</div><div class="meta">${esc(localTime(ev.commence_time))}</div></div>
+      ${stale}
       ${body || '<p class="empty">No sportsbook prices for this matchup in the snapshot.</p>'}
     </article>`;
   }
@@ -251,34 +257,63 @@
       }
       return true;
     }).slice(0, 60);
+    const arbs = (state.data.arbitrage || []).filter((a) => {
+      const ev = (state.data.events || []).find((e) => e.id === a.event_id);
+      return ev && ev.selector === state.sport;
+    }).slice(0, 8);
+    const arbHtml = arbs.length
+      ? `<article class="card"><p class="warn">${esc(state.data.arbitrage_label || "")} Not executable and not guaranteed profit.</p>${arbs.map((a) => `<p class="meta">${esc(a.market)} · ${esc(a.kind || "")} · ${a.ok ? `${a.discrepancy_pct}% snapshot discrepancy` : esc(a.reason || "unavailable")}</p>`).join("")}</article>`
+      : "";
     const cards = groups.map((g) => {
       const prices = (g.prices || []).map((p) => `<div class="price${p.best_listed ? " best" : ""}">${esc(p.bookmaker)} <b>${esc(money(p))}</b>${p.best_listed ? " · Best listed price" : ""}</div>`).join("");
       const matchup = g.kind === "outright" ? (g.sport_title || "Tournament") : `${g.away_team || ""} @ ${g.home_team || ""}`;
+      const cons = g.consensus
+        ? `<p class="note">Consensus ${esc(money({ american: g.consensus.american, decimal: g.consensus.decimal }))} · ${g.consensus.book_count} books · ${esc(g.consensus.timestamp_range?.earliest || "—")} to ${esc(g.consensus.timestamp_range?.latest || "—")}</p>`
+        : `<p class="note">Consensus unavailable.</p>`;
       return `<article class="card">
         <div class="match"><div class="teams">${esc(matchup)}</div><div class="meta">${esc(g.market_label || g.market)} · ${esc(g.player || g.selection)} ${esc(signed(g.line))} · ${esc(g.period)}</div></div>
         <div class="cmp-books">${prices || '<span class="empty">unavailable</span>'}</div>
+        ${cons}
       </article>`;
     }).join("");
-    $("panel-compare").innerHTML = `<p class="note">Compared only when event, market, selection, line, and period match. Different spreads and totals stay separate. Best listed price is the highest American odds in this snapshot, including ties.</p>` + (cards || `<article class="card"><p class="empty">No comparable prices for this filter.</p></article>`);
+    $("panel-compare").innerHTML = `<p class="note">Compared only when event, market, selection, line, and period match. Different spreads and totals stay separate. Best listed price is the highest American odds in this snapshot, including ties. Fair odds are per sportsbook from a complete outcome set.</p>` + arbHtml + (cards || `<article class="card"><p class="empty">No comparable prices for this filter.</p></article>`);
   }
 
   function renderProps() {
-    const rows = state.data.player_props || [];
-    const note = `<p class="note">${esc(state.data.player_props_note || "")} Other player-prop markets are untested.</p>`;
+    const rows = (state.data.player_props || []).filter((row) => {
+      if (state.sport && row.selector !== state.sport) return false;
+      if (state.search) {
+        const q = state.search.toLowerCase();
+        const blob = `${row.player || ""} ${row.home_team || ""} ${row.away_team || ""} ${row.market_label || ""}`.toLowerCase();
+        if (!blob.includes(q)) return false;
+      }
+      if (state.book && row.bookmaker !== state.book) return false;
+      return true;
+    });
+    const note = `<p class="note">${esc(state.data.player_props_note || "")}</p>`;
+    if (state.sport === "ncaab") {
+      $("panel-props").innerHTML = note + `<article class="card"><p class="empty">NCAAB player props are documented with NBA/WNBA markets, but this snapshot has no NCAAB events. Not tested.</p></article>`;
+      return;
+    }
     if (!rows.length) {
-      $("panel-props").innerHTML = note + `<article class="card"><p class="empty">No sampled player props in this snapshot.</p></article>`;
+      $("panel-props").innerHTML = note + `<article class="card"><p class="empty">No sampled player props for this sport in this snapshot. One event is not league coverage.</p></article>`;
       return;
     }
     const byPlayer = new Map();
     for (const row of rows) {
-      const key = row.player || "Unknown player";
+      const key = `${row.player || "Unknown player"}|${row.event_id}|${row.market}`;
       byPlayer.set(key, byPlayer.get(key) || []);
       byPlayer.get(key).push(row);
     }
-    const cards = [...byPlayer.entries()].map(([player, list]) => {
+    const cards = [...byPlayer.entries()].slice(0, 48).map(([, list]) => {
       const sample = list[0];
       const matchup = `${sample.away_team || ""} @ ${sample.home_team || ""}`;
-      const btns = list.map((row) => oddButton(row, {
+      const season = sample.season_label === "possible_preseason_not_confirmed_regular_season"
+        ? `<p class="warn">Possible preseason — not confirmed regular-season coverage.</p>` : "";
+      const over = list.find((r) => (r.selection || "").toLowerCase() === "over");
+      const under = list.find((r) => (r.selection || "").toLowerCase() === "under");
+      const rest = list.filter((r) => r !== over && r !== under);
+      const btns = [over, under, ...rest].filter(Boolean).map((row) => oddButton(row, {
         label: `${row.selection} · ${row.bookmaker || ""}`.trim(),
         line: row.line,
         event_id: row.event_id,
@@ -287,10 +322,12 @@
         player: row.player,
         matchup,
         market_label: row.market_label,
+        period: row.period,
       })).join("");
       return `<article class="card">
-        <div class="player">${esc(player)}</div>
-        <p class="meta">${esc(matchup)} · ${esc(sample.market_label || "Player market")}</p>
+        <div class="player">${esc(sample.player || "Unknown player")}</div>
+        ${season}
+        <p class="meta">${esc(matchup)} · ${esc(sample.market_label || "Player market")} · ${esc(sample.period || "game")} · ${esc(sample.bookmaker || "")}</p>
         <div class="odds">${btns}</div>
         <p class="meta">Source ${esc(localTime(sample.source_timestamp))}</p>
       </article>`;
@@ -342,10 +379,15 @@
     const r = state.data.retrieved || {};
     const cov = (state.data.coverage || []).map((c) => `<article><h3 style="margin:0 0 4px;color:var(--gold2)">${esc(c.title)}</h3><p>${esc(c.status)}${c.event_count != null ? ` · ${c.event_count} events` : ""}</p><p>${esc(JSON.stringify(c.markets))}</p></article>`).join("");
     const est = state.data.monthly_usage_estimate || {};
+    const refresh = state.data.refresh || {};
+    const samples = (state.data.player_props_samples || []).map((s) => `<p>${esc(s.sport_key)} · requested ${esc((s.requested_markets || []).join(", "))} · returned ${esc((s.returned_markets || []).join(", "))} · players ${esc(s.player_count)} · books ${esc((s.bookmakers || []).join(", "))} · ${esc(s.season_label || "")} · missing ${esc((s.missing_markets || []).join(", ") || "none")}</p>`).join("");
     $("dev-body").innerHTML = `
-      <p>Imported ${esc(r.imported_at || "—")}. Original HTTP ${esc(r.http_requests_used)} / credits ${esc(r.credits_used_from_headers)}. Expansion HTTP ${esc(r.expansion_http)} / credits ${esc(r.expansion_credits)}. Remaining ${esc(r.remaining_credits_header)}.</p>
+      <p>Imported ${esc(r.imported_at || "—")}. Original HTTP ${esc(r.http_requests_used)} / credits ${esc(r.credits_used_from_headers)}. Expansion HTTP ${esc(r.expansion_http)} / credits ${esc(r.expansion_credits)}. Props HTTP ${esc(r.props_http)} / credits ${esc(r.props_credits)}. Remaining ${esc(r.remaining_credits_header)}.</p>
+      <p>Continuous fetch: ${esc(refresh.continuous_fetch_enabled)}. ${esc(refresh.recommendation || "")}</p>
+      <p>Scenario A monthly with reserve: ${esc(refresh.scenario_a_pregame && refresh.scenario_a_pregame.monthly_with_reserve)}. Scenario B: ${esc(refresh.scenario_b_faster && refresh.scenario_b_faster.monthly_with_reserve)}.</p>
       <p>${esc(state.data.golf_coverage_note || "")}</p>
       <p>Monthly estimate with reserve: ${esc(est.monthly_with_reserve)} credits. Plan: ${esc(JSON.stringify(est.cheapest_sufficient_under_149))}</p>
+      ${samples}
       <div class="cov">${cov}</div>
     `;
   }
@@ -390,7 +432,7 @@
   });
   document.addEventListener("input", (ev) => {
     const t = ev.target;
-    if (t instanceof HTMLInputElement && t.id === "team-search") { state.search = t.value; renderLive(); renderCompare(); }
+    if (t instanceof HTMLInputElement && t.id === "team-search") { state.search = t.value; renderLive(); renderCompare(); renderProps(); }
   });
 
   fetch("/api/snapshot").then((r) => r.json()).then((data) => {

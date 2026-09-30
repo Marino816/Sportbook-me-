@@ -6,7 +6,7 @@ import sys
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Isolated SB ME Market Tools Odds API snapshot.")
-    parser.add_argument("command", choices=["configure", "fetch", "fetch-expand", "serve"])
+    parser.add_argument("command", choices=["configure", "fetch", "fetch-expand", "fetch-props", "serve"])
     args, rest = parser.parse_known_args(argv)
     if args.command == "configure":
         from market_snapshot.access import main as cmd
@@ -16,6 +16,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd()
     if args.command == "fetch-expand":
         from market_snapshot.expand_fetch import main as cmd
+        return cmd()
+    if args.command == "fetch-props":
+        from market_snapshot.prop_fetch import main as cmd
         return cmd()
     from market_snapshot.serve import main as cmd
     return cmd(rest)

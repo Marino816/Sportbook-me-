@@ -226,7 +226,20 @@ SPORT_SELECTOR = (
 
 PROP_MARKET_NAMES = {
     "player_pass_tds": "Pass Touchdowns",
-    "batter_hits": "Batter Hits",
+    "player_pass_yds": "Pass Yards",
+    "player_rush_yds": "Rush Yards",
+    "player_receptions": "Receptions",
+    "player_reception_yds": "Receiving Yards",
+    "player_points": "Points",
+    "player_rebounds": "Rebounds",
+    "player_assists": "Assists",
+    "player_goals": "Goals",
+    "batter_hits": "Hits",
+    "batter_home_runs": "Home Runs",
+    "pitcher_strikeouts": "Pitcher Strikeouts",
+    "player_shots_on_target": "Shots on Target",
+    "player_shots": "Shots",
+    "player_goal_scorer_anytime": "Anytime Goal Scorer",
 }
 
 MARKET_PERIOD = "game"

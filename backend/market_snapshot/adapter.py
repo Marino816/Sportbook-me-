@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from market_snapshot.bounded_fetch import PRIVATE
@@ -15,7 +16,9 @@ from market_snapshot.contracts import (
     decimal_to_american,
     line_key,
 )
+from market_snapshot.analysis import attach_fair_to_books, enrich_compare_groups, scan_arbitrage
 from market_snapshot.cost_estimate import estimate_monthly
+from market_snapshot.scheduler import CONFIG, simulate_usage
 from market_snapshot.leagues import (
     LEAGUES,
     MARKET_PERIOD,
@@ -161,15 +164,17 @@ def compare_groups(rows: list[dict]) -> list[dict]:
     return groups
 
 
-def flatten_player_props(payload: dict | None, *, requested_market: str | None) -> list[dict]:
+def flatten_player_props(payload: dict | None, *, sport_key: str = "", sport_title: str = "") -> list[dict]:
     if not isinstance(payload, dict):
         return []
-    rows = flatten_odds(payload.get("sport_key") or "", payload.get("sport_title") or "", [payload])
-    readable = PROP_MARKET_NAMES.get(requested_market or "", requested_market)
+    key = sport_key or payload.get("sport_key") or ""
+    meta = league_by_key(key) or {}
+    title = sport_title or payload.get("sport_title") or meta.get("title") or key
+    rows = flatten_odds(key, title, [payload])
     for row in rows:
         row["prop_market"] = row.get("market")
-        row["requested_market"] = requested_market
-        row["market_label"] = PROP_MARKET_NAMES.get(row.get("market") or "", readable or row.get("market"))
+        row["market_label"] = PROP_MARKET_NAMES.get(row.get("market") or "", row.get("market"))
+        row["is_prop"] = True
     return rows
 
 
@@ -258,6 +263,34 @@ def build_event_cards(rows: list[dict]) -> list[dict]:
         cards.append(event)
     cards.sort(key=lambda e: (e.get("commence_time") or "", e.get("sport_title") or ""))
     return cards
+
+
+def _is_stale_timestamp(raw: str | None) -> bool:
+    if not raw:
+        return True
+    try:
+        stamp = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    age = (datetime.now(timezone.utc) - stamp).total_seconds()
+    return age > int(CONFIG.get("stale_after_seconds") or 900)
+
+
+def mark_event_stale(event: dict) -> None:
+    stamps = []
+    for book in event.get("books") or []:
+        for block in (book.get("h2h"), book.get("spreads"), book.get("totals")):
+            for quote in (block or {}).values():
+                if isinstance(quote, dict) and quote.get("source_timestamp"):
+                    stamps.append(quote["source_timestamp"])
+        for quote in book.get("outrights") or []:
+            if quote.get("source_timestamp"):
+                stamps.append(quote["source_timestamp"])
+    event["stale"] = True if not stamps else _is_stale_timestamp(max(stamps))
+    event["stale_label"] = (
+        "Saved snapshot — stale relative to the configured refresh window."
+        if event["stale"] else None
+    )
 
 
 def parlay_conflict(a: dict, b: dict) -> bool:
@@ -426,17 +459,31 @@ def build_preview(*, root: Path | None = None) -> dict:
             continue
         game_rows.extend(flatten_odds(league["key"], league["title"], events))
     coverage = [_coverage_row(league, catalog, odds_map, tested_keys) for league in LEAGUES]
-    prop_payload = payloads.get("player_props")
-    prop_meta = index.get("player_props") or {}
-    prop_rows = flatten_player_props(
-        prop_payload if isinstance(prop_payload, dict) else None,
-        requested_market=prop_meta.get("requested_market"),
-    )
+    samples = payloads.get("player_props_samples")
+    if not isinstance(samples, list) or not samples:
+        legacy = payloads.get("player_props")
+        samples = [{"payload": legacy, "sport_key": (legacy or {}).get("sport_key"), "requested_markets": [index.get("player_props", {}).get("requested_market")], "reused": True}] if isinstance(legacy, dict) else []
+    prop_rows = []
+    prop_reports = []
+    for sample in samples:
+        payload = sample.get("payload") if isinstance(sample, dict) else None
+        rows = flatten_player_props(payload, sport_key=sample.get("sport_key") or "", sport_title="")
+        for row in rows:
+            row["season_label"] = sample.get("season_label")
+        prop_rows.extend(rows)
+        prop_reports.append({k: v for k, v in sample.items() if k != "payload"})
     expansion = index.get("expansion") or {}
+    props_meta = index.get("props") or {}
     soccer_leagues = [
         {"id": row["key"], "label": row["title"]}
         for row in LEAGUES if row["selector"] == "soccer"
     ]
+    events = build_event_cards(game_rows)
+    for event in events:
+        attach_fair_to_books(event)
+        mark_event_stale(event)
+    compare = enrich_compare_groups(compare_groups(game_rows + prop_rows))
+    arb = scan_arbitrage(compare_groups(game_rows), events)
     quote_index = {row["id"]: row for row in game_rows + prop_rows if row.get("id")}
     return {
         "development": True,
@@ -452,18 +499,21 @@ def build_preview(*, root: Path | None = None) -> dict:
             "credits_used_from_headers": index.get("credits_used_from_headers"),
             "expansion_http": expansion.get("additional_http_requests"),
             "expansion_credits": expansion.get("additional_credits"),
-            "remaining_credits_header": expansion.get("remaining_credits_header"),
+            "props_http": props_meta.get("additional_http_requests"),
+            "props_credits": props_meta.get("additional_credits"),
+            "remaining_credits_header": props_meta.get("remaining_credits_header") or expansion.get("remaining_credits_header"),
         },
         "source": SOURCE,
         "sport_selector": list(SPORT_SELECTOR),
         "soccer_leagues": soccer_leagues,
-        "events": build_event_cards(game_rows),
-        "compare": compare_groups(game_rows),
+        "events": events,
+        "compare": compare,
+        "arbitrage": arb,
+        "arbitrage_label": "Historical price discrepancy—not verified live.",
+        "fair_odds_label": "Market-derived fair odds",
         "player_props": prop_rows,
-        "player_props_note": index.get("player_props_note") or "Player props were sampled for one NFL pass-touchdowns market only. Other sports and markets are untested.",
-        "player_props_requested_market": prop_meta.get("requested_market"),
-        "player_props_market_label": PROP_MARKET_NAMES.get(prop_meta.get("requested_market") or "", prop_meta.get("requested_market")),
-        "player_props_untested": True,
+        "player_props_samples": prop_reports,
+        "player_props_note": "One sampled event is not league-wide coverage. NCAAB had no saved events. Soccer props are documented only for listed leagues.",
         "quote_index": quote_index,
         "coverage": coverage,
         "coverage_by_title": {row["title"]: row for row in coverage},
@@ -471,6 +521,7 @@ def build_preview(*, root: Path | None = None) -> dict:
         "compatibility_gaps": SOURCE["compatibility_gaps"],
         "golf_coverage_note": "Golf in this preview is documented tournament-winner markets only. Weekly PGA Tour coverage is not claimed.",
         "unsupported_period_markets": "unavailable",
+        "refresh": simulate_usage(),
         "monthly_usage_estimate": estimate_monthly(),
         "http_requests_used": 0,
     }
