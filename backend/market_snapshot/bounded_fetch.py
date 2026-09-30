@@ -72,6 +72,13 @@ def _save_ledger(ledger: dict) -> None:
     os.chmod(LEDGER, stat.S_IRUSR | stat.S_IWUSR)
 
 
+def _touch_ledger(ledger: dict, last: int, rec: dict) -> None:
+    ledger["http_count"] = int(ledger.get("http_count") or 0) + 1
+    ledger["credits_charged"] = int(ledger.get("credits_charged") or 0) + last
+    ledger.setdefault("requests", []).append(rec)
+    _save_ledger(ledger)
+
+
 def _header_map(headers) -> dict[str, str]:
     out = {}
     for key in USAGE_HEADERS:
@@ -115,9 +122,7 @@ def get_json(
         budget[0] -= 1
         last = _int(usage.get("x-requests-last"), 0)
         budget[1] -= last
-        ledger["http_count"] = MAX_HTTP - budget[0]
-        ledger["credits_charged"] = MAX_CREDITS - budget[1]
-        ledger["requests"].append({
+        _touch_ledger(ledger, last, {
             "path": path,
             "query": {k: v for k, v in params.items()},
             "url_redacted": redact_url(url),
@@ -126,19 +131,18 @@ def get_json(
             "retrieved_at": retrieved,
             "max_credit_cost": max_credit_cost,
         })
-        _save_ledger(ledger)
         if exc.code in STOP_STATUS:
             raise OddsImportError(
                 f"provider stopped status={exc.code}",
                 status=exc.code,
-                requests_used=MAX_HTTP - budget[0],
-                credits_used=MAX_CREDITS - budget[1],
+                requests_used=int(ledger.get("http_count") or 0),
+                credits_used=int(ledger.get("credits_charged") or 0),
             ) from None
         raise OddsImportError(
             f"HTTP {exc.code}",
             status=exc.code,
-            requests_used=MAX_HTTP - budget[0],
-            credits_used=MAX_CREDITS - budget[1],
+            requests_used=int(ledger.get("http_count") or 0),
+            credits_used=int(ledger.get("credits_charged") or 0),
         ) from None
     except URLError as exc:
         raise OddsImportError(f"network error: {exc.reason}", requests_used=MAX_HTTP - budget[0], credits_used=MAX_CREDITS - budget[1]) from None
@@ -160,16 +164,13 @@ def get_json(
         "sha256": digest,
         "record_count": len(payload) if isinstance(payload, list) else (1 if payload else 0),
     }
-    ledger["http_count"] = MAX_HTTP - budget[0]
-    ledger["credits_charged"] = MAX_CREDITS - budget[1]
-    ledger["requests"].append({k: rec[k] for k in rec if k != "payload"})
+    _touch_ledger(ledger, last, {k: rec[k] for k in rec})
     dest = PRIVATE / "responses"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / f"{digest}.json").write_text(json.dumps(payload, indent=2) + "\n")
     (dest / f"{digest}.meta.json").write_text(json.dumps(rec, indent=2) + "\n")
     os.chmod(dest / f"{digest}.json", stat.S_IRUSR | stat.S_IWUSR)
     os.chmod(dest / f"{digest}.meta.json", stat.S_IRUSR | stat.S_IWUSR)
-    _save_ledger(ledger)
     rec["payload"] = payload
     rec["body_path"] = str(dest / f"{digest}.json")
     return rec

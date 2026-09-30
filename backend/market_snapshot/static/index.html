@@ -3,33 +3,50 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SB ME Market Tools — Snapshot</title>
+  <title>SB ME Market Tools</title>
   <link rel="stylesheet" href="/preview.css" />
 </head>
 <body>
-  <div class="page">
-    <header class="head">
+  <div class="app">
+    <header class="top">
       <div>
-        <p class="kicker">SPORTBOOK ME <span>DFS.AI</span> · LOCAL DEVELOPMENT</p>
+        <p class="kicker">SPORTBOOK ME <span>DFS.AI</span></p>
         <h1>Market Tools</h1>
-        <p class="sub">Provider-independent adapter · The Odds API snapshot · SGO unchanged</p>
       </div>
-      <span class="chip">Snapshot</span>
+      <p class="notice">Preview • Saved odds • Not live.</p>
+      <label class="fmt">
+        <span>Odds</span>
+        <select id="odds-format">
+          <option value="american" selected>American</option>
+          <option value="decimal">Decimal</option>
+        </select>
+      </label>
     </header>
-    <div class="banner">Snapshot — not a live update. Prices are from saved responses. No SB ME value edges.</div>
-    <p class="stamp" id="stamp"></p>
-    <section class="coverage" id="coverage"></section>
+
     <nav class="tabs" id="tabs">
-      <button type="button" class="tab is-on" data-tab="live">Live Odds</button>
+      <button type="button" class="tab is-on" data-tab="live">Game Odds</button>
       <button type="button" class="tab" data-tab="compare">Compare</button>
       <button type="button" class="tab" data-tab="props">Player Props</button>
-      <button type="button" class="tab" data-tab="parlay">Parlay</button>
+      <button type="button" class="tab" data-tab="parlay">Parlay Builder</button>
     </nav>
-    <section id="panel-live" class="panel"></section>
-    <section id="panel-compare" class="panel" hidden></section>
-    <section id="panel-props" class="panel" hidden></section>
-    <section id="panel-parlay" class="panel" hidden></section>
+
+    <section class="filters" id="filters"></section>
+    <section id="panel-live" class="view"></section>
+    <section id="panel-compare" class="view" hidden></section>
+    <section id="panel-props" class="view" hidden></section>
+    <section id="panel-parlay" class="view" hidden></section>
+
+    <details class="dev">
+      <summary>Development details</summary>
+      <div id="dev-body"></div>
+    </details>
   </div>
+
+  <aside class="slip" id="slip" hidden>
+    <button type="button" class="slip-toggle" id="slip-toggle">Parlay <span id="slip-count">0</span></button>
+    <div class="slip-body" id="slip-body"></div>
+  </aside>
+
   <script src="/preview.js"></script>
 </body>
 </html>

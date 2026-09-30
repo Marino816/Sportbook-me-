@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 SNAPSHOT_LABEL = "Snapshot"
 NOT_LIVE = "Saved provider snapshot — not a live update"
 PARLAY_ANALYTICAL_NOTE = (
-    "Combined price is an SB ME arithmetic product of decimal conversions. "
-    "It is not a bookmaker-confirmed parlay quote. Same-game selections are not a confirmed SGP price."
+    "Illustrative combined odds—not a sportsbook quote. "
+    "Same-game combinations are not priced without a verified sportsbook method."
 )
 
 

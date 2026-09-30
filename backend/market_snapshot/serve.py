@@ -45,7 +45,8 @@ class Handler(BaseHTTPRequestHandler):
         if path in {"/", "/index.html"}:
             return self._file("index.html")
         if path == "/api/snapshot":
-            return self._json(200, self.preview)
+            payload = {k: v for k, v in self.preview.items() if k != "quote_index"}
+            return self._json(200, payload)
         name = path.lstrip("/")
         if (STATIC / name).is_file():
             return self._file(name)
@@ -62,8 +63,8 @@ class Handler(BaseHTTPRequestHandler):
         if path != "/api/parlay":
             return self._json(404, {"ok": False, "reason": "Unknown endpoint"})
         ids = body.get("leg_ids") or []
-        pool = {row["id"]: row for row in self.preview.get("parlay_pool") or []}
-        legs = [pool[i] for i in ids if i in pool]
+        index = self.preview.get("quote_index") or {}
+        legs = [index[i] for i in ids if i in index]
         return self._json(200, combine_parlay(legs))
 
     def _file(self, name: str) -> None:
