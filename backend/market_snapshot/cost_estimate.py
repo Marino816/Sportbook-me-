@@ -130,6 +130,18 @@ PLAN_119 = {"name": "5m", "price_usd": 119, "credits_per_month": 5000000, "price
 FREQ_A = {"label": "pregame", "near_main_seconds": 300, "far_main_seconds": 1800, "near_prop_seconds": 600, "far_prop_seconds": None}
 FREQ_B = {"label": "faster", "near_main_seconds": 60, "far_main_seconds": 1800, "near_prop_seconds": 120, "far_prop_seconds": None}
 
+# Recurring scores. GET /v4/sports/{sport}/scores.
+# Live/upcoming (no daysFrom) = 1 credit. Recently completed (daysFrom=1) = 2 credits.
+SCORE_LIVE_COST = 1
+SCORE_COMPLETED_COST = 2
+SCORE_LIVE_SECONDS = 120
+SCORE_COMPLETED_SECONDS = 1800
+SCORE_IN_PLAY_NOTE = (
+    "Scores are polled during the same near-hours union as featured odds. "
+    "That approximates games approaching start; extra in-play hours after commence are not added. "
+    "Golf outrights have no scores line."
+)
+
 # Explicitly listed player-prop markets for requested sports/leagues.
 # coverage: supported = documented for that league; sampled = one-event live test;
 # unknown = requested/documented but not confirmed in this catalog.
@@ -405,6 +417,66 @@ def _prop_league_row(spec: dict, event_field: str, freq: dict) -> dict:
     }
 
 
+def _score_row(league: dict, near_hours: int) -> dict:
+    if league.get("kind") != "match":
+        return {
+            "key": league["key"],
+            "title": league["title"],
+            "kind": league["kind"],
+            "live_credits": 0,
+            "completed_credits": 0,
+            "credits": 0,
+            "skipped": "Golf outrights have no Odds API scores line in this model.",
+        }
+    near = max(0, int(near_hours))
+    live_r = _refreshes(near, SCORE_LIVE_SECONDS)
+    done_r = _refreshes(near, SCORE_COMPLETED_SECONDS)
+    live_credits = live_r * SCORE_LIVE_COST
+    completed_credits = done_r * SCORE_COMPLETED_COST
+    return {
+        "key": league["key"],
+        "title": league["title"],
+        "kind": league["kind"],
+        "region": REGION,
+        "near_hours_union": near,
+        "live": {
+            "path": f"/v4/sports/{league['key']}/scores",
+            "daysFrom": None,
+            "cost_per_request": SCORE_LIVE_COST,
+            "refresh_seconds": SCORE_LIVE_SECONDS,
+            "refreshes": live_r,
+            "credits": live_credits,
+        },
+        "completed": {
+            "path": f"/v4/sports/{league['key']}/scores",
+            "daysFrom": 1,
+            "cost_per_request": SCORE_COMPLETED_COST,
+            "refresh_seconds": SCORE_COMPLETED_SECONDS,
+            "refreshes": done_r,
+            "credits": completed_credits,
+        },
+        "live_credits": live_credits,
+        "completed_credits": completed_credits,
+        "credits": live_credits + completed_credits,
+        "note": SCORE_IN_PLAY_NOTE,
+    }
+
+
+def _score_credits(near_map: dict) -> dict:
+    rows = [_score_row(league, near_map.get(league["key"], 0)) for league in LEAGUES]
+    credits = sum(r["credits"] for r in rows)
+    return {
+        "model": "match_league_scores_near_hours",
+        "live_cost_per_request": SCORE_LIVE_COST,
+        "completed_cost_per_request": SCORE_COMPLETED_COST,
+        "live_refresh_seconds": SCORE_LIVE_SECONDS,
+        "completed_refresh_seconds": SCORE_COMPLETED_SECONDS,
+        "credits": credits,
+        "leagues": rows,
+        "note": SCORE_IN_PLAY_NOTE,
+    }
+
+
 def _prop_credits(event_field: str, freq: dict) -> dict:
     rows = [_prop_league_row(spec, event_field, freq) for spec in PROP_SLATE]
     eligible = [r for r in rows if r["market_count"] and r["events"] >= 0]
@@ -468,11 +540,14 @@ def _period(near_map: dict, total_hours: int, freq: dict, prop_event_field: str)
     rows = [_league_row(league, near_map.get(league["key"], 0), total_hours, freq) for league in LEAGUES]
     featured = sum(r["featured_credits"] for r in rows)
     props = _prop_credits(prop_event_field, freq)
+    scores = _score_credits(near_map)
     return {
         "leagues": rows,
         "featured_credits": featured,
         "props": props,
-        "total_credits": featured + props["credits"],
+        "scores": scores,
+        "score_credits": scores["credits"],
+        "total_credits": featured + props["credits"] + scores["credits"],
     }
 
 
@@ -506,6 +581,7 @@ def full_scope_cost() -> dict:
         typical_30 = {
             "featured_credits": _scale_30(typical_week["featured_credits"]),
             "prop_credits": _scale_30(typical_week["props"]["credits"]),
+            "score_credits": _scale_30(typical_week["score_credits"]),
             "total": _scale_30(typical_week["total_credits"]),
             "window": "typical_week × 30/7",
             "region": REGION,
@@ -513,16 +589,17 @@ def full_scope_cost() -> dict:
         busiest_30 = {
             "featured_credits": _scale_30(busy_week["featured_credits"]),
             "prop_credits": _scale_30(busy_week["props"]["credits"]),
+            "score_credits": _scale_30(busy_week["score_credits"]),
             "total": _scale_30(busy_week["total_credits"]),
             "window": "busy_week × 30/7 (every week treated as overlap/busy)",
             "region": REGION,
         }
         return {
             "frequency": freq,
-            "typical_day": {"featured_credits": typical_day["featured_credits"], "prop_credits": typical_day["props"]["credits"], "total": typical_day["total_credits"], "leagues": typical_day["leagues"], "props": typical_day["props"]},
-            "busy_day": {"featured_credits": busy_day["featured_credits"], "prop_credits": busy_day["props"]["credits"], "total": busy_day["total_credits"], "leagues": busy_day["leagues"], "props": busy_day["props"]},
-            "typical_week": {"featured_credits": typical_week["featured_credits"], "prop_credits": typical_week["props"]["credits"], "total": typical_week["total_credits"], "props": typical_week["props"]},
-            "busy_week": {"featured_credits": busy_week["featured_credits"], "prop_credits": busy_week["props"]["credits"], "total": busy_week["total_credits"], "leagues": busy_week["leagues"], "props": busy_week["props"]},
+            "typical_day": {"featured_credits": typical_day["featured_credits"], "prop_credits": typical_day["props"]["credits"], "score_credits": typical_day["score_credits"], "total": typical_day["total_credits"], "leagues": typical_day["leagues"], "props": typical_day["props"], "scores": typical_day["scores"]},
+            "busy_day": {"featured_credits": busy_day["featured_credits"], "prop_credits": busy_day["props"]["credits"], "score_credits": busy_day["score_credits"], "total": busy_day["total_credits"], "leagues": busy_day["leagues"], "props": busy_day["props"], "scores": busy_day["scores"]},
+            "typical_week": {"featured_credits": typical_week["featured_credits"], "prop_credits": typical_week["props"]["credits"], "score_credits": typical_week["score_credits"], "total": typical_week["total_credits"], "props": typical_week["props"], "scores": typical_week["scores"]},
+            "busy_week": {"featured_credits": busy_week["featured_credits"], "prop_credits": busy_week["props"]["credits"], "score_credits": busy_week["score_credits"], "total": busy_week["total_credits"], "leagues": busy_week["leagues"], "props": busy_week["props"], "scores": busy_week["scores"]},
             "typical_30_day": typical_30,
             "busiest_30_day": busiest_30,
             "monthly_credits": round(monthly),
@@ -537,6 +614,7 @@ def full_scope_cost() -> dict:
         "formulas": {
             "featured": "markets_specified × regions (empty body 0)",
             "event_props": "unique_markets_returned × regions (empty body 0); costed as listed_markets × eligible_events × near-window refreshes",
+            "scores": "GET /v4/sports/{sport}/scores; 1 credit without daysFrom, 2 credits with daysFrom=1. Polled during each match league’s near-hours union.",
             "region": REGION,
             "near_window": "6 hours before commence; featured weekly/daily near hours are the UNION of those windows, not 6 × event count. Props multiply by event count because /events/{id}/odds is per event.",
             "empty_body": "Empty featured/event responses cost 0. Figures below assume in-season bodies so requested coverage is not silently under-counted.",
@@ -603,6 +681,7 @@ def estimate_monthly() -> dict:
             "soccer_competitions": 9,
             "golf_tournament_winner_markets": 4,
             "prop_model": "all_eligible_events",
+            "scores_model": "match_league_near_hours_live_plus_daysFrom_1",
             "live_test_prop_event_cap": LIVE_TEST_PROP_EVENT_CAP,
             "live_test_cap_used_in_cost": False,
             "reserve_fraction": RESERVE,

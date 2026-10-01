@@ -389,7 +389,8 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
   };
 
   const events = data?.events || [];
-  const filteredEvents = useMemo(() => events.filter((ev: any) => {
+  const filteredEvents = useMemo(() => {
+    const rows = events.filter((ev: any) => {
     if (sport && ev.selector !== sport) return false;
     if (sport === "soccer" && soccer && ev.sport_key !== soccer) return false;
     if (date && localDate(ev.commence_time) !== date) return false;
@@ -401,7 +402,9 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
     }
     if (book && !(ev.book_names || []).includes(book)) return false;
     return true;
-  }), [events, sport, soccer, date, search, book]);
+    });
+    return [...rows].sort((a: any, b: any) => Number(Boolean(b.saved_result)) - Number(Boolean(a.saved_result)));
+  }, [events, sport, soccer, date, search, book]);
 
   const dates = [...new Set(events.filter((e: any) => e.selector === sport).map((e: any) => localDate(e.commence_time)).filter(Boolean))].sort();
   const books = [...new Set(events.flatMap((e: any) => e.book_names || []))].sort();

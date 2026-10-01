@@ -691,8 +691,7 @@ def attach_context(preview: dict, *, collected: dict | None = None, fixtures: di
         card = score_only_event_card(row)
         attach_event_context(card, live_bundle, now=now)
         score_only.append(card)
-    demo_count = sum(1 for event in events if event.get("context_demo") or event.get("fixture_label"))
-    events = events[:demo_count] + score_only + events[demo_count:]
+    events = events + score_only
     if include_demo:
         for row in preview.get("player_props") or []:
             inj = injury_for_player(row.get("player"), row.get("home_team") or row.get("away_team"), fixture_bundle["injuries"])

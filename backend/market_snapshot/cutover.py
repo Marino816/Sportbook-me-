@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from market_snapshot.final_refresh_test import final_refresh_plan
 from market_snapshot.flags import collect_enabled, flag_status, oddsapi_enabled
 
 # Apply only by setting process environment in a later, explicit activation assignment.
@@ -93,7 +94,7 @@ FEATURE_IMPACT = (
     {
         "surface": "Internal snapshot / parlay / resolve APIs",
         "class": "working_replacement",
-        "note": "Auth plus Pro Arena or Elite Stack (active/trialing). Unknown active plans are denied.",
+        "note": "Auth plus Pro Arena or Elite Stack (active/trialing) or canceled-but-paid-through until current_period_end. Unknown active plans are denied. PayKings unchanged.",
     },
     {
         "surface": "Assistant Odds API event/odds/prop lookup",
@@ -198,5 +199,6 @@ def activation_state() -> dict:
         "incompatible_consumers": list(INCOMPATIBLE_CONSUMERS),
         "handled_unavailable_capabilities": list(HANDLED_UNAVAILABLE_CAPABILITIES),
         "feature_impact": list(FEATURE_IMPACT),
+        "final_refresh_test": final_refresh_plan(execute=False),
         "flags": flag_status(),
     }

@@ -22,6 +22,11 @@ from market_snapshot.contracts import american_to_decimal, decimal_to_american
 from market_snapshot.cost_estimate import estimate_monthly
 from market_snapshot.leagues import LEAGUES
 
+os.environ.pop("MARKET_TOOLS_CONTEXT_FIXTURES", None)
+os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
+os.environ.pop("MARKET_TOOLS_CONTEXT_COLLECT", None)
+
 
 class RedactTests(unittest.TestCase):
     def test_redact_does_not_keep_api_key(self):
@@ -372,6 +377,18 @@ class CostModelTests(unittest.TestCase):
         self.assertIn("americanfootball_nfl", cov["supported"])
         self.assertIn("basketball_ncaab", cov["unknown"])
         self.assertIn("americanfootball_nfl", cov["sampled_in_live_test"])
+        self.assertGreater(a["typical_week"]["score_credits"], 0)
+        self.assertEqual(
+            a["typical_week"]["total"],
+            a["typical_week"]["featured_credits"] + a["typical_week"]["prop_credits"] + a["typical_week"]["score_credits"],
+        )
+        self.assertIn("score_credits", a["typical_30_day"])
+        from market_snapshot.final_refresh_test import final_refresh_plan
+        plan = final_refresh_plan(execute=True)
+        self.assertFalse(plan["execute"])
+        self.assertTrue(plan["refused_execute"])
+        self.assertEqual(plan["http_requests"], 5)
+        self.assertEqual(plan["credits_max"], 13)
 
 
 class CompatTests(unittest.TestCase):
@@ -878,6 +895,39 @@ class EntitlementTests(unittest.TestCase):
         self.assertFalse(starter_active["entitled"])
         canceled = asyncio.run(plan_entitlement(Paid(), session_for("Pro Arena", "canceled")))
         self.assertFalse(canceled["entitled"])
+        self.assertFalse(canceled["paid_through"])
+
+        from datetime import datetime, timedelta, timezone
+        future = datetime.now(timezone.utc) + timedelta(days=10)
+        past = datetime.now(timezone.utc) - timedelta(days=1)
+
+        def session_period(plan_name, sub_status, period_end, cancel_at_end=False):
+            class Sub:
+                pass
+            sub = Sub()
+            sub.plan_name = plan_name
+            sub.status = sub_status
+            sub.current_period_end = period_end
+            sub.cancel_at_period_end = cancel_at_end
+
+            class Sess:
+                async def execute(self, *a, **k):
+                    class R:
+                        def scalars(self):
+                            class S:
+                                def first(self):
+                                    return sub
+                            return S()
+                    return R()
+            return Sess()
+
+        paid_through = asyncio.run(plan_entitlement(Paid(), session_period("Pro Arena", "canceled", future, True)))
+        self.assertTrue(paid_through["entitled"])
+        self.assertTrue(paid_through["paid_through"])
+        expired = asyncio.run(plan_entitlement(Paid(), session_period("Pro Arena", "canceled", past, True)))
+        self.assertFalse(expired["entitled"])
+        still_active = asyncio.run(plan_entitlement(Paid(), session_period("Pro Arena", "active", future, True)))
+        self.assertTrue(still_active["entitled"])
 
         class ArenaUser:
             id = 8
