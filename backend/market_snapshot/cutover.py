@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from market_snapshot.feature_gap import feature_gap_report
 from market_snapshot.final_refresh_test import final_refresh_plan
 from market_snapshot.flags import collect_enabled, flag_status, oddsapi_enabled
+from market_snapshot.mobile_installed_test_path import installed_app_test_path
 
 # Apply only by setting process environment in a later, explicit activation assignment.
 CUTOVER_ENV = {
@@ -44,10 +46,11 @@ COMPATIBLE_CONSUMERS = (
         "compatible": True,
     },
     {
-        "surface": "assistant tools",
+        "surface": "assistant Odds API cache recitation",
         "path": "backend/assistant/tools.py",
-        "via": "Odds API cache rows; SGO event IDs return structured unavailable",
+        "via": "Reads shared Odds API cache rows for events/odds/props when present. This is recitation, not SGO tool replacement.",
         "compatible": True,
+        "replaces_sgo_tools": False,
     },
     {
         "surface": "market_engine identity",
@@ -61,15 +64,24 @@ COMPATIBLE_CONSUMERS = (
         "via": "Odds API keys mapped by catalog display name only; unknown keys unavailable",
         "compatible": True,
     },
+)
+
+INCOMPATIBLE_CONSUMERS = (
     {
         "surface": "DFS SGO intelligence",
         "path": "projection.sgo_intelligence",
-        "via": "Empty dict (no player keys) when SGO is blocked; no invented projections",
-        "compatible": True,
+        "compatible": False,
+        "lost": True,
+        "via": "Listed Odds API Over lines map onto existing DFS prop keys. fantasyScore stays None. Empty mapped dict is not an SGO fantasyScore replacement.",
+    },
+    {
+        "surface": "Assistant nested SGO tools",
+        "path": "backend/assistant/tools.py",
+        "compatible": False,
+        "lost": True,
+        "via": "SGO event IDs, nested clock/period, team props, environment, steam, and SGP stay structured unavailable. Unavailable is not a replacement.",
     },
 )
-
-INCOMPATIBLE_CONSUMERS = ()
 
 HANDLED_UNAVAILABLE_CAPABILITIES = (
     {"capability": "live_scores", "reason": "Odds API scores attach on unique id + commence_time. Completed unmatched games render as score-only cards. Period, inning, and clock are not in the documented scores schema."},
@@ -77,7 +89,7 @@ HANDLED_UNAVAILABLE_CAPABILITIES = (
     {"capability": "sgo_odd_id", "reason": "SGO oddIDs are not Odds API selection ids."},
     {"capability": "sgo_team_props", "reason": "Nested SGO team props are not in the Odds API snapshot."},
     {"capability": "sbme_game_environment", "reason": "Environment is derived from nested SGO markets."},
-    {"capability": "dfs_sgo_intelligence", "reason": "SGO player prop intelligence is not fetched while Odds API serving is on."},
+    {"capability": "dfs_sgo_intelligence", "reason": "SGO nested markets including fantasyScore are not fetched while Odds API serving is on. Listed Odds API Over lines map onto existing DFS prop keys; fantasyScore is not invented."},
 )
 
 FEATURE_IMPACT = (
@@ -98,8 +110,8 @@ FEATURE_IMPACT = (
     },
     {
         "surface": "Assistant Odds API event/odds/prop lookup",
-        "class": "working_replacement",
-        "note": "Reads shared cache including matched Odds API scores. SGO event IDs return unavailable. Period/clock not invented.",
+        "class": "partial_cache_recitation_not_sgo_replacement",
+        "note": "Recites saved Odds API events plus de-vigged fair h2h/spreads/totals and per-side book consensus when a complete outcome set exists. SGO event IDs, nested live clock, team props, environment, steam, and SGP remain unavailable. Structured unavailable is not a replacement.",
     },
     {
         "surface": "market_engine selection identity",
@@ -153,8 +165,8 @@ FEATURE_IMPACT = (
     },
     {
         "surface": "DFS SGO intelligence",
-        "class": "unavailable_capability",
-        "note": "build_sgo_intelligence returns {} when SGO is blocked. No invented player projections.",
+        "class": "sgo_feature_lost",
+        "note": "Listed Odds API Over lines map onto existing DFS prop keys when cached. SGO fantasyScore is gone and not invented. Current saved snapshot only sampled NFL player_pass_tds, so MLB slates stay unenriched until a later authorized collect.",
     },
     {
         "surface": "Period / alternate / SGP quotes",
@@ -174,12 +186,12 @@ FEATURE_IMPACT = (
     {
         "surface": "Currently released mobile client",
         "class": "untested_client",
-        "note": "Installed/App Store binary was not rebuilt or exercised. Source edits do not establish compatibility.",
+        "note": "App Store/TestFlight bakes EXPO_PUBLIC_API_URL to Railway. getApiUrl() has no runtime override. Isolated overlay released_eas.isolated.json retargets only development profiles to 127.0.0.1:8010. Paid EAS not started. Store submission forbidden.",
     },
     {
         "surface": "Shared Redis in enabled production mode",
-        "class": "untested_client",
-        "note": "Behavior is coded and unit-tested. Live Docker Postgres/Redis verification remains blocked until Docker exists.",
+        "class": "isolated_live_verified",
+        "note": "Isolated Docker Postgres 15 + Redis 7: TEMP TABLE roundtrip, fixture replacement, cross-worker reads, SET NX lock, outage, recovery. Production flags stay off. Named volume was created empty and is not deleted.",
     },
 )
 
@@ -199,6 +211,8 @@ def activation_state() -> dict:
         "incompatible_consumers": list(INCOMPATIBLE_CONSUMERS),
         "handled_unavailable_capabilities": list(HANDLED_UNAVAILABLE_CAPABILITIES),
         "feature_impact": list(FEATURE_IMPACT),
+        "feature_gap": feature_gap_report(),
+        "mobile_installed_test_path": installed_app_test_path(),
         "final_refresh_test": final_refresh_plan(execute=False),
         "flags": flag_status(),
     }

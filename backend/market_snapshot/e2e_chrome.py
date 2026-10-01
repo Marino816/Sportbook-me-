@@ -672,6 +672,7 @@ def run_price_propagation() -> dict:
     if not email or not password:
         report["blocker"] = "SBME_E2E_EMAIL and SBME_E2E_PASSWORD must be set"
         return report
+    seeded_token = _api_login(api, email, password)
     login_url = f"{web}/login?next={urllib.parse.quote('/market-tools')}"
     market_url = f"{web}/market-tools"
     cdp_port = _free_port()
@@ -714,13 +715,24 @@ def run_price_propagation() -> dict:
             return report
         ws.call("Page.enable")
         ws.call("Runtime.enable")
-        ws.call("Page.navigate", {"url": login_url})
-        time.sleep(5)
-        login = ws.call("Runtime.evaluate", {
-            "expression": f"({CUSTOMER_SCRIPT})({creds})",
-            "awaitPromise": True,
-            "returnByValue": True,
-        }, timeout=90)
+        if seeded_token:
+            ws.call("Page.addScriptToEvaluateOnNewDocument", {
+                "source": "localStorage.setItem('sbme_dfs_token', %s);" % json.dumps(seeded_token),
+            })
+            ws.call("Runtime.evaluate", {
+                "expression": "localStorage.setItem('sbme_dfs_token', %s);" % json.dumps(seeded_token),
+                "returnByValue": True,
+            })
+            ws.call("Page.navigate", {"url": market_url})
+            time.sleep(3)
+        else:
+            ws.call("Page.navigate", {"url": login_url})
+            time.sleep(5)
+            login = ws.call("Runtime.evaluate", {
+                "expression": f"({CUSTOMER_SCRIPT})({creds})",
+                "awaitPromise": True,
+                "returnByValue": True,
+            }, timeout=90)
         token_eval = ws.call("Runtime.evaluate", {
             "expression": "localStorage.getItem('sbme_dfs_token')",
             "returnByValue": True,
@@ -754,6 +766,7 @@ def run_price_propagation() -> dict:
                     text: el ? (el.innerText || '') : '',
                     fixture: root ? root.getAttribute('data-fixture') : '',
                     generation: root ? root.getAttribute('data-generation') : '',
+                    retrievedAt: root ? root.getAttribute('data-retrieved-at') : '',
                     loadError: (document.querySelector('.sbme-mt-approved .warn') || {}).textContent || '',
                   };
                 })()""",
@@ -772,6 +785,22 @@ def run_price_propagation() -> dict:
         price_a = read_price()
         report["price_a"] = price_a
         note("browser_price_a", price_a.get("american") == "-148", json.dumps(price_a))
+        try:
+            refresh_body = ingest("fixture_a_refresh_same_price.json")
+        except urllib.error.HTTPError as exc:
+            report["blocker"] = f"same-price refresh ingest HTTP {exc.code}: {exc.read().decode()[:400]}"
+            return report
+        refresh_data = refresh_body.get("data") or {}
+        note("fixture_refresh_ingest", refresh_data.get("american") == -148, str(refresh_data.get("american")))
+        price_refresh = read_price()
+        report["price_refresh"] = price_refresh
+        note("browser_same_price", price_refresh.get("american") == "-148", json.dumps(price_refresh))
+        note(
+            "browser_refresh_generation",
+            str(price_refresh.get("generation") or "") != str(price_a.get("generation") or "")
+            or str(price_refresh.get("retrievedAt") or "") != str(price_a.get("retrievedAt") or ""),
+            json.dumps({"a": price_a, "refresh": price_refresh}),
+        )
         if os.environ.get("SBME_E2E_SHOTS") == "1":
             shot = ws.call("Page.captureScreenshot", {"format": "png"})
             b64 = ((shot.get("result") or {}).get("data")) or ""

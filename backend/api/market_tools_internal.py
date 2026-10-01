@@ -16,7 +16,11 @@ from market_snapshot.provider import flag_status, serves_oddsapi, market_tools_p
 
 router = APIRouter(tags=["SB-Me Market Tools Internal"])
 
-ALLOWED_FIXTURES = {"fixture_a_baseline.json", "fixture_b_price_change.json"}
+ALLOWED_FIXTURES = {
+    "fixture_a_baseline.json",
+    "fixture_a_refresh_same_price.json",
+    "fixture_b_price_change.json",
+}
 
 
 class ParlayInternalRequest(BaseModel):

@@ -1,6 +1,17 @@
-"""Bounded final Odds API → shared cache → API → browser test. Default: do not execute."""
+"""Bounded interval Odds API refresh test. Default: do not execute provider HTTP.
+
+The previous five-request package was initial ingestion (NFL featured, MLB featured,
+NFL scores, MLB scores, one NFL prop event) inside a 12-second window. That does not
+prove 5-minute featured or 10-minute prop refresh.
+
+This plan reuses the existing NFL featured + same-event props paths from the earlier
+two-capture record, with real waits of at least 300s (featured) and 600s (props).
+"""
 
 from __future__ import annotations
+
+from market_snapshot.capture_evidence import CAPTURE_EVIDENCE
+from market_snapshot.timed_refresh_plan import FEATURED_NEAR_SECONDS, PROPS_NEAR_SECONDS
 
 # Last reported remaining credits after the scores/weather collect (2026-09-30T16:38:30Z).
 LEDGER_REMAINING_REPORTED = 418
@@ -10,70 +21,354 @@ HOST = "https://api.the-odds-api.com"
 REGION = "us"
 FEATURED = "h2h,spreads,totals"
 NFL_PROP_MARKETS = "player_pass_tds,player_pass_yds,player_rush_yds"
+PREFERRED_EVENT_ID = "d55cb69fed50a09170560b5b75d8de86"
+NFL_EVENT_ID = PREFERRED_EVENT_ID  # updated by saved_event_suitability()
 
-REQUESTS = (
-    {
-        "order": 1,
-        "at": "T+0s",
-        "method": "GET",
-        "path": "/v4/sports/americanfootball_nfl/odds",
-        "query": {"regions": REGION, "markets": FEATURED, "oddsFormat": "american"},
-        "credits_max": 3,
-        "why": "Replace shared cache featured NFL odds.",
-    },
-    {
-        "order": 2,
-        "at": "T+2s",
-        "method": "GET",
-        "path": "/v4/sports/baseball_mlb/odds",
-        "query": {"regions": REGION, "markets": FEATURED, "oddsFormat": "american"},
-        "credits_max": 3,
-        "why": "Replace shared cache featured MLB odds.",
-    },
-    {
-        "order": 3,
-        "at": "T+4s",
-        "method": "GET",
-        "path": "/v4/sports/americanfootball_nfl/scores",
-        "query": {"daysFrom": "1"},
-        "credits_max": 2,
-        "why": "NFL live/upcoming/recent completed scores. Match by source id + commence_time.",
-    },
-    {
-        "order": 4,
-        "at": "T+6s",
-        "method": "GET",
-        "path": "/v4/sports/baseball_mlb/scores",
-        "query": {"daysFrom": "1"},
-        "credits_max": 2,
-        "why": "MLB scores including completed games for Odds unavailable cards.",
-    },
-    {
-        "order": 5,
-        "at": "T+8s",
-        "method": "GET",
-        "path": "/v4/sports/americanfootball_nfl/events/{event_id}/odds",
-        "query": {"regions": REGION, "markets": NFL_PROP_MARKETS, "oddsFormat": "american"},
-        "credits_max": 3,
-        "event_id_source": "id of the first NFL event from request 1 body. No extra /events list.",
-        "why": "One full-listed-markets NFL prop event into the same cache generation.",
-    },
-)
+
+def _parse_iso(value: str | None):
+    from datetime import datetime, timezone
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        stamp = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp
+
+
+def saved_event_suitability(*, now=None) -> dict:
+    """Decide the props event from saved payloads only. No discovery HTTP."""
+    from datetime import datetime, timezone
+    from market_snapshot.access import PRIVATE_DIR
+
+    now = now or datetime.now(timezone.utc)
+    path = PRIVATE_DIR / "latest_payloads.json"
+    report = {
+        "preferred_event_id": PREFERRED_EVENT_ID,
+        "selected_event_id": None,
+        "suitable": False,
+        "reason": "saved_payloads_missing",
+        "discovery_http": 0,
+        "candidates": [],
+    }
+    if not path.is_file():
+        return report
+    import json
+    payloads = json.loads(path.read_text())
+    nfl = (payloads.get("odds") or {}).get("americanfootball_nfl") or []
+    props = payloads.get("player_props") or {}
+    horizon = PROPS_NEAR_SECONDS
+    candidates = []
+    for event in nfl:
+        eid = str(event.get("id") or "")
+        commence = _parse_iso(event.get("commence_time"))
+        if not eid or commence is None:
+            continue
+        seconds_to_start = (commence - now).total_seconds()
+        row = {
+            "event_id": eid,
+            "commence_time": event.get("commence_time"),
+            "home_team": event.get("home_team"),
+            "away_team": event.get("away_team"),
+            "seconds_to_start": int(seconds_to_start),
+            "has_bookmakers": bool(event.get("bookmakers")),
+            "preferred": eid == PREFERRED_EVENT_ID,
+            "has_saved_props": eid == str(props.get("id") or ""),
+        }
+        row["suitable"] = seconds_to_start >= horizon and row["has_bookmakers"]
+        candidates.append(row)
+    report["candidates"] = [c for c in candidates if c["preferred"] or c["suitable"]]
+    preferred = next((c for c in candidates if c["preferred"]), None)
+    if preferred and preferred["suitable"]:
+        report.update({
+            "selected_event_id": preferred["event_id"],
+            "suitable": True,
+            "reason": "preferred_event_still_pregame_with_horizon",
+            "selected": preferred,
+        })
+        return report
+    fallback = next((c for c in candidates if c["suitable"]), None)
+    if fallback:
+        report.update({
+            "selected_event_id": fallback["event_id"],
+            "suitable": True,
+            "reason": "preferred_event_not_suitable_substituted_from_saved_featured",
+            "selected": fallback,
+            "preferred_rejected": preferred,
+        })
+        return report
+    report["reason"] = "no_saved_nfl_event_with_600s_pregame_horizon"
+    report["preferred"] = preferred
+    return report
+
+
+def build_requests(event_id: str) -> tuple[dict, ...]:
+    """props_2 waits 600s after props_1, not 600s after process start if props_1 ran at T+2."""
+    props_path = f"/v4/sports/americanfootball_nfl/events/{event_id}/odds"
+    featured_path = "/v4/sports/americanfootball_nfl/odds"
+    featured_query = {"regions": REGION, "markets": FEATURED, "oddsFormat": "american"}
+    props_query = {"regions": REGION, "markets": NFL_PROP_MARKETS, "oddsFormat": "american"}
+    return (
+        {
+            "order": 1,
+            "at": "featured_1.retrieved_at = T0",
+            "method": "GET",
+            "path": featured_path,
+            "query": featured_query,
+            "credits_max": 3,
+            "capture": "featured_1",
+            "why": "First featured NFL capture.",
+        },
+        {
+            "order": 2,
+            "at": "props_1.retrieved_at = immediately after featured_1 in the same process",
+            "method": "GET",
+            "path": props_path,
+            "query": props_query,
+            "credits_max": 3,
+            "capture": "props_1",
+            "event_id": event_id,
+            "event_id_source": "Saved NFL event chosen by saved_event_suitability. No /sports or /events list.",
+            "why": "First props capture for that event.",
+        },
+        {
+            "order": 3,
+            "at": f"featured_1.retrieved_at + {FEATURED_NEAR_SECONDS}s",
+            "method": "GET",
+            "path": featured_path,
+            "query": featured_query,
+            "credits_max": 3,
+            "capture": "featured_2",
+            "identical_to_order": 1,
+            "min_wait_from": "featured_1.retrieved_at",
+            "min_wait_seconds": FEATURED_NEAR_SECONDS,
+            "why": "Same featured query at least 300 seconds after featured_1.",
+        },
+        {
+            "order": 4,
+            "at": f"props_1.retrieved_at + {PROPS_NEAR_SECONDS}s",
+            "method": "GET",
+            "path": props_path,
+            "query": props_query,
+            "credits_max": 3,
+            "capture": "props_2",
+            "event_id": event_id,
+            "identical_to_order": 2,
+            "min_wait_from": "props_1.retrieved_at",
+            "min_wait_seconds": PROPS_NEAR_SECONDS,
+            "why": "Same props query at least 600 seconds after props_1, not 600s after process start.",
+        },
+    )
+
+
+REQUESTS = build_requests(PREFERRED_EVENT_ID)
 
 SUCCESS = (
-    "Each response 200; x-requests-last matches credits_max or less; empty body allowed at 0.",
-    "replace_from_payloads writes Redis (cache_backend=redis). Memory-only is not production-path proof.",
-    "GET /api/market-tools/internal/snapshot returns generation matching the collect; browsing_triggers_upstream false; odds_api_http 0 after collect.",
-    "Browser desktop+phone: NFL featured odds from this capture’s retrieved_at; MLB completed unmatched game labeled Saved result—not a live refresh and Odds unavailable if it has no matching odds event.",
-    "A same-team future MLB matchup must not inherit that completed score.",
-    "Prop card for the sampled NFL event shows the requested markets or structured unavailable if the event body is empty.",
+    "Each response 200; x-requests-last matches credits_max or less; empty body allowed at 0 credits.",
+    "Wait wall-clock >= 300s between featured_1 and featured_2, and >= 600s between props_1 and props_2. A 0–1s gap is not this test.",
+    "Each capture: replace_from_payloads writes Redis (cache_backend=redis). Memory-only is not production-path proof.",
+    "Each capture: GET /api/market-tools/internal/snapshot returns that capture’s generation and retrieved_at. browsing_triggers_upstream false; odds_api_http 0 after the collect process finishes.",
+    "Each capture: browser desktop 1280 and phone 390 against http://127.0.0.1:3000/market-tools shows that capture’s retrieved_at on the featured NFL card (and the sampled event’s props).",
+    "Successful refresh: generation and retrieved_at advanced even when american/source_timestamp are unchanged.",
+    "Actual price change: american (or line) differs between capture 1 and capture 2. Record it separately. Unchanged prices still count as a passed refresh if generation/retrieved_at advanced.",
+    "Prior two-capture (featured elapsed 1s, props 0s, identical sha256) remains insufficient and is not reused as interval proof.",
     "Production flags stay off except this isolated local collect process. Scheduled fetching stays off afterward.",
 )
 
 
+def _home_american(preview: dict):
+    for event in preview.get("events") or []:
+        for book in event.get("books") or []:
+            quote = (book.get("h2h") or {}).get("home")
+            if quote:
+                return quote.get("american")
+    return None
+
+
+def prove_path_with_fixtures(*, require_redis: bool = False) -> dict:
+    """Redis + internal API path using labeled fixtures. Zero provider HTTP.
+
+    Distinguishes a same-price refresh from an actual price change. Browser is
+    recorded when SBME_E2E_WEB is reachable; otherwise the exact dependency is returned.
+    """
+    import os
+    saved = {
+        key: os.environ.get(key)
+        for key in (
+            "MARKET_TOOLS_ODDSAPI_ENABLED",
+            "MARKET_TOOLS_ODDSAPI_COLLECT",
+            "MARKET_TOOLS_PROVIDER",
+            "NODE_ENV",
+            "REDIS_URL",
+        )
+    }
+    os.environ["NODE_ENV"] = "development"
+    os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "false"
+    if require_redis:
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "true"
+        os.environ["MARKET_TOOLS_PROVIDER"] = "sgo"
+        os.environ.setdefault("REDIS_URL", "redis://127.0.0.1:6379/0")
+    else:
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "false"
+        os.environ["MARKET_TOOLS_PROVIDER"] = "oddsapi_snapshot"
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from api.auth import get_current_user
+    from api.market_tools_internal import router
+    from market_snapshot.cache import public_preview, reset_for_tests, stats
+    from market_snapshot.collector import load_labeled_fixture
+
+    def _restore_env() -> None:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    try:
+        class Dummy:
+            id = 1
+            is_pro = False
+            role = "admin"
+            active_subscription_id = None
+
+        async def override_db():
+            class Sess:
+                async def execute(self, *a, **k):
+                    class R:
+                        def scalars(self):
+                            class S:
+                                def first(self):
+                                    return None
+                            return S()
+                    return R()
+            yield Sess()
+
+        app = FastAPI()
+        app.include_router(router, prefix="/api/market-tools")
+        app.dependency_overrides[get_current_user] = lambda: Dummy()
+        from models.database import get_db
+        app.dependency_overrides[get_db] = override_db
+        client = TestClient(app)
+
+        reset_for_tests()
+        captures = []
+        for name, kind in (
+            ("fixture_a_baseline.json", "initial"),
+            ("fixture_a_refresh_same_price.json", "refresh_same_price"),
+            ("fixture_b_price_change.json", "price_change"),
+        ):
+            ingest = load_labeled_fixture(name)
+            preview = public_preview()
+            resp = client.get("/api/market-tools/internal/snapshot")
+            api = resp.json().get("data") if resp.status_code == 200 else {
+                "http_status": resp.status_code,
+                "detail": (resp.text or "")[:300],
+            }
+            cache_meta = preview.get("cache") or {}
+            api_cache = api.get("cache") or {}
+            captures.append({
+                "fixture": name,
+                "kind": kind,
+                "ingest_ok": ingest.get("ok"),
+                "ingest_cache_backend": ingest.get("cache_backend"),
+                "redis_backend": (
+                    preview.get("cache_backend")
+                    or cache_meta.get("cache_backend")
+                    or ingest.get("cache_backend")
+                ),
+                "generation": preview.get("generation") or ingest.get("generation"),
+                "retrieved_at": preview.get("retrieved_at"),
+                "american": _home_american(preview),
+                "api_generation": api.get("generation"),
+                "api_retrieved_at": api.get("retrieved_at"),
+                "api_american": _home_american(api),
+                "api_cache_backend": api_cache.get("cache_backend") or api.get("cache_backend"),
+                "api_http_status": getattr(resp, "status_code", None),
+                "http_requests": 0,
+            })
+
+        initial, refreshed, changed = captures
+        browser = _browser_dependency()
+        redis_ok = all(row.get("redis_backend") == "redis" for row in captures)
+        api_ok = all(
+            row.get("api_http_status") == 200
+            and row.get("api_generation") == row.get("generation")
+            and row.get("api_retrieved_at") == row.get("retrieved_at")
+            for row in captures
+        )
+        refresh_ok = (
+            refreshed["generation"] > initial["generation"]
+            and refreshed["retrieved_at"] != initial["retrieved_at"]
+            and refreshed["american"] == initial["american"] == -148
+        )
+        change_ok = (
+            changed["american"] == -155
+            and changed["american"] != refreshed["american"]
+            and changed["generation"] > refreshed["generation"]
+        )
+        report = {
+            "provider_http": 0,
+            "not_customer_data": True,
+            "require_redis": require_redis,
+            "redis": redis_ok,
+            "internal_api": api_ok,
+            "successful_refresh_without_price_change": refresh_ok,
+            "actual_price_change_distinct": change_ok,
+            "captures": captures,
+            "cache_stats": stats(),
+            "browser": browser,
+            "ok": bool(api_ok and refresh_ok and change_ok and (redis_ok if require_redis else True)),
+        }
+        if os.getenv("MARKET_TOOLS_KEEP_FIXTURES") != "1":
+            reset_for_tests()
+        return report
+    finally:
+        _restore_env()
+
+
+def _browser_dependency() -> dict:
+    import os
+    import urllib.request
+
+    web = (os.getenv("SBME_E2E_WEB") or "http://127.0.0.1:3000").rstrip("/")
+    reachable = False
+    try:
+        urllib.request.urlopen(web + "/market-tools", timeout=2)
+        reachable = True
+    except Exception:
+        reachable = False
+    return {
+        "proved_this_run": False,
+        "web_reachable": reachable,
+        "url": f"{web}/market-tools",
+        "exact_dependency_if_not_proved": (
+            "Headless Chrome against the isolated Next app at 127.0.0.1:3000/market-tools "
+            "with FastAPI reading Redis (MARKET_TOOLS_ODDSAPI_ENABLED only in that process, collect off) "
+            "and a local Pro Arena/Elite user. Each fixture ingest must show the new retrieved_at in the browser. "
+            "This assignment does not start Next or Chrome unless those processes are already up."
+        ),
+    }
+
+
 def final_refresh_plan(*, execute: bool = False) -> dict:
     """Return the authorization package. execute=True is refused here; no provider HTTP."""
-    credits_max = sum(int(row["credits_max"]) for row in REQUESTS)
+    suitability = saved_event_suitability()
+    event_id = suitability.get("selected_event_id") or PREFERRED_EVENT_ID
+    requests = build_requests(event_id)
+    credits_max = sum(int(row["credits_max"]) for row in requests)
+    blockers = [
+        "Mario has not authorized this bounded spend.",
+        "This function refuses execute=True so no provider HTTP is sent.",
+    ]
+    if not suitability.get("suitable"):
+        blockers.insert(0, suitability.get("reason") or "saved event not suitable")
+    props_2 = next(row for row in requests if row["capture"] == "props_2")
     return {
         "execute": False,
         "executed": False,
@@ -83,19 +378,36 @@ def final_refresh_plan(*, execute: bool = False) -> dict:
         "scheduled_fetch_remains_off": True,
         "host": HOST,
         "region": REGION,
-        "http_requests": len(REQUESTS),
+        "http_requests": len(requests),
         "credits_max": credits_max,
         "credits_min_if_all_empty": 0,
         "ledger_remaining_reported": LEDGER_REMAINING_REPORTED,
         "ledger_used_reported": LEDGER_USED_REPORTED,
         "remaining_after_max": LEDGER_REMAINING_REPORTED - credits_max,
-        "requests": [dict(row) for row in REQUESTS],
+        "requests": [dict(row) for row in requests],
+        "event_suitability": suitability,
+        "props_wait_is_from_props_1": props_2["min_wait_from"] == "props_1.retrieved_at",
+        "props_min_seconds": PROPS_NEAR_SECONDS,
+        "not_initial_ingestion": True,
+        "supersedes_five_request_ingestion_plan": True,
+        "prior_two_capture_insufficient": {
+            "elapsed_featured_seconds": CAPTURE_EVIDENCE["elapsed_featured_seconds"],
+            "elapsed_props_seconds": CAPTURE_EVIDENCE["elapsed_props_seconds"],
+            "body_changed": CAPTURE_EVIDENCE["body_changed"],
+            "interval_verification": CAPTURE_EVIDENCE["interval_verification"],
+            "event_id_reused": event_id,
+        },
         "timing": {
-            "collect_window_seconds": 12,
-            "cache_replace": "T+10s immediately after last HTTP, same process, no browse-triggered fetch",
-            "api_read": "T+11s GET /api/market-tools/internal/snapshot with Pro Arena/Elite entitlement",
-            "browser": "T+15s to T+60s Chrome desktop 1280 and phone 390 against http://127.0.0.1:3000/market-tools",
-            "restore": "If labeled fixtures were used first, POST /internal/restore-saved-preview then re-run this collect",
+            "featured_min_seconds": FEATURED_NEAR_SECONDS,
+            "props_min_seconds": PROPS_NEAR_SECONDS,
+            "collect_window_seconds": PROPS_NEAR_SECONDS + 30,
+            "cache_replace": "Immediately after each HTTP, same isolated collect process, no browse-triggered fetch",
+            "api_read": "GET /api/market-tools/internal/snapshot after each capture with Pro Arena/Elite entitlement",
+            "browser": "Chrome against the isolated Next app after each capture",
+            "refresh_vs_price_change": (
+                "generation/retrieved_at advancing with unchanged american = successful refresh. "
+                "american/line delta = actual price change, recorded separately."
+            ),
         },
         "requires": {
             "mario_authorization": True,
@@ -112,15 +424,16 @@ def final_refresh_plan(*, execute: bool = False) -> dict:
                 "MARKET_TOOLS_ODDSAPI_COLLECT": "false",
             },
         },
-        "blockers_that_prevent_running_now": [
-            "Docker Desktop is not installed; shared Redis cache replacement cannot be proven.",
-            "Mario has not authorized this bounded spend.",
-        ],
+        "blockers_that_prevent_running_now": blockers,
         "success_criteria": list(SUCCESS),
-        "nws": "Not in this final Odds API test. Reuse saved forecast only when an event venue is verified.",
+        "nws": "Not in this interval Odds API test. Reuse saved forecast only when an event venue is verified.",
         "injuries": "No injury HTTP.",
+        "scores": "Not in this interval test. Recurring scores stay in the monthly budget, not in this 4-request package.",
         "note": (
-            "Do not run this plan until Docker Redis is up and Mario authorizes "
-            f"{credits_max} credits / {len(REQUESTS)} HTTP. Browsing must not call the provider."
+            "Do not run this plan until Mario authorizes "
+            f"{credits_max} credits / {len(requests)} HTTP with waits of "
+            f"{FEATURED_NEAR_SECONDS}s from featured_1.retrieved_at and "
+            f"{PROPS_NEAR_SECONDS}s from props_1.retrieved_at. "
+            "Browsing must not call the provider. No discovery HTTP."
         ),
     }

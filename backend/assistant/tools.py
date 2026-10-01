@@ -458,7 +458,7 @@ async def get_sgo_current_odds(
             blocked["games"] = []
             return blocked
         from market_snapshot.cache import public_preview
-        from market_snapshot.consumers import event_card_to_mobile_game, filter_events_for_league
+        from market_snapshot.consumers import assistant_market_equivalents, event_card_to_mobile_game, filter_events_for_league
         preview = public_preview()
         if preview.get("unavailable"):
             return _assistant_unavailable(
@@ -474,16 +474,16 @@ async def get_sgo_current_odds(
         for ev in cards:
             row = event_card_to_mobile_game(ev)
             row["books"] = ev.get("books") or []
-            row["fair_odds"] = "unavailable"
-            row["book_consensus"] = "unavailable"
-            row["team_props"] = []
+            row.update(assistant_market_equivalents(ev))
             games.append(row)
         return {
             "available": bool(games),
             "source": "oddsapi_cache",
             "sgo_event_id": None,
             "note": (
-                "Odds API saved bookmaker prices. Nested SGO fairOdds/consensus/team props are unavailable."
+                "Odds API saved bookmaker prices. Fair odds are de-vigged from complete book outcome sets. "
+                "Consensus is the median vig-inclusive implied probability across unique books. "
+                "Nested SGO team props, steam, and SGP quotes remain unavailable."
                 if games
                 else "Current market data is not in the Odds API cache. Say it is unavailable. Do not invent odds."
             ),

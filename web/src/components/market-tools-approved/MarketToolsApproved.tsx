@@ -542,7 +542,7 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
   const refresh = data.refresh || {};
 
   return (
-    <div className={`sbme-mt-approved${desktop ? " desktop-open" : ""}`} data-generation={data.generation || ""} data-fixture={data.fixture_label || ""}>
+    <div className={`sbme-mt-approved${desktop ? " desktop-open" : ""}`} data-generation={data.generation || ""} data-fixture={data.fixture_label || ""} data-retrieved-at={data.retrieved_at || ""}>
       <header className="top">
         <div>
           <p className="kicker">SPORTBOOK ME <span>DFS.AI</span></p>

@@ -168,11 +168,14 @@ async def build_sgo_intelligence(sport: str, dfs_players: list[dict], event_date
 
     from market_snapshot.provider import blocks_sgo
     if blocks_sgo():
+        from market_snapshot.oddsapi_intelligence import build_oddsapi_intelligence
+        mapped = build_oddsapi_intelligence(sport_upper, dfs_players, event_date=event_date)
         logger.warning(
-            "SGO intelligence unavailable: Odds API Market Tools serving blocks SGO fetch. "
-            "No player projections were invented from Odds API markets."
+            "SGO intelligence blocked; Odds API player-prop lines mapped for %d/%d DFS players. "
+            "No fantasyScore market exists on Odds API; none was invented.",
+            len(mapped), len(dfs_players),
         )
-        return {}
+        return mapped
 
     # Read cached SBEvent data
     from api.sgo_data import _rget

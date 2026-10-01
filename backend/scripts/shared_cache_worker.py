@@ -20,6 +20,7 @@ def main() -> int:
     os.environ.setdefault("MARKET_TOOLS_ODDSAPI_ENABLED", "true")
     os.environ.setdefault("MARKET_TOOLS_ODDSAPI_COLLECT", "false")
     os.environ.setdefault("MARKET_TOOLS_PROVIDER", "sgo")
+    os.environ.setdefault("MARKET_TOOLS_TEST_REDIS", "1")
     from market_snapshot.cache import acquire_collect_lock, public_preview, release_collect_lock, reset_for_tests
     from market_snapshot.collector import load_labeled_fixture
 

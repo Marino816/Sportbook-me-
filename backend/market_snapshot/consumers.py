@@ -126,6 +126,50 @@ def assistant_event_row(ev: dict, sport: str) -> dict:
     }
 
 
+def assistant_market_equivalents(ev: dict) -> dict:
+    """Map Odds API book quotes onto assistant fair/consensus fields. No SGP or team props."""
+    from market_snapshot.analysis import consensus_prices
+
+    books = ev.get("books") or []
+    fair = None
+    for book in books:
+        if book.get("fair_h2h"):
+            fair = {
+                "source": "oddsapi_devig",
+                "method": "proportional_overround_removal",
+                "h2h": book.get("fair_h2h"),
+                "spreads": book.get("fair_spreads"),
+                "totals": book.get("fair_totals"),
+                "note": "Market-derived from Odds API bookmaker prices on this event. Not an SGO fairOdds nested object.",
+            }
+            break
+    prices = []
+    for book in books:
+        h2h = book.get("h2h") or {}
+        for side in ("home", "away", "draw"):
+            quote = h2h.get(side)
+            if quote and quote.get("american") is not None:
+                prices.append({
+                    "bookmaker_key": book.get("bookmaker_key"),
+                    "bookmaker": book.get("bookmaker"),
+                    "american": quote.get("american"),
+                    "selection": side,
+                })
+    consensus = {}
+    for side in ("home", "away", "draw"):
+        side_prices = [p for p in prices if p["selection"] == side]
+        if side_prices:
+            consensus[side] = consensus_prices(side_prices)
+    return {
+        "fair_odds": fair if fair else "unavailable",
+        "fair_odds_reason": None if fair else "Incomplete bookmaker outcome set; fair odds were not invented.",
+        "book_consensus": consensus or "unavailable",
+        "team_props": [],
+        "sgp_quote": "unavailable",
+        "movement": "unavailable",
+    }
+
+
 def filter_events_for_league(events: list[dict], league: str) -> list[dict]:
     selector = league_to_selector(league)
     if not selector:

@@ -339,10 +339,19 @@ class SchedulerTests(unittest.TestCase):
         )
         self.assertFalse(CONTINUOUS_FETCH_ENABLED)
         self.assertFalse(CONFIG["enabled"])
+        self.assertFalse(CONFIG["collection_activated"])
         self.assertFalse(CONFIG["browsing_triggers_upstream"])
-        self.assertFalse(quota_allows(1, used_month=80000, used_day=0))
-        self.assertFalse(quota_allows(1, used_month=0, used_day=2500))
+        from market_snapshot.scheduler import quota_breakdown
+        parts = quota_breakdown()
+        self.assertEqual(parts["configured_limit"], parts["effective_collection_stop"])
+        self.assertEqual(parts["reserve_held_back_from_collection"], 0)
+        self.assertFalse(parts["double_reserve_applied"])
+        self.assertGreaterEqual(parts["effective_collection_stop"], parts["modeled_busiest_month"] + parts["contingency_credits"])
+        self.assertFalse(quota_allows(1, used_month=CONFIG["monthly_credit_limit"], used_day=0))
+        self.assertFalse(quota_allows(1, used_month=0, used_day=CONFIG["daily_credit_limit"]))
         self.assertTrue(quota_allows(10, used_month=100, used_day=10))
+        self.assertTrue(quota_allows(1, used_month=parts["modeled_busiest_month"], used_day=0))
+        self.assertGreaterEqual(CONFIG["monthly_credit_limit"], 468750)
         key = "nfl|h2h|us|"
         self.assertTrue(single_flight(key))
         self.assertFalse(single_flight(key))
@@ -383,12 +392,89 @@ class CostModelTests(unittest.TestCase):
             a["typical_week"]["featured_credits"] + a["typical_week"]["prop_credits"] + a["typical_week"]["score_credits"],
         )
         self.assertIn("score_credits", a["typical_30_day"])
-        from market_snapshot.final_refresh_test import final_refresh_plan
+        from market_snapshot.cost_estimate import monthly_budget_table
+        table = monthly_budget_table()
+        labels = [row["label"] for row in table["rows"]]
+        self.assertEqual(labels, ["typical_month", "busiest_month", "blended_year_monthly"])
+        typical = next(row for row in table["rows"] if row["label"] == "typical_month")
+        busiest = next(row for row in table["rows"] if row["label"] == "busiest_month")
+        blended = next(row for row in table["rows"] if row["label"] == "blended_year_monthly")
+        self.assertEqual(typical["credits"], a["typical_30_day"]["total"])
+        self.assertEqual(busiest["credits"], a["busiest_30_day"]["total"])
+        self.assertEqual(blended["credits"], a["monthly_credits"])
+        self.assertEqual(typical["with_25pct_reserve"], round(typical["credits"] * 1.25))
+        self.assertEqual(busiest["with_25pct_reserve"], round(busiest["credits"] * 1.25))
+        self.assertIn("258,694", table["explain_258694_vs_262851"])
+        self.assertIn("262,851", table["explain_258694_vs_262851"])
+        self.assertFalse(table["scheduler_cap_prepared"]["collection_activated"])
+        self.assertFalse(table["scheduler_cap_prepared"]["double_reserve_applied"])
+        self.assertEqual(
+            table["scheduler_cap_prepared"]["configured_limit"],
+            table["scheduler_cap_prepared"]["effective_collection_stop"],
+        )
+        from market_snapshot.final_refresh_test import final_refresh_plan, prove_path_with_fixtures
         plan = final_refresh_plan(execute=True)
         self.assertFalse(plan["execute"])
         self.assertTrue(plan["refused_execute"])
-        self.assertEqual(plan["http_requests"], 5)
-        self.assertEqual(plan["credits_max"], 13)
+        self.assertEqual(plan["http_requests"], 4)
+        self.assertEqual(plan["credits_max"], 12)
+        self.assertTrue(plan["not_initial_ingestion"])
+        self.assertEqual(plan["timing"]["featured_min_seconds"], 300)
+        self.assertEqual(plan["timing"]["props_min_seconds"], 600)
+        self.assertTrue(plan["props_wait_is_from_props_1"])
+        self.assertEqual(plan["event_suitability"]["discovery_http"], 0)
+        path = prove_path_with_fixtures(require_redis=False)
+        self.assertEqual(path["provider_http"], 0)
+        self.assertTrue(path["internal_api"])
+        self.assertTrue(path["successful_refresh_without_price_change"])
+        self.assertTrue(path["actual_price_change_distinct"])
+        self.assertTrue(path["ok"])
+        from market_snapshot.feature_gap import feature_gap_report
+        from market_snapshot.mobile_installed_test_path import installed_app_test_path
+        gap = feature_gap_report()
+        self.assertTrue(gap["empty_dfs_intelligence"]["unavailable_handling_is_not_feature_replacement"])
+        self.assertTrue(gap["unavailable_assistant_tools"]["unavailable_handling_is_not_feature_replacement"])
+        self.assertEqual(
+            {row["id"] for row in gap["remaining_losses_for_mario"]},
+            {
+                "sgo_fantasy_score",
+                "live_clock_period",
+                "sgo_event_and_odd_ids",
+                "team_props",
+                "sbme_environment",
+                "steam_opening_sgp",
+                "mlb_prop_coverage_in_current_snapshot",
+            },
+        )
+        from market_snapshot.consumers import assistant_market_equivalents
+        fair = assistant_market_equivalents({
+            "books": [{
+                "bookmaker_key": "draftkings",
+                "bookmaker": "DraftKings",
+                "fair_h2h": {"home": {"american": -105}, "away": {"american": -105}},
+                "h2h": {"home": {"american": -148}, "away": {"american": 130}},
+            }],
+        })
+        self.assertEqual(fair["fair_odds"]["source"], "oddsapi_devig")
+        self.assertEqual(fair["sgp_quote"], "unavailable")
+        self.assertEqual(fair["team_props"], [])
+        self.assertEqual(fair["movement"], "unavailable")
+        from market_snapshot.oddsapi_intelligence import intelligence_from_prop_rows
+        mapped = intelligence_from_prop_rows(
+            [{
+                "player": "José Ramírez",
+                "market": "pitcher_strikeouts",
+                "selection": "Over",
+                "line": 6.5,
+                "commence_time": "2026-10-01T23:00:00Z",
+            }],
+            [{"id": "dk-1", "name": "Jose Ramirez"}],
+        )
+        self.assertEqual(mapped["dk-1"]["props"]["pitchingStrikeouts"], 6.5)
+        self.assertIsNone(mapped["dk-1"]["fantasyScore"])
+        mobile = installed_app_test_path()
+        self.assertFalse(mobile["released_binary_can_target_isolated_backend"])
+        self.assertIn("EAS development", mobile["exact_dependency"]["required"][0])
 
 
 class CompatTests(unittest.TestCase):

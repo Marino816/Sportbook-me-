@@ -699,4 +699,68 @@ def estimate_monthly() -> dict:
         "plan_119": a["plans"]["plan_119"],
         "tradeoff_if_none": None if cheapest else "No listed homepage plan under $149 covers full requested coverage at these frequencies.",
         "thirty_dollar_tradeoff": "The $30 / 20,000 plan cannot cover the requested slate. Coverage is not dropped here to fit $30.",
+        "budget_table": monthly_budget_table(),
+    }
+
+
+def monthly_budget_table() -> dict:
+    """Typical month, busiest month, and each with 25% reserve. No provider HTTP."""
+    a = full_scope_cost()["scenario_a"]
+    typical = a["typical_30_day"]["total"]
+    busiest = a["busiest_30_day"]["total"]
+    blended = a["monthly_credits"]
+    typical_reserve = round(typical * (1 + RESERVE))
+    busiest_reserve = round(busiest * (1 + RESERVE))
+    blended_reserve = a["monthly_with_reserve"]
+    monthly_cap = busiest_reserve
+    rows = [
+        {
+            "label": "typical_month",
+            "basis": "typical_week × 30/7 (no seasonal mix; golf not added as a separate annual line)",
+            "credits": typical,
+            "with_25pct_reserve": typical_reserve,
+        },
+        {
+            "label": "busiest_month",
+            "basis": "busy_week × 30/7 (every week treated as overlap/busy)",
+            "credits": busiest,
+            "with_25pct_reserve": busiest_reserve,
+        },
+        {
+            "label": "blended_year_monthly",
+            "basis": "(8 busy + 36 typical + 8 reduced at 0.4× typical) / 12 + golf majors/12",
+            "credits": blended,
+            "with_25pct_reserve": blended_reserve,
+        },
+    ]
+    return {
+        "scenario": "A pregame 5-min featured / 10-min props; scores in near-hours union",
+        "region": REGION,
+        "reserve_fraction": RESERVE,
+        "rows": rows,
+        "explain_258694_vs_262851": (
+            f"{blended:,} (reported as 258,694) is Scenario A monthly_credits: a 12-month seasonal mix "
+            "(8 busy weeks, 36 typical weeks, 8 reduced weeks at 0.4× typical) averaged, plus golf majors/12. "
+            f"{typical:,} (reported as 262,851) is typical_30_day: one typical week scaled by 30/7, "
+            "with no busy/reduced mix and without adding the golf annual line. "
+            "They answer different questions and must not be used interchangeably."
+        ),
+        "plan_59_covers_busiest_with_reserve": PLAN_59["credits_per_month"] >= busiest_reserve,
+        "plan_119_covers_busiest_with_reserve": PLAN_119["credits_per_month"] >= busiest_reserve,
+        "scheduler_cap_prepared": {
+            "configured_limit": monthly_cap,
+            "modeled_busiest_month": busiest,
+            "contingency_credits": busiest_reserve - busiest,
+            "reserve_held_back_from_collection": 0,
+            "effective_collection_stop": monthly_cap,
+            "daily_credit_limit": int(round(a["busy_day"]["total"] * (1 + RESERVE))),
+            "collection_activated": False,
+            "double_reserve_applied": False,
+            "env": ["MARKET_TOOLS_MONTHLY_CREDIT_LIMIT", "MARKET_TOOLS_DAILY_CREDIT_LIMIT"],
+            "why": (
+                "The 25% contingency is added once onto busiest_30_day to form the configured limit. "
+                f"effective_collection_stop is {monthly_cap:,}, equal to that limit. "
+                "quota_allows does not subtract another 25%. Collection remains off."
+            ),
+        },
     }

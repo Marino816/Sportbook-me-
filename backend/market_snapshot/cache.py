@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from threading import Lock
 
 from market_snapshot.adapter import build_preview, combine_parlay
@@ -56,6 +57,11 @@ def reset_for_tests() -> None:
         _PROVIDER_HTTP = 0
         _GENERATION = 0
         _BACKEND = "memory"
+    # Never touch live Redis from default unit tests. Isolated Redis checks opt in.
+    if os.getenv("MARKET_TOOLS_TEST_REDIS") != "1":
+        return
+    if not requires_shared_redis():
+        return
     client = _redis()
     if client is not None:
         try:
@@ -74,23 +80,17 @@ def _redis():
 
 
 def _store(preview: dict) -> str:
-    encoded = json.dumps(preview)
     if requires_shared_redis():
         client = _redis()
         if client is None:
             raise CacheUnavailableError("redis_unavailable")
+        preview["cache_backend"] = "redis"
         try:
-            client.set(REDIS_PREVIEW_KEY, encoded)
+            client.set(REDIS_PREVIEW_KEY, json.dumps(preview))
             return "redis"
         except Exception as exc:
             raise CacheUnavailableError("redis_write_failed") from exc
-    client = _redis()
-    if client is not None:
-        try:
-            client.set(REDIS_PREVIEW_KEY, encoded)
-            return "redis"
-        except Exception:
-            pass
+    preview["cache_backend"] = "memory"
     return "memory"
 
 
@@ -232,6 +232,7 @@ def public_preview() -> dict:
     payload.pop("quote_index", None)
     payload["http_requests_used"] = 0
     payload["cache"] = stats()
+    payload["cache_backend"] = payload.get("cache_backend") or payload["cache"]["cache_backend"]
     return payload
 
 
