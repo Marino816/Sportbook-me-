@@ -215,6 +215,7 @@ def _quote(row: dict) -> dict | None:
         "bookmaker": row.get("bookmaker"),
         "bookmaker_key": row.get("bookmaker_key"),
         "period": row.get("period"),
+        "event_id": row.get("event_id"),
     }
 
 

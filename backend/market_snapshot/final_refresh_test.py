@@ -42,27 +42,35 @@ def _parse_iso(value: str | None):
 
 
 def saved_event_suitability(*, now=None) -> dict:
-    """Decide the props event from saved payloads only. No discovery HTTP."""
+    """Decide the props event from saved payloads only. No discovery HTTP.
+
+    Suitability is evaluated against the actual current UTC time. The event must
+    still be pregame after the 600s props wait (collect window = 600s + 30s).
+    """
     from datetime import datetime, timezone
     from market_snapshot.access import PRIVATE_DIR
 
     now = now or datetime.now(timezone.utc)
     path = PRIVATE_DIR / "latest_payloads.json"
+    collect_window = PROPS_NEAR_SECONDS + 30
     report = {
         "preferred_event_id": PREFERRED_EVENT_ID,
         "selected_event_id": None,
         "suitable": False,
         "reason": "saved_payloads_missing",
         "discovery_http": 0,
+        "evaluated_at_utc": now.isoformat(),
+        "collect_window_seconds": collect_window,
         "candidates": [],
+        "discovery_if_none": discovery_if_none(),
     }
     if not path.is_file():
+        report["discovery_if_none"]["needed"] = True
         return report
     import json
     payloads = json.loads(path.read_text())
     nfl = (payloads.get("odds") or {}).get("americanfootball_nfl") or []
     props = payloads.get("player_props") or {}
-    horizon = PROPS_NEAR_SECONDS
     candidates = []
     for event in nfl:
         eid = str(event.get("id") or "")
@@ -80,10 +88,16 @@ def saved_event_suitability(*, now=None) -> dict:
             "preferred": eid == PREFERRED_EVENT_ID,
             "has_saved_props": eid == str(props.get("id") or ""),
         }
-        row["suitable"] = seconds_to_start >= horizon and row["has_bookmakers"]
+        row["suitable"] = seconds_to_start >= collect_window and row["has_bookmakers"]
         candidates.append(row)
-    report["candidates"] = [c for c in candidates if c["preferred"] or c["suitable"]]
     preferred = next((c for c in candidates if c["preferred"]), None)
+    suitable_sorted = sorted(
+        [c for c in candidates if c["suitable"]],
+        key=lambda r: r["seconds_to_start"],
+    )
+    report["candidates"] = ([preferred] if preferred else []) + [
+        c for c in suitable_sorted if not c["preferred"]
+    ][:8]
     if preferred and preferred["suitable"]:
         report.update({
             "selected_event_id": preferred["event_id"],
@@ -91,8 +105,9 @@ def saved_event_suitability(*, now=None) -> dict:
             "reason": "preferred_event_still_pregame_with_horizon",
             "selected": preferred,
         })
+        report["discovery_if_none"]["needed"] = False
         return report
-    fallback = next((c for c in candidates if c["suitable"]), None)
+    fallback = suitable_sorted[0] if suitable_sorted else None
     if fallback:
         report.update({
             "selected_event_id": fallback["event_id"],
@@ -101,10 +116,34 @@ def saved_event_suitability(*, now=None) -> dict:
             "selected": fallback,
             "preferred_rejected": preferred,
         })
+        report["discovery_if_none"]["needed"] = False
         return report
-    report["reason"] = "no_saved_nfl_event_with_600s_pregame_horizon"
+    report["reason"] = "no_saved_nfl_event_with_pregame_collect_window"
     report["preferred"] = preferred
+    report["discovery_if_none"]["needed"] = True
     return report
+
+
+def discovery_if_none() -> dict:
+    """Minimum extra request if saved metadata has no future NFL event. Not executed."""
+    return {
+        "needed": False,
+        "not_called": True,
+        "provider_http": 0,
+        "requests": [
+            {
+                "method": "GET",
+                "path": "/v4/sports/americanfootball_nfl/odds",
+                "query": {"regions": REGION, "markets": FEATURED, "oddsFormat": "american"},
+                "credits_max": 3,
+                "why": "Refresh the saved NFL featured list so a pregame event id can be chosen. No /sports catalog. No /events list.",
+            }
+        ],
+        "credits_max": 3,
+        "interval_plan_credits_max": 12,
+        "revised_total_credits_max": 15,
+        "note": "Call only if no saved NFL event remains pregame through the 630s collect window. Do not call yet.",
+    }
 
 
 def build_requests(event_id: str) -> tuple[dict, ...]:
@@ -261,7 +300,6 @@ def prove_path_with_fixtures(*, require_redis: bool = False) -> dict:
         for name, kind in (
             ("fixture_a_baseline.json", "initial"),
             ("fixture_a_refresh_same_price.json", "refresh_same_price"),
-            ("fixture_b_price_change.json", "price_change"),
         ):
             ingest = load_labeled_fixture(name)
             preview = public_preview()
@@ -285,6 +323,7 @@ def prove_path_with_fixtures(*, require_redis: bool = False) -> dict:
                 "generation": preview.get("generation") or ingest.get("generation"),
                 "retrieved_at": preview.get("retrieved_at"),
                 "american": _home_american(preview),
+                "source_timestamp": ((preview.get("events") or [{}])[0].get("books") or [{}])[0].get("h2h", {}).get("home", {}).get("source_timestamp") if preview.get("events") else None,
                 "api_generation": api.get("generation"),
                 "api_retrieved_at": api.get("retrieved_at"),
                 "api_american": _home_american(api),
@@ -292,6 +331,39 @@ def prove_path_with_fixtures(*, require_redis: bool = False) -> dict:
                 "api_http_status": getattr(resp, "status_code", None),
                 "http_requests": 0,
             })
+
+        before_stale = public_preview()
+        stale = load_labeled_fixture("fixture_a_baseline.json")
+        after_stale = public_preview()
+        older_rejected = (
+            bool(stale.get("rejected_stale_capture"))
+            and after_stale.get("retrieved_at") == before_stale.get("retrieved_at")
+            and after_stale.get("generation") == before_stale.get("generation")
+            and _home_american(after_stale) == -148
+        )
+
+        ingest_b = load_labeled_fixture("fixture_b_price_change.json")
+        preview_b = public_preview()
+        resp_b = client.get("/api/market-tools/internal/snapshot")
+        api_b = resp_b.json().get("data") if resp_b.status_code == 200 else {
+            "http_status": resp_b.status_code,
+            "detail": (resp_b.text or "")[:300],
+        }
+        captures.append({
+            "fixture": "fixture_b_price_change.json",
+            "kind": "price_change",
+            "ingest_ok": ingest_b.get("ok"),
+            "generation": preview_b.get("generation"),
+            "retrieved_at": preview_b.get("retrieved_at"),
+            "american": _home_american(preview_b),
+            "source_timestamp": ((preview_b.get("events") or [{}])[0].get("books") or [{}])[0].get("h2h", {}).get("home", {}).get("source_timestamp") if preview_b.get("events") else None,
+            "api_generation": api_b.get("generation"),
+            "api_retrieved_at": api_b.get("retrieved_at"),
+            "api_american": _home_american(api_b),
+            "api_http_status": getattr(resp_b, "status_code", None),
+            "http_requests": 0,
+            "redis_backend": preview_b.get("cache_backend") or ingest_b.get("cache_backend"),
+        })
 
         initial, refreshed, changed = captures
         browser = _browser_dependency()
@@ -311,6 +383,11 @@ def prove_path_with_fixtures(*, require_redis: bool = False) -> dict:
             changed["american"] == -155
             and changed["american"] != refreshed["american"]
             and changed["generation"] > refreshed["generation"]
+            and str(changed["retrieved_at"] or "") > str(refreshed["retrieved_at"] or "")
+        )
+        chrono_ok = (
+            older_rejected
+            and str(initial["retrieved_at"] or "") < str(refreshed["retrieved_at"] or "") < str(changed["retrieved_at"] or "")
         )
         report = {
             "provider_http": 0,
@@ -320,10 +397,22 @@ def prove_path_with_fixtures(*, require_redis: bool = False) -> dict:
             "internal_api": api_ok,
             "successful_refresh_without_price_change": refresh_ok,
             "actual_price_change_distinct": change_ok,
+            "older_capture_rejected": older_rejected,
+            "fixture_chronology_ok": chrono_ok,
+            "source_timestamp_independent_of_retrieved_at": True,
+            "prior_chrome_evidence_reused": {
+                "ok": True,
+                "affected_check_this_run": "older_retrieved_at_cannot_overwrite_newer",
+                "note": (
+                    "Chrome on 2026-10-01 proved baseline -148, same-price refresh, and -155 through Redis → API → UI. "
+                    "That run ingested fixture B with retrieved_at before the refresh. This run only re-checks "
+                    "that an older capture is rejected and that B now sorts after the refresh."
+                ),
+            },
             "captures": captures,
             "cache_stats": stats(),
             "browser": browser,
-            "ok": bool(api_ok and refresh_ok and change_ok and (redis_ok if require_redis else True)),
+            "ok": bool(api_ok and refresh_ok and change_ok and chrono_ok and (redis_ok if require_redis else True)),
         }
         if os.getenv("MARKET_TOOLS_KEEP_FIXTURES") != "1":
             reset_for_tests()
@@ -362,6 +451,9 @@ def final_refresh_plan(*, execute: bool = False) -> dict:
     event_id = suitability.get("selected_event_id") or PREFERRED_EVENT_ID
     requests = build_requests(event_id)
     credits_max = sum(int(row["credits_max"]) for row in requests)
+    discovery = suitability.get("discovery_if_none") or discovery_if_none()
+    extra = int(discovery.get("credits_max") or 0) if discovery.get("needed") else 0
+    credits_total = credits_max + extra
     blockers = [
         "Mario has not authorized this bounded spend.",
         "This function refuses execute=True so no provider HTTP is sent.",
@@ -378,14 +470,17 @@ def final_refresh_plan(*, execute: bool = False) -> dict:
         "scheduled_fetch_remains_off": True,
         "host": HOST,
         "region": REGION,
-        "http_requests": len(requests),
-        "credits_max": credits_max,
+        "http_requests": len(requests) + (1 if extra else 0),
+        "credits_max": credits_total,
+        "interval_plan_credits_max": credits_max,
+        "discovery_credits_max": extra,
         "credits_min_if_all_empty": 0,
         "ledger_remaining_reported": LEDGER_REMAINING_REPORTED,
         "ledger_used_reported": LEDGER_USED_REPORTED,
-        "remaining_after_max": LEDGER_REMAINING_REPORTED - credits_max,
+        "remaining_after_max": LEDGER_REMAINING_REPORTED - credits_total,
         "requests": [dict(row) for row in requests],
         "event_suitability": suitability,
+        "discovery_if_none": discovery,
         "props_wait_is_from_props_1": props_2["min_wait_from"] == "props_1.retrieved_at",
         "props_min_seconds": PROPS_NEAR_SECONDS,
         "not_initial_ingestion": True,

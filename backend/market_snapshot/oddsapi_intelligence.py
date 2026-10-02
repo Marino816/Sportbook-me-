@@ -72,7 +72,11 @@ def intelligence_from_prop_rows(
     *,
     event_date: Optional[str] = None,
 ) -> dict[str, dict]:
-    """Name-match DFS players to Odds API over lines. Uses the listed O/U line, not a fabricated EV."""
+    """Name-match DFS players to Odds API Over lines.
+
+    Sportsbook O/U lines are market thresholds, not expected statistics and
+    not fantasy points. They are stored on market_lines only.
+    """
     from dfs.name_normalize import fold_player_name
 
     by_name: dict[str, dict] = {}
@@ -90,10 +94,10 @@ def intelligence_from_prop_rows(
         pname = fold_player_name(row.get("player") or "")
         if not pname:
             continue
-        entry = by_name.setdefault(pname, {"props": {}, "fantasyScore": None})
-        existing = entry["props"].get(prop_key)
+        entry = by_name.setdefault(pname, {"market_lines": {}})
+        existing = entry["market_lines"].get(prop_key)
         if existing is None or abs(line) > abs(existing):
-            entry["props"][prop_key] = line
+            entry["market_lines"][prop_key] = line
 
     result: dict[str, dict] = {}
     for player in dfs_players:
@@ -102,9 +106,13 @@ def intelligence_from_prop_rows(
         if not pid or not name:
             continue
         hit = by_name.get(name)
-        if hit and hit.get("props"):
+        if hit and hit.get("market_lines"):
             result[pid] = {
-                "props": dict(hit["props"]),
+                "props": {},
+                "market_lines": dict(hit["market_lines"]),
+                "market_lines_are_thresholds": True,
+                "not_expected_statistics": True,
+                "not_fantasy_points": True,
                 "fantasyMarketLine": None,
                 "fantasyScore": None,
                 "source": "oddsapi_player_props",

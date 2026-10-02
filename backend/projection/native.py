@@ -128,8 +128,19 @@ def compute_projections(
         fantasy_market = sgo.get("fantasyMarketLine") or sgo.get("fantasyScore")
         props = sgo.get("props") or p.get("props") or {}
         is_pitcher = "P" in pos or "SP" in pos or "RP" in pos
+        oddsapi_thresholds = (
+            sgo.get("source") == "oddsapi_player_props"
+            or sgo.get("market_lines_are_thresholds")
+            or sgo.get("not_expected_statistics")
+        )
 
-        if fantasy_market is not None and float(fantasy_market) > 0:
+        if oddsapi_thresholds:
+            # Odds API sportsbook lines are market thresholds, not expected
+            # statistics and not fantasy points. Do not run PROP_BASED.
+            proj.props_used = []
+            proj.fantasy_market_line = None
+
+        elif fantasy_market is not None and float(fantasy_market) > 0:
             # Method 1: Direct fantasyScore market (hitters & pitchers)
             proj.base_projection = round(float(fantasy_market), 1)
             proj.projection_source = "SGO_FANTASY_MARKET"

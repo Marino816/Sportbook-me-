@@ -1,8 +1,8 @@
 {
   "label": "FIXTURE_B_PRICE_CHANGE",
   "not_customer_data": true,
-  "retrieved_at": "2026-09-30T15:35:44+00:00",
-  "note": "Same fixture event as A with changed listed prices. retrieved_at copied from provider capture 2. Bookmaker last_update is later than capture retrieval.",
+  "retrieved_at": "2026-09-30T15:45:44+00:00",
+  "note": "Same fixture event as A with changed listed prices. retrieved_at is after the same-price refresh (15:40:43). Bookmaker last_update (source_timestamp) stays independent and may be earlier than retrieval.",
   "sports": [{"key": "americanfootball_nfl", "title": "NFL", "active": true}],
   "odds": {
     "americanfootball_nfl": [
@@ -40,5 +40,5 @@
       }
     ]
   },
-  "index": {"imported_at": "2026-09-30T15:35:44+00:00", "http_requests_used": 0}
+  "index": {"imported_at": "2026-09-30T15:45:44+00:00", "http_requests_used": 0}
 }

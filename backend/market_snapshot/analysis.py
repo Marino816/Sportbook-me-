@@ -110,6 +110,36 @@ def consensus_prices(prices: list[dict]) -> dict | None:
     }
 
 
+def _opposing_outcomes_match(quotes: list[dict], *, market: str) -> bool:
+    """De-vig only complete opposing sets that share event, period, and line pairing."""
+    present = [q for q in quotes if q]
+    if len(present) < 2:
+        return False
+    events = {q.get("event_id") for q in present if q.get("event_id")}
+    if events and len(events) != 1:
+        return False
+    periods = {q.get("period") or MARKET_PERIOD for q in present}
+    if len(periods) != 1:
+        return False
+    if market == "h2h":
+        return True
+    try:
+        vals = [float(q.get("line")) for q in present]
+    except (TypeError, ValueError):
+        return False
+    if market == "totals":
+        return len({line_key(v) for v in vals}) == 1
+    if market == "spreads":
+        mags = {round(abs(v), 4) for v in vals}
+        if len(mags) != 1:
+            return False
+        if mags == {0.0}:
+            return True
+        signs = {1 if v > 0 else -1 for v in vals if v != 0}
+        return len(signs) == 2
+    return False
+
+
 def attach_fair_to_books(event: dict) -> None:
     for book in event.get("books") or []:
         h2h = book.get("h2h") or {}
@@ -122,6 +152,9 @@ def attach_fair_to_books(event: dict) -> None:
         if any(q is None or q.get("american") is None for q in quotes):
             book["fair_h2h"] = None
             book["fair_h2h_unavailable"] = "incomplete_outcome_set"
+        elif not _opposing_outcomes_match(quotes, market="h2h"):
+            book["fair_h2h"] = None
+            book["fair_h2h_unavailable"] = "opposing_outcomes_must_match_event_period"
         else:
             result = fair_from_complete([q["american"] for q in quotes])
             if result:
@@ -135,10 +168,11 @@ def attach_fair_to_books(event: dict) -> None:
             attr = f"fair_{market_key}"
             if any(q is None or q.get("american") is None for q in quotes):
                 book[attr] = None
+                book[f"{attr}_unavailable"] = "incomplete_outcome_set"
                 continue
-            lines = {line_key(q.get("line")) for q in quotes}
-            if len(lines) != 1:
+            if not _opposing_outcomes_match(quotes, market=market_key):
                 book[attr] = None
+                book[f"{attr}_unavailable"] = "opposing_outcomes_must_match_event_period_line"
                 continue
             result = fair_from_complete([q["american"] for q in quotes])
             book[attr] = result

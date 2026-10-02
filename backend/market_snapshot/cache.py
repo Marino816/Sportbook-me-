@@ -23,6 +23,30 @@ _GENERATION = 0
 _BACKEND = "memory"
 
 
+def _parse_stamp(value: str | None):
+    from datetime import datetime, timezone
+    if not value:
+        return None
+    text = str(value).strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        stamp = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp
+
+
+def _incoming_retrieved_is_not_newer(incoming: str | None, current: str | None) -> bool:
+    new = _parse_stamp(incoming)
+    old = _parse_stamp(current)
+    if new is None or old is None:
+        return True
+    return new <= old
+
+
 class CacheUnavailableError(Exception):
     def __init__(self, reason: str, *, stale: bool = False):
         super().__init__(reason)
@@ -154,14 +178,36 @@ def replace_from_payloads(
     retrieved_at: str | None = None,
     fixture_label: str | None = None,
     source: str = "replace",
+    force: bool = False,
 ) -> dict:
-    """Replace the shared cache. Never calls a provider."""
+    """Replace the shared cache. Never calls a provider.
+
+    Older or equal retrieved_at cannot overwrite newer data unless force=True
+    (explicit restore). source_timestamp on quotes is independent of retrieval.
+    """
     global _PREVIEW, _GENERATION, _BACKEND
     preview = build_preview(payloads=payloads, retrieved_at=retrieved_at, fixture_label=fixture_label)
     preview["http_requests_used"] = 0
     preview["browsing_triggers_upstream"] = False
     preview["ingest_source"] = source
     with _LOCK:
+        current = _PREVIEW
+        if current is None:
+            cached, status = _load_redis_status()
+            if status == "ok":
+                current = cached
+        if (
+            not force
+            and current
+            and not current.get("unavailable")
+            and _incoming_retrieved_is_not_newer(preview.get("retrieved_at"), current.get("retrieved_at"))
+        ):
+            kept = dict(current)
+            kept["rejected_stale_capture"] = True
+            kept["rejected_retrieved_at"] = preview.get("retrieved_at")
+            kept["kept_retrieved_at"] = current.get("retrieved_at")
+            kept["rejected_reason"] = "older_or_equal_retrieved_at_cannot_overwrite_newer"
+            return kept
         _GENERATION += 1
         preview["generation"] = _GENERATION
         try:
@@ -180,7 +226,7 @@ def restore_saved_preview() -> dict:
     """Replace fixture/test cache with the saved Odds API snapshot. Zero provider HTTP."""
     from market_snapshot.adapter import load_payloads
 
-    return replace_from_payloads(load_payloads(), source="restore_saved_preview")
+    return replace_from_payloads(load_payloads(), source="restore_saved_preview", force=True)
 
 
 def get_preview(*, root=None) -> dict:
@@ -272,8 +318,10 @@ def parlay_from_body(body: dict) -> dict:
         return {
             "ok": False,
             "unavailable": True,
-            "reason": "One or more selections could not be mapped. Nothing was substituted.",
+            "reason": "One or more selections could not be mapped. Saved legs were kept, not discarded or substituted.",
             "unavailable_legs": unavailable,
+            "preserved_saved_legs": True,
+            "discarded": False,
             "bookmaker_confirmed_quote": False,
             "combined_suppressed": True,
             "http_requests_used": 0,
@@ -331,8 +379,11 @@ def _legs_from_body(body: dict, index: dict, events: list[dict]) -> tuple[list[d
             resolved.append(quote)
         else:
             unavailable.append({
+                **item,
                 "unavailable": True,
-                "reason": "Selection is not in this snapshot. Nothing was substituted.",
+                "mapped": False,
+                "discarded": False,
+                "reason": "Selection is not in this snapshot. Saved selection was kept; nothing was substituted.",
                 "saved_id": item.get("id"),
                 "saved_event_id": item.get("event_id"),
                 "sgo_event_id": None,

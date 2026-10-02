@@ -129,14 +129,17 @@ def resolve_event(raw: str | None, events: list[dict]) -> dict:
 
 
 def preserve_or_unavailable(leg: dict, events: list[dict]) -> dict:
-    """Keep a saved selection when the namespaced event is present; otherwise unavailable."""
+    """Keep a saved selection when the namespaced event is present; otherwise mark unavailable without discarding it."""
     event_id = leg.get("event_id") or leg.get("internal_event_id")
     resolved = resolve_event(event_id, events)
     if resolved.get("found"):
-        return {**leg, "mapped": True, "namespace": ODDSAPI_NS, "sgo_event_id": None}
+        return {**leg, "mapped": True, "unavailable": False, "discarded": False, "namespace": ODDSAPI_NS, "sgo_event_id": None}
     return {
+        **leg,
         "mapped": False,
         "unavailable": True,
+        "discarded": False,
+        "preserved": True,
         "reason": resolved.get("reason") or "Event cannot be mapped reliably.",
         "sgo_event_id": None,
         "saved_event_id": event_id,
@@ -144,7 +147,7 @@ def preserve_or_unavailable(leg: dict, events: list[dict]) -> dict:
 
 
 def resolve_selection(leg: dict, quote_index: dict, events: list[dict]) -> dict:
-    """Map a saved quote by namespaced id only. Never match on team/player names."""
+    """Map a saved quote by namespaced id only. Never match on team/player names. Never discard the saved leg."""
     quote_id = (leg.get("id") or "").strip()
     event_id = leg.get("event_id") or leg.get("internal_event_id")
     if quote_id in (quote_index or {}):
@@ -154,44 +157,61 @@ def resolve_selection(leg: dict, quote_index: dict, events: list[dict]) -> dict:
             **{k: quote.get(k) for k in ("id", "event_id", "market", "selection", "player", "line", "bookmaker", "bookmaker_key", "american", "period", "source_event_id", "source_timestamp")},
             "mapped": True,
             "unavailable": False,
+            "discarded": False,
             "namespace": ODDSAPI_NS,
             "sgo_event_id": None,
         }
     parsed = parse_internal_event_id(str(event_id or quote_id or ""))
     if parsed.get("namespace") == SGO_NS or (not quote_id.startswith(f"{ODDSAPI_NS}|") and str(event_id or "").startswith(f"{SGO_NS}:")):
         return {
+            **leg,
             "mapped": False,
             "unavailable": True,
-            "reason": "Legacy SGO selection has no verified mapping. Displayed as unavailable.",
+            "discarded": False,
+            "preserved": True,
+            "reason": "Legacy SGO selection has no verified mapping. Displayed as unavailable. Not discarded.",
             "sgo_event_id": None,
             "saved_id": quote_id or None,
             "saved_event_id": event_id,
+            "safe_migration": False,
         }
     event = resolve_event(event_id, events) if event_id else {"found": False, "reason": "missing_event_id"}
     if not event.get("found"):
         return {
+            **leg,
             "mapped": False,
             "unavailable": True,
-            "reason": event.get("reason") or "Selection cannot be mapped reliably. Nothing was substituted.",
+            "discarded": False,
+            "preserved": True,
+            "reason": event.get("reason") or "Selection cannot be mapped reliably. Saved selection was kept.",
             "sgo_event_id": None,
             "saved_id": quote_id or None,
             "saved_event_id": event_id,
+            "safe_migration": False,
         }
     if quote_id:
         return {
+            **leg,
             "mapped": False,
             "unavailable": True,
-            "reason": "Event is present but this selection id is not in the snapshot. Nothing was substituted.",
+            "discarded": False,
+            "preserved": True,
+            "reason": "Event is present but this selection id is not in the snapshot. Saved selection was kept. Nothing was substituted.",
             "sgo_event_id": None,
             "saved_id": quote_id,
             "saved_event_id": event_id,
+            "safe_migration": False,
         }
     return {
+        **leg,
         "mapped": False,
         "unavailable": True,
+        "discarded": False,
+        "preserved": True,
         "reason": "Saved selection is missing a namespaced quote id. Ambiguous recovery is not allowed.",
         "sgo_event_id": None,
         "saved_event_id": event_id,
+        "safe_migration": False,
     }
 
 

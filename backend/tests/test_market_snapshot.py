@@ -243,6 +243,42 @@ class AnalysisTests(unittest.TestCase):
         self.assertTrue(complete["raw_implied_includes_margin"])
         self.assertIsNone(fair_from_complete([-110]))
 
+    def test_spreads_devig_requires_matching_event_period_line(self):
+        from market_snapshot.analysis import attach_fair_to_books
+        matched = {
+            "id": "e1",
+            "books": [{
+                "spreads": {
+                    "home": {"american": -110, "line": -3.5, "period": "game", "event_id": "e1"},
+                    "away": {"american": -110, "line": 3.5, "period": "game", "event_id": "e1"},
+                }
+            }],
+        }
+        attach_fair_to_books(matched)
+        self.assertIsNotNone(matched["books"][0]["fair_spreads"])
+        mixed_line = {
+            "id": "e1",
+            "books": [{
+                "spreads": {
+                    "home": {"american": -110, "line": -3.5, "period": "game", "event_id": "e1"},
+                    "away": {"american": -110, "line": 7.0, "period": "game", "event_id": "e1"},
+                }
+            }],
+        }
+        attach_fair_to_books(mixed_line)
+        self.assertIsNone(mixed_line["books"][0]["fair_spreads"])
+        mixed_period = {
+            "id": "e1",
+            "books": [{
+                "spreads": {
+                    "home": {"american": -110, "line": -3.5, "period": "game", "event_id": "e1"},
+                    "away": {"american": -110, "line": 3.5, "period": "1h", "event_id": "e1"},
+                }
+            }],
+        }
+        attach_fair_to_books(mixed_period)
+        self.assertIsNone(mixed_period["books"][0]["fair_spreads"])
+
     def test_consensus_dedupes_books_and_keeps_timestamp_range(self):
         from market_snapshot.analysis import consensus_prices
         prices = [
@@ -412,12 +448,21 @@ class CostModelTests(unittest.TestCase):
             table["scheduler_cap_prepared"]["configured_limit"],
             table["scheduler_cap_prepared"]["effective_collection_stop"],
         )
-        from market_snapshot.final_refresh_test import final_refresh_plan, prove_path_with_fixtures
+        from datetime import datetime, timezone
+        from market_snapshot.final_refresh_test import final_refresh_plan, prove_path_with_fixtures, saved_event_suitability
+        suit = saved_event_suitability(now=datetime(2026, 10, 2, 15, 48, tzinfo=timezone.utc))
+        self.assertEqual(suit["discovery_http"], 0)
+        self.assertTrue(suit["suitable"])
+        self.assertNotEqual(suit["selected_event_id"], "d55cb69fed50a09170560b5b75d8de86")
+        self.assertFalse(suit["discovery_if_none"]["needed"])
         plan = final_refresh_plan(execute=True)
         self.assertFalse(plan["execute"])
         self.assertTrue(plan["refused_execute"])
         self.assertEqual(plan["http_requests"], 4)
         self.assertEqual(plan["credits_max"], 12)
+        self.assertEqual(plan["interval_plan_credits_max"], 12)
+        self.assertEqual(plan["discovery_credits_max"], 0)
+        self.assertEqual(plan["event_suitability"]["selected_event_id"], "c9d8ed8aa4889486eaf10a630138ede0")
         self.assertTrue(plan["not_initial_ingestion"])
         self.assertEqual(plan["timing"]["featured_min_seconds"], 300)
         self.assertEqual(plan["timing"]["props_min_seconds"], 600)
@@ -428,24 +473,19 @@ class CostModelTests(unittest.TestCase):
         self.assertTrue(path["internal_api"])
         self.assertTrue(path["successful_refresh_without_price_change"])
         self.assertTrue(path["actual_price_change_distinct"])
+        self.assertTrue(path["older_capture_rejected"])
+        self.assertTrue(path["fixture_chronology_ok"])
         self.assertTrue(path["ok"])
         from market_snapshot.feature_gap import feature_gap_report
         from market_snapshot.mobile_installed_test_path import installed_app_test_path
         gap = feature_gap_report()
         self.assertTrue(gap["empty_dfs_intelligence"]["unavailable_handling_is_not_feature_replacement"])
         self.assertTrue(gap["unavailable_assistant_tools"]["unavailable_handling_is_not_feature_replacement"])
-        self.assertEqual(
-            {row["id"] for row in gap["remaining_losses_for_mario"]},
-            {
-                "sgo_fantasy_score",
-                "live_clock_period",
-                "sgo_event_and_odd_ids",
-                "team_props",
-                "sbme_environment",
-                "steam_opening_sgp",
-                "mlb_prop_coverage_in_current_snapshot",
-            },
-        )
+        kinds = {row["id"]: row["kind"] for row in gap["remaining_losses_for_mario"]}
+        self.assertEqual(kinds["sgo_event_and_odd_ids"], "technical_identifier")
+        self.assertEqual(kinds["mlb_prop_coverage_in_current_snapshot"], "not_yet_collected")
+        self.assertEqual(kinds["sgo_fantasy_score"], "unsupported_provider_capability")
+        self.assertEqual(kinds["steam_opening_sgp"], "history_not_yet_stored_and_unsupported_sgp")
         from market_snapshot.consumers import assistant_market_equivalents
         fair = assistant_market_equivalents({
             "books": [{
@@ -470,9 +510,22 @@ class CostModelTests(unittest.TestCase):
             }],
             [{"id": "dk-1", "name": "Jose Ramirez"}],
         )
-        self.assertEqual(mapped["dk-1"]["props"]["pitchingStrikeouts"], 6.5)
+        self.assertEqual(mapped["dk-1"]["market_lines"]["pitchingStrikeouts"], 6.5)
+        self.assertEqual(mapped["dk-1"]["props"], {})
+        self.assertTrue(mapped["dk-1"]["market_lines_are_thresholds"])
         self.assertIsNone(mapped["dk-1"]["fantasyScore"])
+        from projection.native import compute_projections
+        projs = compute_projections(
+            "MLB",
+            [{"id": "dk-1", "name": "Jose Ramirez", "position": "P", "salary": 8000}],
+            mapped,
+        )
+        self.assertEqual(projs[0].projection_source, "UNAVAILABLE")
+        self.assertEqual(projs[0].base_projection, 0.0)
         mobile = installed_app_test_path()
+        self.assertEqual(mobile["distributed_app_store"]["version"], "1.1.1")
+        self.assertIn("127.0.0.1", mobile["prepared_test_build"]["profiles"]["development-simulator"]["url"])
+        self.assertIn("192.168.1.44", mobile["prepared_test_build"]["profiles"]["development"]["url"])
         self.assertFalse(mobile["released_binary_can_target_isolated_backend"])
         self.assertIn("EAS development", mobile["exact_dependency"]["required"][0])
 
@@ -496,7 +549,11 @@ class CompatTests(unittest.TestCase):
         found = resolve_event("oddsapi:americanfootball_nfl:abc", events)
         self.assertTrue(found["found"])
         self.assertIsNone(found["sgo_event_id"])
-        missed = preserve_or_unavailable({"event_id": "sgo:nope", "selection": "Home"}, events)
+        missed = preserve_or_unavailable({"event_id": "sgo:nope", "selection": "Home", "market": "h2h"}, events)
+        self.assertTrue(missed["unavailable"])
+        self.assertFalse(missed["discarded"])
+        self.assertEqual(missed["selection"], "Home")
+        self.assertTrue(missed["preserved"])
         self.assertTrue(missed["unavailable"])
 
     def test_preview_does_not_emit_sgo_event_ids(self):
@@ -761,7 +818,7 @@ class FixtureCacheReplacementTests(unittest.TestCase):
         self.assertEqual(a["events"][0]["books"][0]["h2h"]["home"]["source_timestamp"], "2026-09-30T15:00:00Z")
         self.assertEqual(b["events"][0]["books"][0]["h2h"]["home"]["source_timestamp"], "2026-09-30T15:20:00Z")
         self.assertEqual(a["retrieved_at"], "2026-09-30T15:35:43+00:00")
-        self.assertEqual(b["retrieved_at"], "2026-09-30T15:35:44+00:00")
+        self.assertEqual(b["retrieved_at"], "2026-09-30T15:45:44+00:00")
         self.assertNotEqual(a["events"][0]["books"][0]["h2h"]["home"]["source_timestamp"], a["retrieved_at"])
         self.assertEqual(a["cache"]["odds_api_http"], 0)
         self.assertEqual(b["cache"]["odds_api_http"], 0)

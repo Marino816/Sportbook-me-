@@ -100,7 +100,7 @@ REQUESTED_NEW_FEATURES_NEITHER_SUPPLIES = (
 def empty_dfs_intelligence_impact() -> dict:
     return {
         "when": "MARKET_TOOLS_ODDSAPI_ENABLED is on (or snapshot serving blocks SGO)",
-        "code": "build_sgo_intelligence maps Odds API player-prop Over lines onto existing DFS prop keys; fantasyScore stays empty",
+        "code": "build_sgo_intelligence maps Odds API Over lines onto market_lines as thresholds; props stay empty; fantasyScore stays empty",
         "mapped_from_odds_api": [
             "MLB pitcher K/ER/H/BB/outs when those Odds API markets are in the cache (PROP_BASED)",
             "Listed NFL/NBA/MLB player O/U lines stored on the player intelligence dict",
@@ -143,34 +143,53 @@ def remaining_losses_for_mario() -> tuple[dict, ...]:
     return (
         {
             "id": "sgo_fantasy_score",
+            "kind": "unsupported_provider_capability",
+            "technical_identifier": False,
+            "customer_function": "DFS native fantasy-point projection from a fantasyScore market",
             "customer_surface": "DFS optimizer / projections",
             "was": "SGO nested fantasyScore market used as native projection",
-            "now": "No Odds API fantasy-points market. Hitters stay on Blue Collar fallback or UNAVAILABLE.",
+            "now": "No Odds API fantasy-points market. Sportsbook prop lines are thresholds, not fantasy points. Hitters stay on Blue Collar fallback or UNAVAILABLE.",
             "decision": "accept_loss_or_keep_sgo_for_dfs",
         },
         {
             "id": "live_clock_period",
+            "kind": "unsupported_provider_capability",
+            "technical_identifier": False,
+            "customer_function": "Live inning/clock/period on Game Odds cards and assistant status",
             "customer_surface": "Game Odds cards and assistant game status",
             "was": "Nested SGO period/inning/clock",
-            "now": "Scores + status when unique Odds API match exists. Clock not in scores schema.",
+            "now": "Scores + status when unique Odds API match exists. Clock is not in the scores schema.",
             "decision": "accept_loss_or_keep_sgo_live_state",
         },
         {
             "id": "sgo_event_and_odd_ids",
+            "kind": "technical_identifier",
+            "technical_identifier": True,
+            "customer_function": "Open a saved parlay, deep link, or assistant event by its stored id",
             "customer_surface": "Saved parlays, deep links, assistant event_id",
             "was": "sgo:… and SGO oddIDs",
-            "now": "Structured unavailable. No invented mapping.",
-            "decision": "accept_break_or_keep_sgo_ids",
+            "now": (
+                "Saved SGO legs are kept and shown as unavailable. They are not discarded and not "
+                "fuzzy-mapped by team/player name. Safe migration only when a namespaced oddsapi "
+                "quote id is present in the current snapshot quote_index."
+            ),
+            "decision": "keep_saved_legs_unavailable_or_authorize_verified_remap_later",
         },
         {
             "id": "team_props",
+            "kind": "not_yet_collected",
+            "technical_identifier": False,
+            "customer_function": "Team-total tickets distinct from game totals",
             "customer_surface": "Assistant get_sgo_team_props and nested team markets",
             "was": "SGO team totals distinct from game totals",
-            "now": "Unavailable. Not in the featured Odds API snapshot.",
-            "decision": "accept_loss_or_add_a_documented_odds_api_team_market_later",
+            "now": "Not in the featured h2h/spreads/totals snapshot. Not invented. This is collection scope, not a claim that Odds API has no team markets.",
+            "decision": "accept_or_authorize_documented_odds_api_team_market_collect",
         },
         {
             "id": "sbme_environment",
+            "kind": "unsupported_provider_capability",
+            "technical_identifier": False,
+            "customer_function": "DFS canonical environment fields on game/player cards",
             "customer_surface": "DFS canonical environment fields",
             "was": "Derived from nested SGO markets",
             "now": "Not derived from Odds API featured markets.",
@@ -178,16 +197,26 @@ def remaining_losses_for_mario() -> tuple[dict, ...]:
         },
         {
             "id": "steam_opening_sgp",
+            "kind": "history_not_yet_stored_and_unsupported_sgp",
+            "technical_identifier": False,
+            "customer_function": "Line movement / steam on Compare; combined same-game parlay price on Parlay Builder",
             "customer_surface": "Compare movement, Parlay Builder combined price",
             "was": "SGO opening/steam series and SGP quotes",
-            "now": "Movement unavailable. Same-game combined price suppressed. Not fabricated.",
+            "now": (
+                "Current featured prices exist in the snapshot; an opening-vs-current series is not stored "
+                "(history not yet stored, not a missing current market). Combined SGP price is unsupported "
+                "and not fabricated."
+            ),
             "decision": "accept_loss",
         },
         {
             "id": "mlb_prop_coverage_in_current_snapshot",
+            "kind": "not_yet_collected",
+            "technical_identifier": False,
+            "customer_function": "MLB DFS player-prop threshold display (not fantasy points)",
             "customer_surface": "DFS MLB enrichment",
             "was": "SGO MLB player markets including fantasyScore",
-            "now": "Mapping is implemented; the saved Odds API snapshot only sampled NFL player_pass_tds. MLB slates stay unenriched until a later authorized collect.",
+            "now": "Threshold mapping is implemented; the saved Odds API snapshot only sampled NFL player_pass_tds. MLB slates stay unenriched until a later authorized collect.",
             "decision": "authorize_mlb_prop_collect_or_accept_empty_mlb_intel",
         },
     )

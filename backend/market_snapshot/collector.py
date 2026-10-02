@@ -127,6 +127,20 @@ def load_labeled_fixture(name: str) -> dict:
             "reason": preview.get("reason"),
             "stale": preview.get("stale", False),
         }
+    if preview.get("rejected_stale_capture"):
+        home = _home_h2h(preview)
+        return {
+            "ok": False,
+            "rejected_stale_capture": True,
+            "http_requests": 0,
+            "label": label,
+            "reason": preview.get("rejected_reason"),
+            "retrieved_at": preview.get("kept_retrieved_at") or preview.get("retrieved_at"),
+            "rejected_retrieved_at": preview.get("rejected_retrieved_at"),
+            "american": home.get("american") if home else None,
+            "generation": preview.get("generation"),
+            "cache_backend": preview.get("cache_backend"),
+        }
     home = _home_h2h(preview)
     return {
         "ok": True,
