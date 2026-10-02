@@ -36,7 +36,8 @@ SGO_FEATURES_THAT_WOULD_BE_LOST = (
             "No Odds API fantasy-points market exists; fantasyScore stays None and is not invented."
         ),
         "customer_impact": (
-            "Optimizer/projection can use cached Odds API Over lines for those mapped keys. "
+            "Optimizer/projection can use cached Odds API Over lines for those mapped keys as market_lines thresholds. "
+            "Unmatched DFS players still receive a per-player record with empty market_lines. "
             "SGO fantasyScore is gone. Hitters without a mapped market stay on Blue Collar fallback. "
             "The current saved snapshot only sampled NFL player_pass_tds, so MLB slates stay unenriched until those markets are collected."
         ),
@@ -120,7 +121,11 @@ def unavailable_assistant_tools_impact() -> dict:
     return {
         "when": "Odds API Market Tools serving is on",
         "sgo_event_ids": "Structured unavailable. No invented mapping.",
-        "odds_api_cache_rows": "Assistant recites saved events, de-vigged fair odds, book consensus, scores, and player-prop rows when present.",
+        "odds_api_cache_rows": (
+            "Assistant recites saved events, de-vigged fair odds, book consensus, scores, and player-prop rows when present. "
+            "get_sgo_team_props includes featured_game_markets (h2h/spreads/totals) without labeling them team props. "
+            "get_sbme_game_environment includes venue weather/schedule context when present and leaves sbme_environment null."
+        ),
         "still_unavailable": [
             "nested live clock/period",
             "SGO team props",

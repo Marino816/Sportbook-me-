@@ -1,0 +1,109 @@
+from unittest.mock import patch
+
+import pytest
+
+from assistant.tools import (
+    ALLOWED_TOOLS,
+    TOOL_HANDLERS,
+    get_sgo_current_events,
+    get_sgo_current_odds,
+    get_sgo_team_props,
+    get_sbme_game_environment,
+)
+
+
+SAMPLE_EVENT = {
+    "id": "evt-ai",
+    "league": "MLB",
+    "status": "SCHEDULED",
+    "home_team": {"name": "Cleveland", "abbreviation": "CLE"},
+    "away_team": {"name": "Yankees", "abbreviation": "NYY"},
+    "home_score": None,
+    "away_score": None,
+    "markets": [
+        {"bet_type": "total", "side": "over", "fair_over_under": 8.0, "books": []},
+        {"bet_type": "moneyline", "side": "home", "fair_odds": -130, "books": [
+            {"bookmaker": "dk", "available": True, "is_main_line": True, "moneyline": -130},
+        ]},
+        {"bet_type": "moneyline", "side": "away", "fair_odds": 110, "books": [
+            {"bookmaker": "dk", "available": True, "is_main_line": True, "moneyline": 110},
+        ]},
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_sgo_tools_are_cache_only(monkeypatch):
+    called = {"fetch": 0}
+
+    async def boom(*_a, **_k):
+        called["fetch"] += 1
+        raise AssertionError("AI tools must not fetch SportsGameOdds")
+
+    monkeypatch.setattr("providers.nested_events.load_cached_or_fetch_events", boom)
+    with patch("providers.nested_events.load_cached_events", return_value=[SAMPLE_EVENT]):
+        events = await get_sgo_current_events(None, sport="MLB")
+        odds = await get_sgo_current_odds(None, sport="MLB")
+        env = await get_sbme_game_environment(None, sport="MLB")
+        team = await get_sgo_team_props(None, sport="MLB")
+    assert events["available"] is True
+    assert odds["available"] is True
+    assert "fair_odds" in odds["games"][0]
+    assert "book_consensus" in odds["games"][0]
+    assert env["source"] == "sbme_derived"
+    assert team["source"] == "sgo_nested_cache"
+    assert called["fetch"] == 0
+
+
+@pytest.mark.asyncio
+async def test_sgo_tools_empty_cache():
+    with patch("providers.nested_events.load_cached_events", return_value=[]):
+        result = await get_sgo_current_events(None, sport="MLB")
+    assert result["available"] is False
+    assert result["events"] == []
+
+
+@pytest.mark.asyncio
+async def test_oddsapi_serving_uses_featured_markets_not_empty_defaults():
+    preview = {
+        "unavailable": False,
+        "events": [{
+            "id": "oddsapi:americanfootball_nfl:abc",
+            "selector": "nfl",
+            "home_team": "Washington Commanders",
+            "away_team": "Indianapolis Colts",
+            "commence_time": "2026-10-04T13:30:00Z",
+            "books": [{
+                "bookmaker": "DraftKings",
+                "h2h": {"home": {"american": 164}, "away": {"american": -198}},
+                "spreads": {"home": {"line": 3.5}},
+                "totals": {"over": {"line": 48.5}},
+            }],
+            "context": {"weather": {"available": True}, "schedule": {"commence_time_utc": "2026-10-04T13:30:00Z"}},
+        }],
+        "player_props": [],
+    }
+    with patch("assistant.tools._oddsapi_serving", return_value=True), patch(
+        "market_snapshot.cache.public_preview", return_value=preview
+    ):
+        team = await get_sgo_team_props(None, sport="NFL")
+        env = await get_sbme_game_environment(None, sport="NFL")
+    assert team["team_props"] == []
+    assert team["team_props_available"] is False
+    assert team["featured_game_markets_available"] is True
+    assert team["featured_game_markets"][0]["home_team"] == "Washington Commanders"
+    assert team["featured_game_markets"][0]["moneyline_home"] == 164
+    assert env["sbme_environment_available"] is False
+    assert env["context"][0]["weather"]["available"] is True
+    assert env["context"][0]["sbme_environment"] is None
+    for name in (
+        "get_sgo_current_events",
+        "get_sgo_game_status",
+        "get_sgo_current_odds",
+        "get_sgo_player_props",
+        "get_sgo_team_props",
+        "get_player_last_n",
+        "get_sbme_game_environment",
+    ):
+        assert name in ALLOWED_TOOLS
+        assert name in TOOL_HANDLERS

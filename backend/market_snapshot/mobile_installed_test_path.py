@@ -17,11 +17,24 @@ DISTRIBUTED_RELEASED_AT = "2026-09-25T14:34:49Z"
 DISTRIBUTED_FIRST_RELEASED_AT = "2026-09-22T07:00:00Z"
 DISTRIBUTED_BUNDLE_ID = BUNDLE_ID
 
+# EAS iOS production STORE builds (eas build:list, account sportbookme816, 2026-10-02).
+# Latest finished store binary: appVersion 1.1.0, appBuildVersion 11, git b91f71b.
+EAS_LATEST_STORE_BUILD = {
+    "id": "055e221c-590d-49c5-8aec-7841c0af2dd2",
+    "status": "FINISHED",
+    "profile": "production",
+    "distribution": "STORE",
+    "appVersion": "1.1.0",
+    "appBuildVersion": "11",
+    "git": "b91f71b5dbc91b6419ed517b7d51d03fa4d25d96",
+    "createdAt": "2026-09-22T14:48:10.432Z",
+    "platform": "IOS",
+}
+
 # Closest committed source matching the live listing (optimizer player draft + owner icon).
 # Committed app.json at this revision still has marketing version 1.1.0.
-# App Store versionString is 1.1.1. CFBundleVersion is not in committed git
-# (production EAS autoIncrement). Dirty repair-batch1 app.json claims buildNumber 11
-# and is not treated as a release record.
+# App Store versionString is 1.1.1 (metadata update 2026-09-25). CFBundleVersion 11 from EAS.
+# Dirty repair-batch1 app.json claims buildNumber 11 and is not treated as a release record.
 DISTRIBUTED_SOURCE_GIT = "b91f71b5dbc91b6419ed517b7d51d03fa4d25d96"
 DISTRIBUTED_SOURCE_SUBJECT = "feat: replace iOS app icon with owner-approved SB ME artwork"
 LAUNCH_SOURCE_GIT = "6566d18f35f14db4b5b6941b1da3e405f203f498"
@@ -41,11 +54,12 @@ def installed_app_test_path() -> dict:
             "version": DISTRIBUTED_VERSION,
             "current_version_release_date": DISTRIBUTED_RELEASED_AT,
             "first_release_date": DISTRIBUTED_FIRST_RELEASED_AT,
-            "cf_bundle_version": None,
+            "cf_bundle_version": "11",
             "cf_bundle_version_note": (
-                "App Store lookup returns marketing version 1.1.1 only. "
-                "Committed git has no ios.buildNumber. production eas.json uses autoIncrement. "
-                "Uncommitted repair-batch1 mobile/app.json lists buildNumber 11; that is not an App Store Connect record."
+                "EAS production STORE build 055e221c (2026-09-22) reports appBuildVersion 11 at git b91f71b. "
+                "App Store lookup returns marketing version 1.1.1 from the 2026-09-25 metadata update. "
+                "Committed git has no ios.buildNumber; production eas.json uses autoIncrement. "
+                "Uncommitted repair-batch1 mobile/app.json lists buildNumber 11; EAS is the release record."
             ),
             "release_notes": "This update refreshes the App Store information to make Sportbook Me DFS AI easier to discover.",
         },
@@ -60,6 +74,23 @@ def installed_app_test_path() -> dict:
             ),
             "committed_app_json_version": "1.1.0",
             "app_store_version": DISTRIBUTED_VERSION,
+            "eas_latest_store_build": dict(EAS_LATEST_STORE_BUILD),
+        },
+        "closest_isolated_test": {
+            "ran": True,
+            "kind": "backend_live_odds_contract_against_isolated_redis",
+            "proves": (
+                "GET /api/market-tools/live-odds?league=nfl on the isolated FastAPI (8010) returns the fields "
+                "the b91f71b client maps in getLiveOdds(): game_id, home_team_name, moneyline_home. "
+                "Commanders vs Colts was present with namespaced oddsapi game_id and no sgo_event_id. "
+                "This is source-contract proof for the distributed git revision, not proof that the App Store binary called this backend."
+            ),
+            "does_not_prove": "The installed App Store/TestFlight binary, Simulator, or a physical device hitting 8010.",
+            "one_exact_action_to_test_installed_or_simulator_client": (
+                "Install full Xcode (this Mac has Command Line Tools only at /Library/Developer/CommandLineTools) "
+                "and from the mobile-build9 checkout at b91f71b, copy backend/market_snapshot/released_eas.isolated.json "
+                "over mobile/eas.json, then run `npx expo run:ios --simulator`. That is free. Do not start a paid EAS build."
+            ),
         },
         "prepared_test_build": {
             "source": "b91f71b / " + DISTRIBUTED_SOURCE_GIT,
@@ -83,13 +114,12 @@ def installed_app_test_path() -> dict:
             "paid_build_started": False,
         },
         "build_cost_and_access": {
-            "local_simulator": "Free if Xcode is installed: npx expo run:ios --simulator from the b91f71b checkout with the overlay eas.json. No EAS minutes.",
-            "eas_cloud": "Requires a logged-in Expo account. Free-plan EAS has a monthly build quota; additional builds are billed by Expo. Not started.",
+            "local_simulator": "Blocked here: xcode-select points at Command Line Tools, not full Xcode. Free once full Xcode is installed.",
+            "eas_cloud": "eas whoami succeeded as sportbookme816. Latest STORE binary is production profile build 11 at b91f71b. Paid build not started.",
             "device_or_testflight": "Apple Developer Program membership required for device provisioning. Not started. Store submission forbidden.",
             "blocking_before_paid_eas": [
-                "Confirm Expo account login (eas whoami).",
-                "Confirm remaining free EAS builds or accept paid minutes.",
-                "For a physical device, use the LAN/tunnel URL, not 127.0.0.1.",
+                "Install full Xcode to run a local simulator build of b91f71b with the isolated overlay.",
+                "Do not start a paid EAS development build unless Mario explicitly authorizes minutes.",
             ],
         },
         "why": (

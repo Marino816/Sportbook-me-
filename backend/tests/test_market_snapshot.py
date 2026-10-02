@@ -513,7 +513,24 @@ class CostModelTests(unittest.TestCase):
         self.assertEqual(mapped["dk-1"]["market_lines"]["pitchingStrikeouts"], 6.5)
         self.assertEqual(mapped["dk-1"]["props"], {})
         self.assertTrue(mapped["dk-1"]["market_lines_are_thresholds"])
+        self.assertTrue(mapped["dk-1"]["matched"])
         self.assertIsNone(mapped["dk-1"]["fantasyScore"])
+        unmatched = intelligence_from_prop_rows(
+            [{
+                "player": "José Ramírez",
+                "market": "pitcher_strikeouts",
+                "selection": "Over",
+                "line": 6.5,
+            }],
+            [
+                {"id": "dk-1", "name": "Jose Ramirez"},
+                {"id": "dk-2", "name": "Some Unmatched Batter"},
+            ],
+        )
+        self.assertIn("dk-2", unmatched)
+        self.assertEqual(unmatched["dk-2"]["market_lines"], {})
+        self.assertFalse(unmatched["dk-2"]["matched"])
+        self.assertIsNone(unmatched["dk-2"]["fantasyScore"])
         from projection.native import compute_projections
         projs = compute_projections(
             "MLB",

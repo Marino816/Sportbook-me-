@@ -854,6 +854,126 @@ def run_price_propagation() -> dict:
     return report
 
 
+def prove_live_snapshot_in_chrome(*, retrieved_at: str, event_id: str, home, away) -> dict:
+    """Read live Redis-backed Market Tools in Chrome. Zero additional provider HTTP."""
+    OUT.mkdir(parents=True, exist_ok=True)
+    web = os.environ.get("SBME_E2E_WEB", "http://127.0.0.1:3001").rstrip("/")
+    api = os.environ.get("SBME_E2E_API", "http://127.0.0.1:8010/api").rstrip("/")
+    email = os.environ.get("SBME_E2E_EMAIL", "")
+    password = os.environ.get("SBME_E2E_PASSWORD", "")
+    report = {
+        "ok": False,
+        "provider_http": 0,
+        "blocker": None,
+        "web": web,
+        "api": api,
+        "expected_retrieved_at": retrieved_at,
+        "event_id": event_id,
+        "home": home,
+        "away": away,
+    }
+    if not Path(CHROME).is_file():
+        report["blocker"] = f"Chrome not found at {CHROME}"
+        return report
+    if not email or not password:
+        report["blocker"] = "SBME_E2E_EMAIL and SBME_E2E_PASSWORD must be set"
+        return report
+    seeded_token = _api_login(api, email, password)
+    login_url = f"{web}/login?next={urllib.parse.quote('/market-tools')}"
+    market_url = f"{web}/market-tools"
+    try:
+        _wait_http(f"{web}/login", timeout=20)
+        origin = api[:-4] if api.endswith("/api") else api
+        _wait_http(f"{origin}/health", timeout=10)
+    except Exception as exc:  # noqa: BLE001
+        report["blocker"] = f"stack_unreachable:{exc}"
+        return report
+    cdp_port = _free_port()
+    profile = tempfile.mkdtemp(prefix="sbme-mt-live-")
+    chrome = subprocess.Popen(
+        [
+            CHROME,
+            "--headless=new",
+            "--disable-gpu",
+            "--no-first-run",
+            "--no-default-browser-check",
+            f"--remote-debugging-port={cdp_port}",
+            f"--user-data-dir={profile}",
+            login_url,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.time() + 25
+        ws = None
+        while time.time() < deadline:
+            try:
+                ws = _cdp_connect(cdp_port)
+                break
+            except Exception:
+                time.sleep(0.3)
+        if ws is None:
+            report["blocker"] = f"Chrome CDP did not open on port {cdp_port}"
+            return report
+        ws.call("Emulation.setDeviceMetricsOverride", {
+            "width": 1280, "height": 800, "deviceScaleFactor": 1, "mobile": False,
+        })
+        ws.call("Page.enable")
+        if seeded_token:
+            ws.call("Page.addScriptToEvaluateOnNewDocument", {
+                "source": "localStorage.setItem('sbme_dfs_token', %s);" % json.dumps(seeded_token),
+            })
+        ws.call("Page.navigate", {"url": market_url if seeded_token else login_url})
+        time.sleep(5)
+        ws.call("Runtime.enable")
+        result = ws.call("Runtime.evaluate", {
+            "expression": """(() => {
+              const root = document.querySelector('.sbme-mt-approved');
+              const chips = [...document.querySelectorAll('.sbme-mt-approved .chip, .chip')];
+              const nfl = chips.find((b) => (b.textContent || '').trim() === 'NFL');
+              if (nfl) nfl.click();
+              const after = document.querySelector('.sbme-mt-approved');
+              const body = (after && (after.innerText || '')) || document.body.innerText || '';
+              return {
+                loaded: Boolean(after || root),
+                retrievedAt: (after || root) ? (after || root).getAttribute('data-retrieved-at') : '',
+                generation: (after || root) ? (after || root).getAttribute('data-generation') : '',
+                hasHome: %s ? body.includes(%s) : false,
+                hasAway: %s ? body.includes(%s) : false,
+                pathname: location.pathname,
+                snippet: body.slice(0, 400),
+              };
+            })()""" % (
+                json.dumps(bool(home)), json.dumps(home or ""),
+                json.dumps(bool(away)), json.dumps(away or ""),
+            ),
+            "returnByValue": True,
+        }, timeout=30)
+        value = ((result.get("result") or {}).get("result") or {}).get("value") or {}
+        report["ui"] = value
+        report["token_seeded"] = bool(seeded_token)
+        report["ok"] = bool(
+            value.get("loaded")
+            and (value.get("hasHome") or value.get("hasAway"))
+            and value.get("retrievedAt")
+        )
+        report["retrieved_at_matches"] = value.get("retrievedAt") == retrieved_at
+        if os.environ.get("SBME_E2E_SHOTS") == "1":
+            shot = ws.call("Page.captureScreenshot", {"format": "png"}, timeout=30)
+            b64 = ((shot.get("result") or {}).get("data")) or ""
+            if b64:
+                import base64
+                (OUT / "e2e-live-timed.png").write_bytes(base64.b64decode(b64))
+        ws.close()
+    except Exception as exc:  # noqa: BLE001
+        report["blocker"] = str(exc)
+    finally:
+        chrome.terminate()
+    (OUT / "e2e-live-timed.json").write_text(json.dumps(report, indent=2) + "\n")
+    return report
+
+
 def main() -> int:
     if not Path(CHROME).is_file():
         print(json.dumps({"blocker": f"Chrome not found at {CHROME}", "unverified": "all browser interactions"}))

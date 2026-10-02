@@ -72,14 +72,14 @@ INCOMPATIBLE_CONSUMERS = (
         "path": "projection.sgo_intelligence",
         "compatible": False,
         "lost": True,
-        "via": "Listed Odds API Over lines map onto existing DFS prop keys. fantasyScore stays None. Empty mapped dict is not an SGO fantasyScore replacement.",
+        "via": "Listed Odds API Over lines map onto existing DFS prop keys as market_lines thresholds. Per-player records are returned even when unmatched. fantasyScore stays None. Empty fantasyScore is not an SGO fantasyScore replacement.",
     },
     {
         "surface": "Assistant nested SGO tools",
         "path": "backend/assistant/tools.py",
         "compatible": False,
         "lost": True,
-        "via": "SGO event IDs, nested clock/period, team props, environment, steam, and SGP stay structured unavailable. Unavailable is not a replacement.",
+        "via": "SGO event IDs stay structured unavailable. Events/odds/props recite the Odds API cache. Team-prop tools return featured_game_markets (game h2h/spreads/totals) and empty team_props. Environment tools return weather/schedule context and null sbme_environment. Steam and SGP stay unavailable.",
     },
 )
 
@@ -161,12 +161,12 @@ FEATURE_IMPACT = (
     {
         "surface": "Assistant live scores, team props, SB ME environment",
         "class": "unavailable_capability",
-        "note": "Scores flow through the shared cache when matched. Team props and nested SGO environment stay structured unavailable. Period/clock not invented.",
+        "note": "Scores flow through the shared cache when matched. Team-total markets stay empty; featured game h2h/spreads/totals are returned separately as featured_game_markets. Nested SGO environment stays null; venue weather/schedule context is attached when present. Period/clock not invented.",
     },
     {
         "surface": "DFS SGO intelligence",
         "class": "sgo_feature_lost",
-        "note": "Listed Odds API Over lines map onto existing DFS prop keys when cached. SGO fantasyScore is gone and not invented. Current saved snapshot only sampled NFL player_pass_tds, so MLB slates stay unenriched until a later authorized collect.",
+        "note": "Listed Odds API Over lines map onto existing DFS prop keys as market_lines thresholds when cached. Per-player records are returned even when unmatched. SGO fantasyScore is gone and not invented. MLB slates stay unenriched until those markets are collected.",
     },
     {
         "surface": "Period / alternate / SGP quotes",

@@ -106,17 +106,18 @@ def intelligence_from_prop_rows(
         if not pid or not name:
             continue
         hit = by_name.get(name)
-        if hit and hit.get("market_lines"):
-            result[pid] = {
-                "props": {},
-                "market_lines": dict(hit["market_lines"]),
-                "market_lines_are_thresholds": True,
-                "not_expected_statistics": True,
-                "not_fantasy_points": True,
-                "fantasyMarketLine": None,
-                "fantasyScore": None,
-                "source": "oddsapi_player_props",
-            }
+        lines = dict(hit["market_lines"]) if hit and hit.get("market_lines") else {}
+        result[pid] = {
+            "props": {},
+            "market_lines": lines,
+            "market_lines_are_thresholds": True,
+            "not_expected_statistics": True,
+            "not_fantasy_points": True,
+            "fantasyMarketLine": None,
+            "fantasyScore": None,
+            "matched": bool(lines),
+            "source": "oddsapi_player_props",
+        }
     return result
 
 
@@ -129,7 +130,26 @@ def build_oddsapi_intelligence(
 
     preview = public_preview()
     if preview.get("unavailable"):
-        return {}
+        reason = preview.get("reason") or "odds_cache_unavailable"
+        out: dict[str, dict] = {}
+        for player in dfs_players:
+            pid = str(player.get("id") or "")
+            if not pid:
+                continue
+            out[pid] = {
+                "props": {},
+                "market_lines": {},
+                "market_lines_are_thresholds": True,
+                "not_expected_statistics": True,
+                "not_fantasy_points": True,
+                "fantasyMarketLine": None,
+                "fantasyScore": None,
+                "matched": False,
+                "unavailable": True,
+                "reason": reason,
+                "source": "oddsapi_player_props",
+            }
+        return out
     return intelligence_from_prop_rows(
         list(preview.get("player_props") or []),
         dfs_players,

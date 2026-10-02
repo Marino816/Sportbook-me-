@@ -553,7 +553,7 @@ async def get_sgo_player_props(
             "available": bool(rows),
             "source": "oddsapi_cache",
             "sgo_event_id": None,
-            "note": "Sampled Odds API player props from saved odds. Not SGO nested props and not fantasy-point projections.",
+            "note": "Odds API player-prop Over/Under lines from the saved snapshot. These are sportsbook thresholds, not expected statistics and not fantasy-point projections.",
             "props": rows[:80],
         }
     events = await _cached_events(sport)
@@ -586,13 +586,52 @@ async def get_sgo_team_props(
         blocked = _sgo_id_while_oddsapi(event_id)
         if blocked:
             blocked["team_props"] = []
+            blocked["featured_game_markets"] = []
             return blocked
-        return _assistant_unavailable(
-            "sgo_team_props",
-            "Nested SportsGameOdds team props are not available from the Odds API snapshot. Nothing was invented.",
-            team_props=[],
-            event_id=event_id,
-        )
+        from market_snapshot.cache import public_preview
+        from market_snapshot.consumers import assistant_market_equivalents, event_card_to_mobile_game, filter_events_for_league
+        preview = public_preview()
+        if preview.get("unavailable"):
+            return _assistant_unavailable(
+                "odds_cache",
+                preview.get("reason") or "Shared odds cache is unavailable.",
+                team_props=[],
+                featured_game_markets=[],
+                stale=preview.get("stale", False),
+            )
+        cards = filter_events_for_league(preview.get("events") or [], sport)
+        if event_id:
+            cards = [e for e in cards if e.get("id") == event_id]
+        featured = []
+        for ev in cards:
+            row = event_card_to_mobile_game(ev)
+            row.update(assistant_market_equivalents(ev))
+            featured.append({
+                "event_id": ev.get("id"),
+                "home_team": ev.get("home_team"),
+                "away_team": ev.get("away_team"),
+                "moneyline_home": row.get("moneyline_home"),
+                "moneyline_away": row.get("moneyline_away"),
+                "spread_line": row.get("spread_line"),
+                "total_line": row.get("total_line"),
+                "fair_odds": row.get("fair_odds"),
+                "book_consensus": row.get("book_consensus"),
+            })
+        return {
+            "available": False,
+            "team_props_available": False,
+            "team_props": [],
+            "featured_game_markets_available": bool(featured),
+            "featured_game_markets": featured[:80],
+            "source": "oddsapi_cache",
+            "sgo_event_id": None,
+            "event_id": event_id,
+            "note": (
+                "Nested SGO team-total markets are not in this Odds API snapshot and were not invented. "
+                "Game h2h/spreads/totals from the saved featured cache are in featured_game_markets. "
+                "Those are game lines, not team props."
+            ),
+        }
     events = await _cached_events(sport)
     if event_id:
         evt = find_event_by_id(events, event_id)
@@ -659,13 +698,47 @@ async def get_sbme_game_environment(
     if _oddsapi_serving():
         blocked = _sgo_id_while_oddsapi(event_id)
         if blocked:
+            blocked["context"] = []
             return blocked
-        return _assistant_unavailable(
-            "sbme_game_environment",
-            "SB ME game environment is derived from nested SportsGameOdds markets, which are not used while Odds API serving is on. Nothing was invented.",
-            event_id=event_id,
-            team=team,
-        )
+        from market_snapshot.cache import public_preview
+        from market_snapshot.consumers import filter_events_for_league
+        preview = public_preview()
+        if preview.get("unavailable"):
+            return _assistant_unavailable(
+                "odds_cache",
+                preview.get("reason") or "Shared odds cache is unavailable.",
+                context=[],
+                stale=preview.get("stale", False),
+            )
+        cards = filter_events_for_league(preview.get("events") or [], sport)
+        if event_id:
+            cards = [e for e in cards if e.get("id") == event_id]
+        rows = []
+        for ev in cards:
+            ctx = ev.get("context") or {}
+            rows.append({
+                "event_id": ev.get("id"),
+                "home_team": ev.get("home_team"),
+                "away_team": ev.get("away_team"),
+                "weather": ctx.get("weather"),
+                "schedule": ctx.get("schedule"),
+                "injuries": ctx.get("injuries") or [],
+                "sbme_environment": None,
+            })
+        return {
+            "available": False,
+            "sbme_environment_available": False,
+            "source": "oddsapi_context",
+            "event_id": event_id,
+            "team": team,
+            "context": rows[:80],
+            "context_available": bool(rows),
+            "note": (
+                "SB ME nested-SGO environment is not derived from Odds API featured markets. "
+                "Venue weather and schedule from the shared cache are included when present. "
+                "Injuries remain source-link-only. Nothing was invented."
+            ),
+        }
     events = await _cached_events(sport)
     if event_id:
         evt = find_event_by_id(events, event_id)
