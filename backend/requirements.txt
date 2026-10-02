@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
+greenlet
 alembic
 python-dotenv
 pydantic

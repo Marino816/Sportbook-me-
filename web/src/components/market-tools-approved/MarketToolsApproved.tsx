@@ -225,7 +225,7 @@ function OddButton({
       </button>
     );
   }
-  const shown = extra.lineInLabel || extra.line == null || extra.line === "" ? "" : ` ${lineLabel(extra.market || "", extra.selection || "", extra.line)}`;
+  const shown = extra.lineInLabel || extra.line == null ? "" : ` ${lineLabel(extra.market || "", extra.selection || "", extra.line)}`;
   const leg: Leg = {
     id: quote.id,
     event_id: extra.event_id || "",
@@ -406,8 +406,8 @@ export function MarketToolsApproved({ initialTab = "live" }: { initialTab?: Tab 
     return [...rows].sort((a: any, b: any) => Number(Boolean(b.saved_result)) - Number(Boolean(a.saved_result)));
   }, [events, sport, soccer, date, search, book]);
 
-  const dates = [...new Set(events.filter((e: any) => e.selector === sport).map((e: any) => localDate(e.commence_time)).filter(Boolean))].sort();
-  const books = [...new Set(events.flatMap((e: any) => e.book_names || []))].sort();
+  const dates = [...new Set(events.filter((e: any) => e.selector === sport).map((e: any) => localDate(e.commence_time)).filter(Boolean))].sort() as string[];
+  const books = [...new Set(events.flatMap((e: any) => e.book_names || []))].sort() as string[];
 
   if (loadError) {
     return <div className="sbme-mt-approved"><article className="card"><p className="warn">{loadError}</p></article></div>;
