@@ -16,7 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth import get_current_user
 from models.database import get_db
 from models.domain import Subscription, User
-from services.paykings_plans import SBME_PLANS, get_plan
+
+try:
+    from services.paykings_plans import SBME_PLANS, get_plan
+except ImportError:  # origin/main does not ship PayKings plan catalog
+    SBME_PLANS = {}
+
+    def get_plan(_name):
+        return None
 
 MARKET_TOOLS_PLAN_NAMES = frozenset({
     "Pro Arena",
