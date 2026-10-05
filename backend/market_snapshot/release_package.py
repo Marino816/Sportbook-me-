@@ -28,6 +28,9 @@ ROLLBACK_STEPS = (
     "Do not delete Redis key sbme:mt:oddsapi:preview; rollback does not require a Redis flush.",
     "Do not cancel SportsGameOdds in this assignment. Do not purchase Odds API credits as part of rollback.",
     "Web layout stays the approved 4-tab Market Tools. No store submission and no mobile rebuild is required to roll backend flags back.",
+    "Do not run `railway down`. That CLI command removes the latest SUCCESS deployment (deploymentRemove); it does not restore an earlier image.",
+    "Restore the prior Railway backend image with dashboard Rollback or GraphQL deploymentRollback(id: \"f1218725-2b82-489c-afbf-dcdb2801ec6c\"). CLI has no rollback command.",
+    "If the Vercel production alias must revert, point it back to dpl_9hSy5bNMNA1Q1HNfy2f88GthYA6B (sportbook-78sii65pq).",
 )
 
 

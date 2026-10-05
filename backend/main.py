@@ -10,10 +10,12 @@ logger = logging.getLogger(__name__)
 
 BCDFS_TICK_INTERVAL = int(os.getenv("BCDFS_TICK_INTERVAL", "600"))  # seconds (default 10 min)
 _bcdfs_task: asyncio.Task | None = None
+_oddsapi_collect_task: asyncio.Task | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _bcdfs_task, _oddsapi_collect_task
     # Startup
     logging.info("Starting up Sportsbook ME DFS AI API...")
 
@@ -40,10 +42,30 @@ async def lifespan(app: FastAPI):
         logging.info(
             "BCDFS scheduler ENABLED — tick interval %ds", BCDFS_TICK_INTERVAL
         )
-        global _bcdfs_task
         _bcdfs_task = asyncio.create_task(_bcdfs_scheduler_loop())
     else:
         logging.info("BCDFS scheduler disabled (set BCDFS_SCHEDULER_ENABLED=true to activate)")
+
+    # Odds API Market Tools collector. Off unless both feature flags are true.
+    # Activation (later assignment): MARKET_TOOLS_ODDSAPI_ENABLED=true and
+    # MARKET_TOOLS_ODDSAPI_COLLECT=true. Optional MARKET_TOOLS_ODDSAPI_COLLECT_INTERVAL.
+    from market_snapshot.collector import (
+        collect_interval_seconds,
+        collector_loop,
+        scheduled_collector_enabled,
+    )
+
+    if scheduled_collector_enabled():
+        logging.info(
+            "Odds API collector ENABLED — interval %ds",
+            collect_interval_seconds(),
+        )
+        _oddsapi_collect_task = asyncio.create_task(collector_loop())
+    else:
+        logging.info(
+            "Odds API collector disabled (set MARKET_TOOLS_ODDSAPI_ENABLED=true "
+            "and MARKET_TOOLS_ODDSAPI_COLLECT=true to activate)"
+        )
 
     yield
     # Shutdown
@@ -52,6 +74,12 @@ async def lifespan(app: FastAPI):
         _bcdfs_task.cancel()
         try:
             await _bcdfs_task
+        except asyncio.CancelledError:
+            pass
+    if _oddsapi_collect_task is not None:
+        _oddsapi_collect_task.cancel()
+        try:
+            await _oddsapi_collect_task
         except asyncio.CancelledError:
             pass
 

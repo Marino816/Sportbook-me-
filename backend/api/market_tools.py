@@ -29,7 +29,7 @@ from models.domain import User
 from api.auth import get_current_user
 from api.utils import wrap_data
 from api.market_tools_internal import router as internal_router
-from market_snapshot.provider import serves_oddsapi, market_tools_provider
+from market_snapshot.provider import market_tools_provider, request_serves_oddsapi
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +98,7 @@ async def get_live_odds(
     event_id: str = Query("", description="Optional SGO event ID"),
     league: str = Query("MLB", description="League when listing games"),
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get live odds and recent line movements for an event.
@@ -105,7 +106,7 @@ async def get_live_odds(
     Returns moneyline, spread, total, and player prop snapshots
     with best available prices and bookmaker rankings.
     """
-    if serves_oddsapi():
+    if await request_serves_oddsapi(user, db):
         from market_snapshot.cache import public_preview
         from market_snapshot.compat import resolve_event
         from market_snapshot.consumers import event_card_to_mobile_game, filter_events_for_league
@@ -200,6 +201,7 @@ async def compare_odds(
     event_id: str = Query(..., description="SGO event ID"),
     market_type: str = Query("all", description="Filter: moneyline, spread, total, all"),
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Side-by-side odds comparison across all available bookmakers.
@@ -208,7 +210,7 @@ async def compare_odds(
     line and price, highlights the best price per side, and computes
     consensus lines.
     """
-    if serves_oddsapi():
+    if await request_serves_oddsapi(user, db):
         from market_snapshot.cache import public_preview
         from market_snapshot.compat import resolve_event
 
@@ -271,6 +273,7 @@ async def get_player_props(
     sport: str = Query("MLB", description="Sport code (MLB, NFL, NBA, NHL)"),
     event_id: str = Query("", description="Optional: filter to specific event"),
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Aggregate player prop markets across all available bookmakers.
@@ -283,7 +286,7 @@ async def get_player_props(
     If event_id is provided, only props for that event are fetched.
     If player_id is provided, only that player's props are returned.
     """
-    if serves_oddsapi():
+    if await request_serves_oddsapi(user, db):
         from market_snapshot.cache import public_preview
         from market_snapshot.compat import resolve_event
 
@@ -429,6 +432,7 @@ async def arbitrage_check_endpoint(
 async def arbitrage_scan(
     league: str = Query("MLB", description="League ID to scan (MLB, NFL, NBA, NHL)"),
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Auto-scan active events for mathematical arbitrage opportunities.
@@ -442,7 +446,7 @@ async def arbitrage_scan(
     All results are labeled as mathematical market comparisons,
     not guaranteed profit.
     """
-    if serves_oddsapi():
+    if await request_serves_oddsapi(user, db):
         from market_snapshot.cache import public_preview
 
         preview = public_preview()
@@ -504,6 +508,7 @@ async def arbitrage_scan(
 async def parlay_calculate(
     body: ParlayCalculateRequest,
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Calculate parlay odds and payout from a list of legs.
@@ -519,7 +524,7 @@ async def parlay_calculate(
     Cross-game parlays: fully supported.
     Same-game parlays: labeled with SGP availability warning.
     """
-    if serves_oddsapi():
+    if await request_serves_oddsapi(user, db):
         from market_snapshot.cache import parlay_from_body
 
         return wrap_data(parlay_from_body({
@@ -596,6 +601,7 @@ async def parlay_validate(
 @router.get("/usage")
 async def get_usage(
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get SGO API usage statistics and rate limit status.
@@ -605,7 +611,7 @@ async def get_usage(
       - Cache statistics (hits, misses)
       - Request history
     """
-    if serves_oddsapi():
+    if await request_serves_oddsapi(user, db):
         from market_snapshot.cache import stats
 
         return wrap_data({

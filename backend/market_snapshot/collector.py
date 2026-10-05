@@ -1,14 +1,44 @@
-"""Production-capable Odds API collector. HTTP only when MARKET_TOOLS_ODDSAPI_COLLECT is on."""
+"""Production-capable Odds API collector. HTTP only when MARKET_TOOLS_ODDSAPI_COLLECT is on.
+
+Scheduled entry point: FastAPI lifespan starts collector_loop() only when
+scheduled_collector_enabled() is true.
+
+Activation (later assignment, not this file): set both
+MARKET_TOOLS_ODDSAPI_ENABLED=true and MARKET_TOOLS_ODDSAPI_COLLECT=true on the
+FastAPI process. Optional MARKET_TOOLS_ODDSAPI_COLLECT_INTERVAL (seconds,
+default 1800). Owner allowlist and browsing never start collection.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from market_snapshot.cache import acquire_collect_lock, release_collect_lock, replace_from_payloads, stats
 from market_snapshot.flags import collect_enabled, oddsapi_enabled
 from market_snapshot.scheduler import quota_allows
+
+logger = logging.getLogger(__name__)
+
+# What starts collection when a later assignment approves activation:
+# set MARKET_TOOLS_ODDSAPI_ENABLED=true AND MARKET_TOOLS_ODDSAPI_COLLECT=true
+# on the FastAPI process. lifespan then starts collector_loop().
+COLLECTOR_ACTIVATION = {
+    "entry_point": "market_snapshot.collector.collector_loop",
+    "started_from": "backend.main.lifespan",
+    "requires": (
+        "MARKET_TOOLS_ODDSAPI_ENABLED=true",
+        "MARKET_TOOLS_ODDSAPI_COLLECT=true",
+    ),
+    "interval_env": "MARKET_TOOLS_ODDSAPI_COLLECT_INTERVAL",
+    "interval_default_seconds": 1800,
+    "owner_allowlist_starts_collection": False,
+    "browsing_starts_collection": False,
+}
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 FEATURED = "h2h,spreads,totals"
@@ -17,6 +47,42 @@ REGION = "us"
 
 def _utc() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def collect_interval_seconds() -> int:
+    raw = os.getenv("MARKET_TOOLS_ODDSAPI_COLLECT_INTERVAL", "1800")
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        value = 1800
+    return value if value > 0 else 1800
+
+
+def scheduled_collector_enabled() -> bool:
+    """Lifespan starts the collector loop only when this is true.
+
+    Requires MARKET_TOOLS_ODDSAPI_ENABLED and MARKET_TOOLS_ODDSAPI_COLLECT.
+    """
+    return collect_enabled()
+
+
+async def collector_loop() -> None:
+    """Recurring collect() ticks. Each tick re-checks flags before any HTTP."""
+    while True:
+        interval = collect_interval_seconds()
+        try:
+            result = collect()
+            logger.info(
+                "Odds API collect tick skipped=%s http=%s reason=%s",
+                result.get("skipped"),
+                result.get("http_requests"),
+                result.get("reason"),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Odds API collect tick failed — continuing loop")
+        await asyncio.sleep(interval)
 
 
 def collect(*, used_month: int = 0, used_day: int = 0, max_credit_cost: int = 3) -> dict:

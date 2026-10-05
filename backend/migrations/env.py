@@ -58,7 +58,10 @@ _raw_url = os.getenv(
 )
 if _raw_url and _raw_url.startswith("postgresql://"):
     _raw_url = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-config.set_main_option("sqlalchemy.url", _raw_url)
+if _raw_url:
+    # ConfigParser interpolation treats % as an escape. DATABASE_URL passwords
+    # that contain % must be doubled for Alembic's ini layer.
+    config.set_main_option("sqlalchemy.url", _raw_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:

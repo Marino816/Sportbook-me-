@@ -645,6 +645,58 @@ class ProviderSwitchTests(unittest.TestCase):
         self.assertFalse(state["cutover_applied"])
         self.assertTrue(state["rollback_applied"])
 
+    def test_owner_allowlist_does_not_enable_collection_or_global_flags(self):
+        import asyncio
+        from types import SimpleNamespace
+        from market_snapshot.collector import collect
+        from market_snapshot.owner_allowlist import owner_account_allows_oddsapi, request_serves_oddsapi
+        from market_snapshot.provider import collect_enabled, oddsapi_enabled, serves_oddsapi
+
+        os.environ["NODE_ENV"] = "production"
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_ACCOUNT_IDS"] = "owner@example.com,42"
+        self.assertFalse(oddsapi_enabled())
+        self.assertFalse(collect_enabled())
+        self.assertFalse(serves_oddsapi())
+        skipped = collect()
+        self.assertTrue(skipped["skipped"])
+        self.assertEqual(skipped["http_requests"], 0)
+        owner = SimpleNamespace(id=42, email="owner@example.com", role="user", active_subscription_id=1)
+        other = SimpleNamespace(id=99, email="customer@example.com", role="user", active_subscription_id=2)
+        self.assertTrue(owner_account_allows_oddsapi(owner))
+        self.assertFalse(owner_account_allows_oddsapi(other))
+        self.assertFalse(asyncio.run(request_serves_oddsapi(owner)))
+        self.assertFalse(asyncio.run(request_serves_oddsapi(other)))
+
+        class EntitledSub:
+            plan_name = "Pro Arena"
+            status = "active"
+
+        class StarterSub:
+            plan_name = "Starter"
+            status = "active"
+
+        class Sess:
+            def __init__(self, sub):
+                self.sub = sub
+
+            async def execute(self, *a, **k):
+                sub = self.sub
+
+                class R:
+                    def scalars(self):
+                        class S:
+                            def first(self):
+                                return sub
+                        return S()
+                return R()
+
+        self.assertTrue(asyncio.run(request_serves_oddsapi(owner, Sess(EntitledSub()))))
+        self.assertFalse(asyncio.run(request_serves_oddsapi(owner, Sess(StarterSub()))))
+        self.assertFalse(asyncio.run(request_serves_oddsapi(other, Sess(EntitledSub()))))
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ACCOUNT_IDS", None)
+
 
 class SelectionMappingTests(unittest.TestCase):
     def test_legacy_sgo_and_missing_quote_are_unavailable(self):
@@ -1015,7 +1067,14 @@ class EntitlementTests(unittest.TestCase):
         self.assertTrue(plan_includes_market_tools("Pro Arena"))
         self.assertTrue(plan_includes_market_tools("Pro Arena Annual"))
         self.assertTrue(plan_includes_market_tools("Elite Stack"))
-        self.assertTrue(plan_includes_market_tools("SBME_PRO_MONTHLY"))
+        try:
+            from services.paykings_plans import SBME_PLANS as PAYKINGS_PLANS
+        except ImportError:
+            PAYKINGS_PLANS = {}
+        if PAYKINGS_PLANS:
+            self.assertTrue(plan_includes_market_tools("SBME_PRO_MONTHLY"))
+        else:
+            self.assertFalse(plan_includes_market_tools("SBME_PRO_MONTHLY"))
         self.assertFalse(plan_includes_market_tools("Starter"))
         self.assertFalse(plan_includes_market_tools("Pro"))
         self.assertFalse(plan_includes_market_tools("DFS Only"))
@@ -1107,6 +1166,151 @@ class EntitlementTests(unittest.TestCase):
         self.assertEqual(ok.status_code, 200)
         denied = self._client(ArenaUser(), UnknownSub()).get("/api/market-tools/internal/snapshot")
         self.assertEqual(denied.status_code, 403)
+
+
+class OwnerAllowlistRouteTests(unittest.TestCase):
+    def setUp(self):
+        os.environ["NODE_ENV"] = "production"
+        os.environ["MARKET_TOOLS_PROVIDER"] = "sgo"
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_ACCOUNT_IDS"] = "owner@example.com,42"
+        from market_snapshot.collector import load_labeled_fixture
+        from market_snapshot.cache import reset_for_tests
+        reset_for_tests()
+        load_labeled_fixture("fixture_a_baseline.json")
+
+    def tearDown(self):
+        os.environ.pop("MARKET_TOOLS_PROVIDER", None)
+        os.environ.pop("NODE_ENV", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ACCOUNT_IDS", None)
+        from market_snapshot.cache import reset_for_tests
+        reset_for_tests()
+
+    def _client(self, user, sub=None):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from api.auth import get_current_user
+        from api.market_tools import router
+        from models.database import get_db
+
+        async def override_db():
+            class Sess:
+                async def execute(self, *a, **k):
+                    class R:
+                        def scalars(self):
+                            class S:
+                                def first(self):
+                                    return sub
+                            return S()
+                    return R()
+            yield Sess()
+
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[get_db] = override_db
+        return TestClient(app)
+
+    def test_entitled_owner_serves_cached_oddsapi_other_customers_stay_sgo(self):
+        class Owner:
+            id = 42
+            email = "owner@example.com"
+            is_pro = False
+            role = "user"
+            active_subscription_id = 12
+
+        class Other:
+            id = 99
+            email = "customer@example.com"
+            is_pro = False
+            role = "user"
+            active_subscription_id = 13
+
+        class ArenaSub:
+            plan_name = "Pro Arena"
+            status = "active"
+
+        class StarterSub:
+            plan_name = "Starter"
+            status = "active"
+
+        owner_ok = self._client(Owner(), ArenaSub()).get("/api/market-tools/live-odds", params={"league": "NFL"})
+        self.assertEqual(owner_ok.status_code, 200)
+        owner_body = owner_ok.json()["data"]
+        self.assertGreater(owner_body.get("count") or 0, 0)
+        self.assertTrue((owner_body.get("games") or [])[0]["game_id"].startswith("oddsapi:"))
+
+        owner_usage = self._client(Owner(), ArenaSub()).get("/api/market-tools/usage")
+        self.assertEqual(owner_usage.status_code, 200)
+        self.assertEqual(owner_usage.json()["data"]["sgo_usage"], "unavailable")
+
+        owner_starter = self._client(Owner(), StarterSub()).get("/api/market-tools/live-odds", params={"league": "NFL"})
+        self.assertEqual(owner_starter.status_code, 422)
+
+        other_entitled = self._client(Other(), ArenaSub()).get("/api/market-tools/live-odds", params={"league": "NFL"})
+        self.assertEqual(other_entitled.status_code, 422)
+
+        from market_snapshot.collector import collect
+        from market_snapshot.provider import collect_enabled, oddsapi_enabled, serves_oddsapi
+        self.assertFalse(oddsapi_enabled())
+        self.assertFalse(collect_enabled())
+        self.assertFalse(serves_oddsapi())
+        skipped = collect()
+        self.assertTrue(skipped["skipped"])
+        self.assertEqual(skipped["http_requests"], 0)
+
+
+class ScheduledCollectorTests(unittest.TestCase):
+    def tearDown(self):
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ENABLED", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_COLLECT_INTERVAL", None)
+        os.environ.pop("MARKET_TOOLS_ODDSAPI_ACCOUNT_IDS", None)
+
+    def test_lifespan_entry_stays_off_until_both_flags(self):
+        import asyncio
+        from unittest.mock import patch
+        from market_snapshot.collector import (
+            COLLECTOR_ACTIVATION,
+            collect,
+            collect_interval_seconds,
+            collector_loop,
+            scheduled_collector_enabled,
+        )
+
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_ACCOUNT_IDS"] = "owner@example.com"
+        self.assertFalse(scheduled_collector_enabled())
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "true"
+        self.assertFalse(scheduled_collector_enabled())
+        os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "true"
+        self.assertTrue(scheduled_collector_enabled())
+        self.assertEqual(collect_interval_seconds(), 1800)
+        self.assertEqual(
+            COLLECTOR_ACTIVATION["requires"],
+            ("MARKET_TOOLS_ODDSAPI_ENABLED=true", "MARKET_TOOLS_ODDSAPI_COLLECT=true"),
+        )
+        self.assertFalse(COLLECTOR_ACTIVATION["owner_allowlist_starts_collection"])
+
+        os.environ["MARKET_TOOLS_ODDSAPI_ENABLED"] = "false"
+        os.environ["MARKET_TOOLS_ODDSAPI_COLLECT"] = "false"
+
+        async def cancel_sleep(*_a, **_k):
+            raise asyncio.CancelledError()
+
+        async def run_one_tick():
+            with patch("market_snapshot.collector.asyncio.sleep", cancel_sleep):
+                await collector_loop()
+
+        with self.assertRaises(asyncio.CancelledError):
+            asyncio.run(run_one_tick())
+        skipped = collect()
+        self.assertTrue(skipped["skipped"])
+        self.assertEqual(skipped["http_requests"], 0)
 
 
 class ConsumerProjectionTests(unittest.TestCase):
