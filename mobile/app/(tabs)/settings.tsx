@@ -18,7 +18,7 @@ export default function SettingsScreen() {
   async function handleDeleteAccount() {
     Alert.alert(
       "Delete account permanently?",
-      "This permanently deletes your Sportbook Me DFS AI account and saved app data. It does not cancel Apple, Google Play, or Stripe billing. It cannot be undone.",
+      "This permanently deletes your Sportbook Me DFS AI account and saved app data. Cancel Apple, Google Play, Stripe, or PayKings billing first — deletion does not stop those charges. It cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -66,7 +66,7 @@ export default function SettingsScreen() {
 
       <View style={s.section}>
         <Text style={s.label}>ABOUT</Text>
-        <View style={s.row}><Text style={s.rowLabel}>Version</Text><Text style={s.value}>1.1.0</Text></View>
+        <View style={s.row}><Text style={s.rowLabel}>Version</Text><Text style={s.value}>1.1.1</Text></View>
         <View style={s.row}><Text style={s.rowLabel}>Powered by</Text><Text style={s.value}>🧠 SB ME Intelligent AI</Text></View>
       </View>
 

@@ -16,6 +16,9 @@ test("Profile and Settings expose DELETE ACCOUNT with destructive confirmation",
   assert.match(profile, /style: "destructive"/);
   assert.match(settings, /Delete Account/);
   assert.match(settings, /deleteAccount\(/);
+  assert.match(settings, /PayKings/);
+  assert.match(profile, /PayKings/);
+  assert.match(settings, /1\.1\.1/);
 });
 
 test("mobile API deletes the current account via DELETE /account", () => {

@@ -6,7 +6,7 @@ import { LegalPage, H2, H3, P, UL, LI, SUPPORT_EMAIL, gold } from "@/components/
 
 export default function RefundPolicyPage() {
   return (
-    <LegalPage title="Refund & Cancellation Policy" lastUpdated="August 14, 2026">
+    <LegalPage title="Refund & Cancellation Policy" lastUpdated="October 6, 2026">
       <P>
         This Refund &amp; Cancellation Policy describes the terms under which you may cancel your SB ME DFS.AI
         subscription and the circumstances under which refunds may be available.
@@ -45,14 +45,20 @@ export default function RefundPolicyPage() {
         To cancel your subscription:
       </P>
       <UL>
-        <LI>Sign in to your SB ME DFS.AI account;</LI>
-        <LI>Navigate to the Billing page;</LI>
-        <LI>Use the Stripe Customer Portal to manage or cancel your subscription;</LI>
-        <LI>Follow the cancellation prompts.</LI>
+        <LI>Stripe (website checkout): sign in, open Billing, and use the Stripe Customer Portal;</LI>
+        <LI>Apple App Store: cancel in Apple ID subscription settings;</LI>
+        <LI>Google Play: cancel in Google Play subscriptions;</LI>
+        <LI>
+          PayKings: email{" "}
+          <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: gold }}>{SUPPORT_EMAIL}</a>
+          {" "}with your account email and ask to cancel (no PayKings portal in this release);
+        </LI>
+        <LI>Then delete the Sportbook Me account separately if you also want the login removed.</LI>
       </UL>
       <P>
-        Your cancellation is effective once completed through the Customer Portal. We recommend completing
-        cancellation at least one business day before your next renewal date to avoid the next charge.
+        Your cancellation is effective once completed with the billing provider. For Stripe, complete it in the
+        Customer Portal. We recommend canceling at least one business day before your next renewal date to
+        avoid the next charge.
       </P>
 
       <H2>Refund Policy</H2>

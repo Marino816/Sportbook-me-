@@ -22,7 +22,7 @@ export default function ContactPage() {
   ];
 
   return (
-    <LegalPage title="Customer Support" lastUpdated="August 14, 2026">
+    <LegalPage title="Customer Support" lastUpdated="October 6, 2026">
       <P>
         We&rsquo;re here to help. For any support, billing, account, or privacy inquiry, please email our
         support team and include your account email and a clear description of your request so we can assist
@@ -59,8 +59,16 @@ export default function ContactPage() {
 
       <H2>Billing & Subscription Help</H2>
       <P>
-        To cancel or manage your subscription, sign in to your account and use the Stripe Customer Portal
-        available on the Billing page. For billing questions or refund requests, email us at{" "}
+        Cancel with the billing provider before you delete your Sportbook Me account. Account deletion does not
+        stop Apple, Google Play, Stripe, or PayKings charges.
+      </P>
+      <P>
+        Stripe (website checkout): sign in and use the Stripe Customer Portal on the Billing page. Apple:
+        manage subscriptions in Apple ID settings. Google Play: manage subscriptions in Google Play. PayKings:
+        email{" "}
+        <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: gold }}>{SUPPORT_EMAIL}</a>
+        {" "}with your account email and ask to cancel; this release has no PayKings customer
+        portal. For other billing questions or refund requests, email{" "}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: gold }}>{SUPPORT_EMAIL}</a>.
       </P>
 

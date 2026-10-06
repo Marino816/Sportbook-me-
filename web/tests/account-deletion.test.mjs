@@ -32,6 +32,12 @@ test("page documents actual request steps, retention, and subscriptions", () => 
   assert.match(page, /user identifier/);
   assert.match(page, /set to null/);
   assert.match(page, /does not cancel billing/);
+  assert.match(page, /Cancel with the provider first/);
+  assert.match(page, /PayKings/);
+  assert.match(page, /support@sbmedfsai\.com/);
+  assert.match(page, /does not issue or store refresh tokens/);
+  assert.match(page, /AI chat usage rows/);
+  assert.match(page, /hashed request\/response fingerprints/);
   assert.match(page, /play\.google\.com\/store\/account\/subscriptions/);
   assert.match(page, /apps\.apple\.com\/account\/subscriptions/);
 });

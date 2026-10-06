@@ -7,6 +7,10 @@
       "ios": { "simulator": false },
       "android": { "buildType": "apk" }
     },
+    "preview-apk": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" }
+    },
     "production": {
       "ios": {},
       "android": { "buildType": "app-bundle" }

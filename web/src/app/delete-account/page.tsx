@@ -34,52 +34,76 @@ export default function DeleteAccountPage() {
       <UL>
         <LI>Login identifiers (email and password hash) and the user record;</LI>
         <LI>Saved lineups and lineup history;</LI>
-        <LI>AI conversation history and assistant preferences;</LI>
+        <LI>AI conversation transcripts, assistant preferences, and AI chat usage rows (including conversation ids, tool payloads, and error text);</LI>
         <LI>Optimizer/builder runs, coach sessions, scout alerts, and mission-control preferences tied to the account;</LI>
         <LI>OAuth and Apple account-binding rows, and billing entitlement rows, when those tables exist.</LI>
       </UL>
+      <P>
+        Access tokens issued for that login stop working on the same request: protected API routes load the user
+        record from the database, and that record is gone. This product does not issue or store refresh tokens.
+      </P>
 
       <H2>What is retained, why, and for how long</H2>
       <P>
         Payment and accounting records may be kept after the login is removed: Stripe subscription and revenue
-        rows, AI usage/audit logs, and billing checkout rows when present. Those rows have the user identifier
-        set to null so they are no longer attached to the deleted login. Shared sports data (players, slates,
-        projections) is not user-owned and is not deleted. Stripe webhook event ids used for payment
-        idempotency are not user-linked and stay.
+        rows, and billing checkout rows when present. Those rows have the user identifier set to null so they
+        are no longer attached to the deleted login. They are kept for tax, accounting, and payment-dispute
+        obligations.
       </P>
       <P>
-        This workflow does not run a timed purge job. Retained accounting records are kept for as long as needed
-        to comply with legal, tax, fraud-prevention, and accounting obligations, matching the retention
-        described in our{" "}
+        AI audit rows that store only hashed request/response fingerprints, token/cost counters, and the
+        endpoint name may be kept for cost accounting and security monitoring. The user identifier and any
+        plaintext error text on those rows are removed. Ordinary chat content is not kept there.
+      </P>
+      <P>
+        Shared sports data (players, slates, projections) is not user-owned and is not deleted. Stripe webhook
+        event ids used for payment idempotency are not user-linked and stay.
+      </P>
+      <P>
+        This workflow does not run a timed purge job. Retained accounting and hashed audit records are kept for
+        as long as needed to comply with legal, tax, fraud-prevention, and accounting obligations, matching the
+        retention described in our{" "}
         <Link href="/privacy" style={{ color: gold }}>Privacy Policy</Link>
-        : personal information is kept as long as necessary for those purposes, then deleted or de-identified.
-        There is no separate numbered retention clock implemented in the deletion code.
+        . There is no separate numbered retention clock implemented in the deletion code.
       </P>
 
-      <H2>Subscriptions</H2>
+      <H2>Cancel subscriptions before you delete</H2>
       <P>
         Deleting a Sportbook Me account removes Sportbook Me access for that login. It does not cancel billing
-        with Apple, Google Play, or Stripe. If you subscribed through the App Store, manage or cancel it in
-        Apple ID subscription settings. If you subscribed through Google Play, manage or cancel it in Google Play
-        subscriptions. If you subscribed through Stripe on the website, cancel in Billing before or after
-        deleting the account; leftover Stripe subscription and revenue rows may remain with the user identifier
-        removed.
+        with Apple, Google Play, Stripe, or PayKings. Cancel with the provider first if you want charges to stop.
+        After deletion you can still cancel through the store or by emailing support, but you will not be able
+        to open in-app billing for that login.
       </P>
-      <P>
-        Apple subscriptions:{" "}
-        <a href="https://apps.apple.com/account/subscriptions" style={{ color: gold }}>
-          apps.apple.com/account/subscriptions
-        </a>
-        . Google Play subscriptions:{" "}
-        <a href="https://play.google.com/store/account/subscriptions" style={{ color: gold }}>
-          play.google.com/store/account/subscriptions
-        </a>
-        .
-      </P>
+      <UL>
+        <LI>
+          Apple App Store:{" "}
+          <a href="https://apps.apple.com/account/subscriptions" style={{ color: gold }}>
+            apps.apple.com/account/subscriptions
+          </a>
+        </LI>
+        <LI>
+          Google Play:{" "}
+          <a href="https://play.google.com/store/account/subscriptions" style={{ color: gold }}>
+            play.google.com/store/account/subscriptions
+          </a>
+        </LI>
+        <LI>
+          Stripe (website checkout): sign in, open{" "}
+          <Link href="/billing" style={{ color: gold }}>Billing</Link>
+          , and use Manage in Stripe before you delete the account.
+        </LI>
+        <LI>
+          PayKings: this release has no PayKings customer portal. Email{" "}
+          <a href="mailto:support@sbmedfsai.com" style={{ color: gold }}>support@sbmedfsai.com</a>
+          {" "}with your account email and ask to cancel PayKings billing before you delete.
+        </LI>
+      </UL>
 
       <H2>Questions</H2>
       <P>
-        For questions that are not this deletion request, use our{" "}
+        For billing cancellation help or questions that are not this deletion request, email{" "}
+        <a href="mailto:support@sbmedfsai.com" style={{ color: gold }}>support@sbmedfsai.com</a>
+        {" "}or use our{" "}
         <Link href="/contact" style={{ color: gold }}>Contact page</Link>.
       </P>
     </LegalPage>

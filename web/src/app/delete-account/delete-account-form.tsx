@@ -80,7 +80,7 @@ export function DeleteAccountForm() {
       </p>
       <label style={{ display: "flex", gap: 10, alignItems: "flex-start", color: textSecondary, fontSize: 14, marginBottom: 14 }}>
         <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} />
-        <span>I understand this permanently deletes my Sportbook Me DFS AI account and does not cancel Apple, Google Play, or Stripe billing.</span>
+        <span>I understand this permanently deletes my Sportbook Me DFS AI account and does not cancel Apple, Google Play, Stripe, or PayKings billing.</span>
       </label>
       <label style={{ display: "block", color: textSecondary, fontSize: 13, marginBottom: 8 }}>
         Type DELETE to confirm

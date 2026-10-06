@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from api import account, auth
+from api import account, auth, billing
 from models.database import Base, get_db
 
 from assistant import models as _assistant_models  # noqa: F401
@@ -84,4 +84,5 @@ async def reset_account_db():
 account_app = FastAPI()
 account_app.include_router(auth.router, prefix="/api")
 account_app.include_router(account.router, prefix="/api")
+account_app.include_router(billing.router, prefix="/api/billing")
 account_app.dependency_overrides[get_db] = override_get_db

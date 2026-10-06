@@ -6,7 +6,7 @@ import { LegalPage, H2, H3, P, UL, LI, SUPPORT_EMAIL, gold } from "@/components/
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="August 14, 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="October 6, 2026">
       <P>
         SPORTBOOK ME DFS AI LLC (&ldquo;SB ME DFS.AI,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;)
         operates the SB ME DFS.AI website, applications, and services (the &ldquo;Service&rdquo;). This Privacy Policy
@@ -90,6 +90,16 @@ export default function PrivacyPage() {
         We retain personal information for as long as necessary to provide the Service, comply with legal
         obligations, resolve disputes, and enforce our agreements. When information is no longer needed, we
         take reasonable steps to delete or de-identify it.
+      </P>
+      <P>
+        When you delete your account through the{" "}
+        <Link href="/delete-account" style={{ color: gold }}>Delete Account</Link>
+        {" "}page, we delete the login, saved lineups, AI conversation transcripts, assistant preferences, and
+        AI chat usage rows for that account. We may keep payment/subscription and checkout rows with the user
+        identifier removed, for tax, accounting, and payment-dispute obligations. We may also keep AI audit
+        rows that contain hashed request fingerprints and usage counters (not chat transcripts), after removing
+        the user identifier and plaintext error text, for cost accounting and security monitoring. There is no
+        separate numbered retention clock in the deletion workflow.
       </P>
 
       <H2>6. Security</H2>

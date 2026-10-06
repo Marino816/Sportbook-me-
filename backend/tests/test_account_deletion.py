@@ -11,8 +11,11 @@ from sqlalchemy import func, select, text
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from assistant.models import AssistantConversation, AssistantMessage
+from models.ai_models import AIAuditLog, AIChatLog
 from models.domain import Lineup, LineupHistory, Player, RevenueLog, Slate, StripeEvent, Subscription, User
 from account_app import TestSession, account_app as app, reset_account_db
+from api.auth import decode_access_token
 
 
 async def _reset_db():
@@ -117,6 +120,42 @@ async def _seed_owned_and_shared(user_id: int, other_id: int) -> None:
             text("INSERT INTO billing_checkouts (user_id, checkout_reference) VALUES (:uid, 'chk-owner')"),
             {"uid": user_id},
         )
+        session.add(
+            AssistantConversation(
+                conversation_id="conv-owner-pii",
+                user_id=user_id,
+                strategy_mode="balanced",
+            )
+        )
+        session.add(
+            AssistantMessage(
+                conversation_id="conv-owner-pii",
+                role="user",
+                content="My email is owner@example.com and I play DFS.",
+            )
+        )
+        session.add(
+            AIChatLog(
+                user_id=user_id,
+                conversation_id="conv-owner-pii",
+                model="gpt-test",
+                provider="test",
+                tools_invoked=["lookup owner@example.com"],
+                error="tool failed for owner@example.com",
+                success=False,
+            )
+        )
+        session.add(
+            AIAuditLog(
+                user_id=user_id,
+                action="chat",
+                endpoint="/api/assistant/chat",
+                input_hash="abc123hashprefix",
+                response_hash="def456hashprefix",
+                error="prompt contained owner@example.com",
+                success=False,
+            )
+        )
         await session.commit()
 
 
@@ -195,12 +234,32 @@ async def test_authenticated_user_deletes_own_account_and_records(client):
             )
         ).scalar_one()
         assert checkout_uid is None
+        assert (
+            await session.execute(
+                select(AssistantMessage).where(AssistantMessage.conversation_id == "conv-owner-pii")
+            )
+        ).scalars().first() is None
+        assert (
+            await session.execute(select(AIChatLog).where(AIChatLog.conversation_id == "conv-owner-pii"))
+        ).scalars().first() is None
+        audit = (
+            await session.execute(
+                select(AIAuditLog).where(AIAuditLog.input_hash == "abc123hashprefix")
+            )
+        ).scalar_one()
+        assert audit.user_id is None
+        assert audit.error is None
+        assert audit.endpoint == "/api/assistant/chat"
 
 
 @pytest.mark.asyncio
 async def test_deleted_credentials_cannot_authenticate(client):
     tokens = await _register(client, "gone@example.com")
     token = tokens["access_token"]
+    uid = await _user_id("gone@example.com")
+    payload = decode_access_token(token)
+    assert payload["sub"] == str(uid)
+
     res = await client.request(
         "DELETE",
         "/api/account",
@@ -208,8 +267,14 @@ async def test_deleted_credentials_cannot_authenticate(client):
         json={"confirm": "DELETE"},
     )
     assert res.status_code == 200
+
+    still_signed = decode_access_token(token)
+    assert still_signed["sub"] == str(uid)
+
     me = await client.get("/api/auth/me", headers=_auth(token))
     assert me.status_code == 401
+    billing = await client.get("/api/billing/status", headers=_auth(token))
+    assert billing.status_code == 401
     login = await client.post(
         "/api/auth/login",
         json={"email": "gone@example.com", "password": "securepass123"},

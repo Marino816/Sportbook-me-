@@ -116,8 +116,19 @@ async def delete_authenticated_user_account(db: AsyncSession, user: User) -> int
 
     await db.execute(update(Subscription).where(Subscription.user_id == uid).values(user_id=None))
     await db.execute(update(RevenueLog).where(RevenueLog.user_id == uid).values(user_id=None))
-    await db.execute(update(AIAuditLog).where(AIAuditLog.user_id == uid).values(user_id=None))
-    await db.execute(update(AIChatLog).where(AIChatLog.user_id == uid).values(user_id=None))
+
+    # Chat transcripts live in assistant_messages (deleted above). AIChatLog still
+    # stores conversation_id, tools_invoked, and error text for that account —
+    # delete those rows instead of nulling user_id.
+    await db.execute(delete(AIChatLog).where(AIChatLog.user_id == uid))
+
+    # AIAuditLog stores SHA-256 hashes of request/response bodies, token/cost
+    # counters, endpoint name, and an optional plaintext error. Hashes and
+    # usage counters are retained for cost accounting and security monitoring
+    # after the user identifier and plaintext error are removed.
+    await db.execute(
+        update(AIAuditLog).where(AIAuditLog.user_id == uid).values(user_id=None, error=None)
+    )
 
     await db.execute(delete(User).where(User.id == uid))
     logger.info("account_deleted user_id=%s", uid)
