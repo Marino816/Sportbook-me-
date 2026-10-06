@@ -56,6 +56,7 @@ export function LegalPage({
           <div className="flex flex-wrap gap-4">
             <Link href="/terms" className="text-xs hover:underline" style={{ color: textMuted }}>Terms</Link>
             <Link href="/privacy" className="text-xs hover:underline" style={{ color: textMuted }}>Privacy</Link>
+            <Link href="/delete-account" className="text-xs hover:underline" style={{ color: textMuted }}>Delete Account</Link>
             <Link href="/refund-policy" className="text-xs hover:underline" style={{ color: textMuted }}>Refund Policy</Link>
             <Link href="/contact" className="text-xs hover:underline" style={{ color: textMuted }}>Contact</Link>
           </div>

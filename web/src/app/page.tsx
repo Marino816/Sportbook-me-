@@ -819,7 +819,7 @@ export default function LandingPage() {
                 ["About", "/about"], ["Blog", "/blog"], ["Careers", "/careers"], ["Contact", "/contact"],
               ]],
               ["Legal", [
-                ["Terms of Service", "/terms"], ["Privacy Policy", "/privacy"], ["Refund & Cancellation Policy", "/refund-policy"], ["Responsible Gaming", "/terms#responsible-gaming"],
+                ["Terms of Service", "/terms"], ["Privacy Policy", "/privacy"], ["Delete Account", "/delete-account"], ["Refund & Cancellation Policy", "/refund-policy"], ["Responsible Gaming", "/terms#responsible-gaming"],
               ]],
             ].map(([heading, links]) => (
               <div key={heading as string}>

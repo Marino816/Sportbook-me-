@@ -235,6 +235,24 @@ export async function fetchCurrentUser(): Promise<ApiResponse<any>> {
   });
 }
 
+export async function deleteAccount(): Promise<{ deleted: boolean; message: string }> {
+  const token = getStoredToken();
+  const res = await fetch(`${API_BASE_URL}/account`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ confirm: "DELETE" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Account deletion failed" }));
+    const detail = err?.detail;
+    throw new Error(typeof detail === "string" ? detail : "Account deletion failed");
+  }
+  return res.json();
+}
+
 // ── Native DFS Slate API ──────────────────────────────────────
 
 export interface DFSSlateSummary {

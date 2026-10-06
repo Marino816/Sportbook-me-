@@ -113,3 +113,16 @@ class UserResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class DeleteAccountRequest(BaseModel):
+    """Client must send confirm=DELETE. Any user_id/email in the body is ignored."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    confirm: str
+
+
+class DeleteAccountResponse(BaseModel):
+    deleted: bool
+    message: str

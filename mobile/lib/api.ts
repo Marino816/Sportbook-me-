@@ -61,6 +61,13 @@ export async function getMe() {
   return apiFetch("/auth/me");
 }
 
+export async function deleteAccount() {
+  return apiFetch("/account", {
+    method: "DELETE",
+    body: JSON.stringify({ confirm: "DELETE" }),
+  });
+}
+
 // ── Billing ──
 export async function getSubscriptionStatus() {
   return apiFetch("/billing/status");

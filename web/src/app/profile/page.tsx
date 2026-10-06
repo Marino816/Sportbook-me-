@@ -44,6 +44,13 @@ export default function ProfilePage() {
           Settings & AI Preferences
         </Link>
 
+        <Link href="/delete-account" style={{
+          background: "#0a0f24", borderRadius: 14, padding: "16px 20px", border: "1px solid #ef444440",
+          color: "#ef4444", fontWeight: 700, textDecoration: "none", display: "block",
+        }}>
+          DELETE ACCOUNT
+        </Link>
+
         <button onClick={logout} style={{
           background: "transparent", borderRadius: 14, padding: "16px 20px", border: "1px solid #ef444440",
           color: "#ef4444", fontWeight: 700, cursor: "pointer", textAlign: "left",

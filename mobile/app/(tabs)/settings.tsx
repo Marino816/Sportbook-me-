@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert } from "react-native";
 import { router } from "expo-router";
-import { clearToken } from "../../lib/api";
+import { clearToken, deleteAccount } from "../../lib/api";
 
 export default function SettingsScreen() {
   const [notifications, setNotifications] = useState(true);
@@ -13,6 +13,34 @@ export default function SettingsScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Sign Out", style: "destructive", onPress: async () => { await clearToken(); router.replace("/"); } },
     ]);
+  }
+
+  async function handleDeleteAccount() {
+    Alert.alert(
+      "Delete account permanently?",
+      "This permanently deletes your Sportbook Me DFS AI account and saved app data. It does not cancel Apple, Google Play, or Stripe billing. It cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Account",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAccount();
+              await clearToken();
+              Alert.alert("Account deleted", "Your Sportbook Me account was deleted.", [
+                { text: "OK", onPress: () => router.replace("/") },
+              ]);
+            } catch (error) {
+              Alert.alert(
+                "Could not delete account",
+                error instanceof Error ? error.message : "Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -40,6 +68,14 @@ export default function SettingsScreen() {
         <Text style={s.label}>ABOUT</Text>
         <View style={s.row}><Text style={s.rowLabel}>Version</Text><Text style={s.value}>1.1.0</Text></View>
         <View style={s.row}><Text style={s.rowLabel}>Powered by</Text><Text style={s.value}>🧠 SB ME Intelligent AI</Text></View>
+      </View>
+
+      <View style={s.section}>
+        <Text style={s.label}>ACCOUNT</Text>
+        <TouchableOpacity style={s.row} onPress={handleDeleteAccount}>
+          <Text style={[s.rowLabel, { color: "#ef4444" }]}>Delete Account</Text>
+          <Text style={{ color: "#ef4444", fontWeight: "700" }}>Request →</Text>
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity style={s.logout} onPress={handleLogout}><Text style={s.logoutText}>Sign Out</Text></TouchableOpacity>

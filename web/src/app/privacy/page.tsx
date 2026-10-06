@@ -124,7 +124,10 @@ export default function PrivacyPage() {
       <P>
         Depending on your jurisdiction, you may have rights regarding your personal information, including the
         right to access, correct, delete, or port your data, and the right to opt out of certain processing.
-        To exercise these rights, please contact us at <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: gold }}>{SUPPORT_EMAIL}</a>.
+        To delete a Sportbook Me DFS AI account, use the{" "}
+        <Link href="/delete-account" style={{ color: gold }}>Delete Account</Link>
+        {" "}page. That page loads without signing in; ownership is verified by website sign-in before anything is deleted.
+        For other privacy requests, contact us at <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: gold }}>{SUPPORT_EMAIL}</a>.
         We will respond to verified requests in accordance with applicable law.
       </P>
 

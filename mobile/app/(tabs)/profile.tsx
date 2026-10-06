@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { router } from "expo-router";
-import { getMe, clearToken } from "../../lib/api";
+import { getMe, clearToken, deleteAccount } from "../../lib/api";
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<any>(null);
@@ -18,6 +18,34 @@ export default function ProfileScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Sign Out", style: "destructive", onPress: async () => { await clearToken(); router.replace("/"); } },
     ]);
+  }
+
+  async function handleDeleteAccount() {
+    Alert.alert(
+      "Delete account permanently?",
+      "This permanently deletes your Sportbook Me DFS AI account and saved app data. It does not cancel Apple, Google Play, or Stripe billing. It cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Account",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAccount();
+              await clearToken();
+              Alert.alert("Account deleted", "Your Sportbook Me account was deleted.", [
+                { text: "OK", onPress: () => router.replace("/") },
+              ]);
+            } catch (error) {
+              Alert.alert(
+                "Could not delete account",
+                error instanceof Error ? error.message : "Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
   }
 
   if (loading) return <View style={s.center}><ActivityIndicator size="large" color="#c9a84c" /></View>;
@@ -47,6 +75,10 @@ export default function ProfileScreen() {
         <Text style={s.linkText}>Settings & AI Preferences →</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity style={s.deleteBtn} onPress={handleDeleteAccount}>
+        <Text style={s.deleteText}>DELETE ACCOUNT</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={s.logout} onPress={handleLogout}>
         <Text style={s.logoutText}>Sign Out</Text>
       </TouchableOpacity>
@@ -67,4 +99,6 @@ const s = StyleSheet.create({
   linkText: { color: "#c9a84c", fontSize: 15, fontWeight: "600" },
   logout: { marginTop: 24, backgroundColor: "#333", borderRadius: 12, padding: 16, alignItems: "center" },
   logoutText: { color: "#ff4444", fontWeight: "700", fontSize: 16 },
+  deleteBtn: { marginTop: 8, backgroundColor: "#1a0a0a", borderRadius: 12, padding: 16, alignItems: "center", borderWidth: 1, borderColor: "#ef444440" },
+  deleteText: { color: "#ef4444", fontWeight: "700", fontSize: 16 },
 });
