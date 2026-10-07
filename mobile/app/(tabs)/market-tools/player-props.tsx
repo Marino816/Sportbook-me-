@@ -8,6 +8,23 @@ import { getToken } from "../../../lib/api";
 
 const API_URL = "https://sportbook-me-production.up.railway.app/api";
 
+function propBooks(prop: any): any[] {
+  const books = prop?.bookmakers || prop?.books || prop?.odds;
+  if (Array.isArray(books) && books.length) return books;
+  if (prop?.bookmaker || prop?.american != null || prop?.line != null) {
+    const over = String(prop.selection || "").toLowerCase() === "over" ? prop.american : undefined;
+    const under = String(prop.selection || "").toLowerCase() === "under" ? prop.american : undefined;
+    return [{
+      bookmaker_name: prop.bookmaker,
+      line: prop.line,
+      points: prop.line,
+      over_price: over,
+      under_price: under,
+    }];
+  }
+  return [];
+}
+
 export default function PlayerPropsScreen() {
   const [players, setPlayers] = useState<any[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
@@ -21,8 +38,7 @@ export default function PlayerPropsScreen() {
     setLoading(true);
     try {
       const token = await getToken();
-      // Get slate data to find players from intelligence
-      const res = await fetch(`${API_URL}/intelligence/slate/1`, {
+      const res = await fetch(`${API_URL}/market-tools/player-props?sport=NFL`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -33,8 +49,20 @@ export default function PlayerPropsScreen() {
         setPlayers([]);
         return;
       }
-      const ps = payload?.players || json.players || [];
-      setPlayers(ps);
+      const rows = payload?.props || payload?.players || json.props || [];
+      const byId = new Map<string, any>();
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const id = row.internal_player_id || row.player || row.id;
+        if (!id || byId.has(id)) continue;
+        byId.set(id, {
+          player_id: id,
+          id,
+          player_name: row.player,
+          name: row.player,
+          event_id: row.event_id,
+        });
+      }
+      setPlayers(Array.from(byId.values()));
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -48,7 +76,7 @@ export default function PlayerPropsScreen() {
     try {
       const token = await getToken();
       const pid = player.player_id || player.id;
-      const res = await fetch(`${API_URL}/market-tools/player-props?player_id=${pid}`, {
+      const res = await fetch(`${API_URL}/market-tools/player-props?player_id=${encodeURIComponent(pid)}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -76,7 +104,7 @@ export default function PlayerPropsScreen() {
   });
 
   const getBestOver = (prop: any): string => {
-    const books = prop?.bookmakers || prop?.books || prop?.odds || [];
+    const books = propBooks(prop);
     if (!books.length) return "—";
     let best = books[0];
     for (const b of books) {
@@ -86,7 +114,7 @@ export default function PlayerPropsScreen() {
   };
 
   const getLineRange = (prop: any): string => {
-    const books = prop?.bookmakers || prop?.books || prop?.odds || [];
+    const books = propBooks(prop);
     if (!books.length) return "—";
     let min = Infinity, max = -Infinity;
     for (const b of books) {
@@ -177,7 +205,7 @@ export default function PlayerPropsScreen() {
 
           {props.map((prop, i) => {
             // Determine consensus line (most common)
-            const books = prop?.bookmakers || prop?.books || prop?.odds || [];
+            const books = propBooks(prop);
             const lineCount: Record<string, number> = {};
             for (const b of books) {
               const l = String(b.line || b.points || "");

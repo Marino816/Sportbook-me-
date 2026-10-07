@@ -29,7 +29,7 @@ from models.domain import User
 from api.auth import get_current_user
 from api.utils import wrap_data
 from api.market_tools_internal import router as internal_router
-from market_snapshot.provider import market_tools_provider, request_serves_oddsapi
+from market_snapshot.provider import market_tools_provider, request_market_tools_provider, request_serves_oddsapi
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,8 @@ async def _get_market_cache():
 @router.get("/live-odds")
 async def get_live_odds(
     event_id: str = Query("", description="Optional SGO event ID"),
-    league: str = Query("MLB", description="League when listing games"),
+    league: str | None = Query(None, description="League when listing games. Omit with slate_id to use the capture sport."),
+    slate_id: str = Query("", description="Installed-app slate query. Ignored as a DFS id; used only to detect omitted league."),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -109,9 +110,10 @@ async def get_live_odds(
     if await request_serves_oddsapi(user, db):
         from market_snapshot.cache import public_preview
         from market_snapshot.compat import resolve_event
-        from market_snapshot.consumers import event_card_to_mobile_game, filter_events_for_league
+        from market_snapshot.consumers import event_card_to_mobile_game, events_for_consumer_list
 
         preview = public_preview()
+        provider = await request_market_tools_provider(user, db)
         if preview.get("unavailable"):
             return wrap_data({
                 "unavailable": True,
@@ -121,7 +123,7 @@ async def get_live_odds(
                 "event_id": event_id or None,
                 "games": [],
                 "count": 0,
-                "provider": market_tools_provider(),
+                "provider": provider,
             }, source="cached")
         if event_id:
             resolved = resolve_event(event_id, preview.get("events") or [])
@@ -144,17 +146,19 @@ async def get_live_odds(
                 "sgo_event_id": None,
                 "games": [row] if row else [],
                 "count": 1 if row else 0,
-                "provider": market_tools_provider(),
+                "provider": provider,
                 **(row or {}),
             }, source="cached")
-        cards = filter_events_for_league(preview.get("events") or [], league)
+        used_league, cards = events_for_consumer_list(
+            preview.get("events") or [], league, slate_id=slate_id,
+        )
         games = [event_card_to_mobile_game(e) for e in cards]
         return wrap_data({
-            "league": league,
+            "league": used_league,
             "games": games,
             "count": len(games),
             "sgo_event_id": None,
-            "provider": market_tools_provider(),
+            "provider": provider,
             "live_score": "unavailable",
             "movement": "unavailable",
             "note": "Saved odds—not live. Namespaced Odds API identifiers; not SGO event IDs.",
@@ -231,7 +235,7 @@ async def compare_odds(
             "sgo_event_id": None,
             "bookmakers": groups,
             "books": groups,
-            "provider": market_tools_provider(),
+            "provider": await request_market_tools_provider(user, db),
             "market_type": market_type,
             "fair_odds_label": "Market-derived fair odds",
             "consensus_label": "Sportsbook consensus",
@@ -306,10 +310,8 @@ async def get_player_props(
                 }, source="cached")
             rows = [r for r in rows if r.get("event_id") == resolved.get("internal_event_id")]
         if player_id:
-            rows = [
-                r for r in rows
-                if r.get("internal_player_id") == player_id or r.get("player") == player_id
-            ]
+            from market_snapshot.consumers import player_prop_matches
+            rows = [r for r in rows if player_prop_matches(r, player_id)]
         return wrap_data({
             "event_id": event_id or None,
             "sgo_event_id": None,
@@ -317,7 +319,7 @@ async def get_player_props(
             "props": rows,
             "players": rows,
             "available": bool(rows),
-            "provider": market_tools_provider(),
+            "provider": await request_market_tools_provider(user, db),
             "note": "Sportsbook thresholds, not expected statistics or fantasy points.",
         }, source="cached")
 
@@ -453,7 +455,7 @@ async def arbitrage_scan(
         return wrap_data({
             "opportunities": preview.get("arbitrage") or [],
             "label": preview.get("arbitrage_label"),
-            "provider": market_tools_provider(),
+            "provider": await request_market_tools_provider(user, db),
             "sgo_event_id": None,
             "note": "Historical snapshot discrepancy. Movement, period, and SGP quotes remain unavailable.",
         }, source="cached")
@@ -615,7 +617,7 @@ async def get_usage(
         from market_snapshot.cache import stats
 
         return wrap_data({
-            "provider": market_tools_provider(),
+            "provider": await request_market_tools_provider(user, db),
             "sgo_usage": "unavailable",
             "cache_stats": stats(),
             "note": "Odds API serving. Browsing does not call SGO or The Odds API.",

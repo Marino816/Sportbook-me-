@@ -175,3 +175,40 @@ def filter_events_for_league(events: list[dict], league: str) -> list[dict]:
     if not selector:
         return []
     return [e for e in events or [] if (e.get("selector") or "") == selector]
+
+
+def events_for_consumer_list(events: list[dict], league: str | None, *, slate_id: str = "") -> tuple[str, list[dict]]:
+    """List Odds API events for a consumer that may omit league.
+
+    The installed production binary calls live-odds?slate_id=1 with no league,
+    so FastAPI must not default that request to MLB. A single-sport capture
+    (this owner test is NFL) is served when league is omitted or only slate_id
+    is present. An explicit league still filters.
+    """
+    playable = [e for e in events or [] if not e.get("score_only")]
+    requested = (league or "").strip()
+    if requested:
+        filtered = filter_events_for_league(playable, requested)
+        if filtered:
+            return requested, filtered
+    counts: dict[str, int] = {}
+    for ev in playable:
+        sel = str(ev.get("selector") or "").strip()
+        if sel:
+            counts[sel] = counts.get(sel, 0) + 1
+    if not counts:
+        return requested, []
+    sel = max(counts, key=lambda key: (counts[key], key))
+    return sel.upper(), [e for e in playable if (e.get("selector") or "") == sel]
+
+
+def player_prop_matches(row: dict, player_id: str) -> bool:
+    """Match Odds API prop rows to namespaced ids or display names. Never invent SGO ids."""
+    raw = str(player_id or "").strip()
+    if not raw:
+        return True
+    name = str(row.get("player") or "").strip()
+    internal = str(row.get("internal_player_id") or "").strip()
+    suffix = internal.rsplit(":", 1)[-1].strip() if internal else ""
+    candidates = {value.lower() for value in (internal, name, suffix) if value}
+    return raw.lower() in candidates

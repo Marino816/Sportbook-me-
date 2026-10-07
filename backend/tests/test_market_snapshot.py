@@ -1253,6 +1253,35 @@ class OwnerAllowlistRouteTests(unittest.TestCase):
         other_entitled = self._client(Other(), ArenaSub()).get("/api/market-tools/live-odds", params={"league": "NFL"})
         self.assertEqual(other_entitled.status_code, 422)
 
+        owner_installed = self._client(Owner(), ArenaSub()).get(
+            "/api/market-tools/live-odds", params={"slate_id": "1"},
+        )
+        self.assertEqual(owner_installed.status_code, 200)
+        installed_body = owner_installed.json()["data"]
+        self.assertGreater(installed_body.get("count") or 0, 0)
+        self.assertTrue((installed_body.get("games") or [])[0]["game_id"].startswith("oddsapi:"))
+        self.assertEqual(installed_body.get("provider"), "oddsapi")
+
+        owner_status = self._client(Owner(), ArenaSub()).get("/api/market-tools/internal/status")
+        self.assertEqual(owner_status.status_code, 200)
+        owner_status_data = owner_status.json()["data"]
+        self.assertEqual(owner_status_data["provider"], "oddsapi")
+        self.assertFalse(owner_status_data["oddsapi_enabled"])
+        self.assertFalse(owner_status_data["collect_enabled"])
+        self.assertTrue(owner_status_data.get("request_scoped_oddsapi"))
+
+        other_status = self._client(Other(), ArenaSub()).get("/api/market-tools/internal/status")
+        self.assertEqual(other_status.status_code, 200)
+        self.assertEqual(other_status.json()["data"]["provider"], "sgo")
+        self.assertFalse(other_status.json()["data"].get("request_scoped_oddsapi"))
+
+        owner_snap = self._client(Owner(), ArenaSub()).get("/api/market-tools/internal/snapshot")
+        self.assertEqual(owner_snap.status_code, 200)
+        self.assertTrue((owner_snap.json()["data"].get("events") or [])[0]["id"].startswith("oddsapi:"))
+
+        other_snap = self._client(Other(), ArenaSub()).get("/api/market-tools/internal/snapshot")
+        self.assertEqual(other_snap.status_code, 404)
+
         from market_snapshot.collector import collect
         from market_snapshot.provider import collect_enabled, oddsapi_enabled, serves_oddsapi
         self.assertFalse(oddsapi_enabled())
@@ -1335,6 +1364,18 @@ class ConsumerProjectionTests(unittest.TestCase):
         self.assertIsNone(row["sgo_event_id"])
         self.assertEqual(row["live_score"], "unavailable")
         self.assertEqual(filter_events_for_league([{"selector": "nfl"}], "UFC"), [])
+        from market_snapshot.consumers import events_for_consumer_list, player_prop_matches
+        nfl_events = [{"selector": "nfl", "id": "oddsapi:americanfootball_nfl:x"}]
+        omitted, omitted_rows = events_for_consumer_list(nfl_events, None, slate_id="1")
+        self.assertEqual(omitted.lower(), "nfl")
+        self.assertEqual(len(omitted_rows), 1)
+        mlb_default, mlb_rows = events_for_consumer_list(nfl_events, "MLB", slate_id="1")
+        self.assertEqual(len(mlb_rows), 1)
+        self.assertEqual((mlb_default or "").lower(), "nfl")
+        prop = {"internal_player_id": "oddsapi:player:americanfootball_nfl:Dak Prescott", "player": "Dak Prescott"}
+        self.assertTrue(player_prop_matches(prop, "oddsapi:player:americanfootball_nfl:Dak Prescott"))
+        self.assertTrue(player_prop_matches(prop, "Dak Prescott"))
+        self.assertFalse(player_prop_matches(prop, "12345"))
         unknown = map_oddsapi_book_key("not_a_real_book")
         self.assertTrue(unknown["unavailable"])
         mapped = map_oddsapi_book_key("draftkings")

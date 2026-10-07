@@ -12,7 +12,12 @@ from models.domain import User
 from sqlalchemy.ext.asyncio import AsyncSession
 from market_snapshot.entitlement import plan_entitlement, require_market_tools_entitlement
 from market_snapshot.flags import fixture_ingest_allowed
-from market_snapshot.provider import flag_status, serves_oddsapi, market_tools_provider
+from market_snapshot.provider import (
+    flag_status,
+    request_market_tools_provider,
+    request_serves_oddsapi,
+    serves_oddsapi,
+)
 
 router = APIRouter(tags=["SB-Me Market Tools Internal"])
 
@@ -43,6 +48,14 @@ def _require_oddsapi_serve() -> None:
         )
 
 
+async def _require_request_oddsapi(user, db) -> None:
+    if not await request_serves_oddsapi(user, db):
+        raise HTTPException(
+            status_code=404,
+            detail="Internal Odds API Market Tools are available only in snapshot mode, when MARKET_TOOLS_ODDSAPI_ENABLED=true, or for an allowlisted entitled owner account.",
+        )
+
+
 @router.get("/internal/status")
 async def market_tools_status(
     user: User = Depends(get_current_user),
@@ -53,7 +66,8 @@ async def market_tools_status(
     from market_snapshot.scheduler import CONTINUOUS_FETCH_ENABLED, CONFIG
 
     entitled = await plan_entitlement(user, db)
-    provider = market_tools_provider()
+    serving = await request_serves_oddsapi(user, db)
+    provider = await request_market_tools_provider(user, db)
     flags = flag_status()
     payload = {
         "provider": provider,
@@ -86,16 +100,20 @@ async def market_tools_status(
             "notice": "Saved odds—not live",
         },
         "activation": activation_state(),
+        "request_scoped_oddsapi": serving and not flags["oddsapi_enabled"] and not flags["snapshot"],
     }
-    if serves_oddsapi():
+    if serving:
         payload["cache"] = stats()
         payload["config"] = {"enabled": CONFIG["enabled"], "browsing_triggers_upstream": CONFIG["browsing_triggers_upstream"]}
-    return wrap_data(payload, source="cached" if serves_oddsapi() else "sgo_nested_cache")
+    return wrap_data(payload, source="cached" if serving else "sgo_nested_cache")
 
 
 @router.get("/internal/snapshot")
-async def market_tools_snapshot(user: User = Depends(require_market_tools_entitlement)):
-    _require_oddsapi_serve()
+async def market_tools_snapshot(
+    user: User = Depends(require_market_tools_entitlement),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_request_oddsapi(user, db)
     from market_snapshot.cache import public_preview, stats
 
     data = public_preview()
@@ -109,8 +127,12 @@ async def market_tools_snapshot(user: User = Depends(require_market_tools_entitl
 
 
 @router.post("/internal/parlay")
-async def market_tools_parlay(body: ParlayInternalRequest, user: User = Depends(require_market_tools_entitlement)):
-    _require_oddsapi_serve()
+async def market_tools_parlay(
+    body: ParlayInternalRequest,
+    user: User = Depends(require_market_tools_entitlement),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_request_oddsapi(user, db)
     from market_snapshot.cache import parlay_from_body, stats
 
     result = parlay_from_body(body.model_dump())
@@ -120,8 +142,12 @@ async def market_tools_parlay(body: ParlayInternalRequest, user: User = Depends(
 
 
 @router.post("/internal/resolve")
-async def market_tools_resolve(body: ResolveRequest, user: User = Depends(require_market_tools_entitlement)):
-    _require_oddsapi_serve()
+async def market_tools_resolve(
+    body: ResolveRequest,
+    user: User = Depends(require_market_tools_entitlement),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_request_oddsapi(user, db)
     from market_snapshot.cache import resolve_saved
 
     if body.legs:

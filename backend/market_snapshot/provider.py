@@ -23,6 +23,18 @@ from market_snapshot.owner_allowlist import (  # noqa: F401
 )
 
 
+async def request_market_tools_provider(user=None, db=None) -> str:
+    """Request-scoped provider label for Market Tools HTTP.
+
+    Global flags stay off during the owner test. Allowlisted entitled
+    requests report oddsapi so the website switches UI; everyone else
+    keeps the global SGO label.
+    """
+    if await request_serves_oddsapi(user, db):
+        return PROVIDER_SNAPSHOT if snapshot_mode() else PROVIDER_ODDSAPI
+    return market_tools_provider()
+
+
 def is_snapshot() -> bool:
     return snapshot_mode()
 
