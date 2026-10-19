@@ -88,8 +88,18 @@ export interface SubscriptionStatus {
   plan: string;
   status: string;
   next_billing: string | null;
+  paid_through?: string | null;
   is_canceled?: boolean;
   has_access: boolean;
+  provider?: string | null;
+  provider_display?: string | null;
+  amount?: number | null;
+  billing_interval?: string | null;
+  renewal_status?: string | null;
+  can_cancel?: boolean;
+  purchases_paused?: boolean;
+  processor_confirmed?: boolean;
+  processor_message?: string | null;
 }
 
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<ApiResponse<T>> {
@@ -181,6 +191,14 @@ export async function createCheckout(plan: string): Promise<ApiResponse<{ url: s
 
 export async function createPortal(): Promise<ApiResponse<{ url: string }>> {
   return apiFetch<{ url: string }>(`/billing/portal`);
+}
+
+export async function cancelSubscription(): Promise<ApiResponse<SubscriptionStatus>> {
+  return apiFetch<SubscriptionStatus>(`/billing/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 export async function checkHealth(): Promise<boolean> {

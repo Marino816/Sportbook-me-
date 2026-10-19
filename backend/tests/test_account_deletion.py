@@ -117,7 +117,11 @@ async def _seed_owned_and_shared(user_id: int, other_id: int) -> None:
             {"uid": user_id},
         )
         await session.execute(
-            text("INSERT INTO billing_checkouts (user_id, checkout_reference) VALUES (:uid, 'chk-owner')"),
+            text(
+                "INSERT INTO billing_checkouts "
+                "(user_id, checkout_reference, provider, provider_plan_id, tier, billing_period, status) "
+                "VALUES (:uid, 'chk-owner', 'paykings', 'SBME_PRO_MONTHLY', 'pro', 'monthly', 'paid')"
+            ),
             {"uid": user_id},
         )
         session.add(

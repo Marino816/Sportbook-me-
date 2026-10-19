@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from models.database import Base
@@ -157,3 +157,75 @@ class RevenueLog(Base):
     period_start = Column(DateTime(timezone=True), nullable=True)
     period_end = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class BillingCheckout(Base):
+    """Provider billing relationship. Does not grant entitlements by itself."""
+    __tablename__ = "billing_checkouts"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_subscription_id",
+            name="uq_billing_checkout_provider_subscription",
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    provider = Column(String, nullable=False, default="paykings", index=True)
+    checkout_reference = Column(String, nullable=False, unique=True, index=True)
+    provider_customer_id = Column(String, nullable=True, index=True)
+    provider_transaction_id = Column(String, nullable=True)
+    provider_subscription_id = Column(String, nullable=True, index=True)
+    provider_plan_id = Column(String, nullable=False)
+    tier = Column(String, nullable=False)
+    billing_period = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pending")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class BillingEntitlement(Base):
+    """Provider-aware paid access used for billing display and cancellation."""
+    __tablename__ = "billing_entitlements"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_subscription_id",
+            "is_test_mode",
+            name="uq_billing_entitlement_provider_subscription_env",
+        ),
+        UniqueConstraint(
+            "provider",
+            "checkout_reference",
+            name="uq_billing_entitlement_provider_checkout",
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String, nullable=False, index=True)
+    provider_subscription_id = Column(String, nullable=True, index=True)
+    provider_plan_id = Column(String, nullable=True)
+    checkout_reference = Column(String, nullable=True, index=True)
+    tier = Column(String, nullable=False)
+    billing_period = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pending_payment")
+    paid_verified = Column(Boolean, nullable=False, default=False)
+    is_test_mode = Column(Boolean, nullable=False, default=False)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    current_period_end = Column(DateTime(timezone=True), nullable=True)
+    canceled_at = Column(DateTime(timezone=True), nullable=True)
+    last_successful_transaction_id = Column(String, nullable=True)
+    last_refund_transaction_id = Column(String, nullable=True)
+    refunded_amount = Column(String, nullable=True)
+    compatibility_subscription_id = Column(Integer, nullable=True)
+    last_provider_signed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )

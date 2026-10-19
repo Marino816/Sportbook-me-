@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 
 from main import app
 from models.database import Base, get_db
-from models.domain import User, Subscription, StripeEvent, RevenueLog
+from datetime import datetime, timedelta, timezone
+
+from models.domain import User, Subscription, StripeEvent, RevenueLog, BillingEntitlement
 from services.stripe_service import StripeService
 
 TEST_DB_URL = "sqlite+aiosqlite://"
@@ -111,11 +113,59 @@ class TestBillingStatus:
             "pro@test.com",
             plan_name="Pro Arena", status="active",
             stripe_subscription_id="sub_test_123",
+            mrr_value=49.99,
+            current_period_end=datetime.now(timezone.utc) + timedelta(days=30),
         )
         res = await client.get("/api/billing/status", headers={"Authorization": f"Bearer {token}"})
         assert res.status_code == 200
         data = res.json()["data"]
         assert data["plan"] == "Pro Arena"
+        assert data["amount"] == 49.99
+        assert data["billing_interval"] == "monthly"
+        assert data["provider"] == "stripe"
+        assert data["purchases_paused"] is True
+
+    async def test_status_paykings_subscription(self, client):
+        token = await _register_and_login(client, "pk@test.com")
+        await _create_sub_async(
+            "pk@test.com",
+            plan_name="Pro Arena",
+            status="active",
+            mrr_value=49.99,
+            current_period_end=datetime.now(timezone.utc) + timedelta(days=29),
+            cancel_at_period_end=True,
+        )
+        paid_through = datetime(2026, 11, 17, tzinfo=timezone.utc)
+        async with _TestSession() as db:
+            user = (await db.execute(sa_select(User).where(User.email == "pk@test.com"))).scalars().first()
+            db.add(BillingEntitlement(
+                user_id=user.id,
+                provider="paykings",
+                provider_subscription_id="12574008155",
+                provider_plan_id="SBME_PRO_MONTHLY",
+                checkout_reference="pkchk_test",
+                tier="pro",
+                billing_period="monthly",
+                status="active",
+                paid_verified=True,
+                current_period_end=paid_through,
+                canceled_at=datetime(2026, 10, 19, tzinfo=timezone.utc),
+                last_successful_transaction_id="12695555360",
+            ))
+            await db.commit()
+        res = await client.get("/api/billing/status", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 200
+        data = res.json()["data"]
+        assert data["plan"] == "Pro Arena"
+        assert data["amount"] == 49.99
+        assert data["billing_interval"] == "monthly"
+        assert data["provider"] == "paykings"
+        assert data["is_canceled"] is True
+        assert data["renewal_status"] == "canceled"
+        assert data["has_access"] is True
+        assert data["next_billing"] is None
+        assert data["paid_through"].startswith("2026-11-17")
+        assert data["can_cancel"] is False
 
 
 class TestCheckout:
@@ -126,7 +176,7 @@ class TestCheckout:
         assert res.status_code == 401
 
     @patch("services.stripe_service.stripe.checkout.Session.create")
-    async def test_checkout_creates_session(self, mock_create, client):
+    async def test_checkout_paused(self, mock_create, client):
         mock_create.return_value = MagicMock(url="https://checkout.stripe.com/test")
         token = await _register_and_login(client, "buyer@test.com")
         res = await client.post(
@@ -134,17 +184,18 @@ class TestCheckout:
             json={"plan": "Pro Arena"},
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert res.status_code == 200
-        assert "checkout.stripe.com" in res.json()["data"]["url"]
+        assert res.status_code == 403
+        assert "paused" in res.json()["detail"].lower()
+        mock_create.assert_not_called()
 
-    async def test_checkout_invalid_plan(self, client):
+    async def test_checkout_invalid_plan_paused(self, client):
         token = await _register_and_login(client, "badplan@test.com")
         res = await client.post(
             "/api/billing/checkout",
             json={"plan": "Nonexistent"},
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert res.status_code == 400
+        assert res.status_code == 403
 
 
 class TestPortal:
@@ -214,3 +265,112 @@ class TestWebhookIdempotency:
         )
         assert res.status_code == 400
         assert "Invalid Webhook" in res.json()["detail"]
+
+
+class TestCancel:
+    """POST /api/billing/cancel"""
+
+    async def test_cancel_requires_confirmation(self, client):
+        token = await _register_and_login(client, "noconfirm@test.com")
+        res = await client.post(
+            "/api/billing/cancel",
+            json={"confirm": False},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 400
+        assert "Confirmation required" in res.json()["detail"]
+
+    async def test_cancel_success_only_after_processor(self, client):
+        token = await _register_and_login(client, "cancelok@test.com")
+        await _create_sub_async(
+            "cancelok@test.com",
+            plan_name="Pro Arena",
+            status="active",
+            mrr_value=49.99,
+            current_period_end=datetime.now(timezone.utc) + timedelta(days=29),
+        )
+        async with _TestSession() as db:
+            user = (await db.execute(sa_select(User).where(User.email == "cancelok@test.com"))).scalars().first()
+            db.add(BillingEntitlement(
+                user_id=user.id,
+                provider="paykings",
+                provider_subscription_id="sub-live",
+                provider_plan_id="SBME_PRO_MONTHLY",
+                checkout_reference="pkchk_cancel_ok",
+                tier="pro",
+                billing_period="monthly",
+                status="active",
+                paid_verified=True,
+                current_period_end=datetime.now(timezone.utc) + timedelta(days=29),
+            ))
+            await db.commit()
+
+        class _Parsed:
+            approved = True
+            responsetext = "Recurring Transaction Deleted"
+            response_code = "100"
+            subscription_id = "sub-live"
+
+        class _Client:
+            async def delete_subscription(self, subscription_id):
+                assert subscription_id == "sub-live"
+                return _Parsed()
+
+            async def query_subscription(self, subscription_id):
+                return None
+
+        with patch("services.billing_account.PayKingsRecurringClient", return_value=_Client()):
+            res = await client.post(
+                "/api/billing/cancel",
+                json={"confirm": True},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert res.status_code == 200
+        data = res.json()["data"]
+        assert data["processor_confirmed"] is True
+        assert data["is_canceled"] is True
+        assert data["has_access"] is True
+        assert data["renewal_status"] == "canceled"
+
+    async def test_cancel_does_not_report_success_on_processor_failure(self, client):
+        from services.paykings_recurring import PayKingsProviderError, PayKingsTransactResponse
+
+        token = await _register_and_login(client, "cancelfail@test.com")
+        await _create_sub_async(
+            "cancelfail@test.com",
+            plan_name="Pro Arena",
+            status="active",
+            mrr_value=49.99,
+            current_period_end=datetime.now(timezone.utc) + timedelta(days=29),
+        )
+        async with _TestSession() as db:
+            user = (await db.execute(sa_select(User).where(User.email == "cancelfail@test.com"))).scalars().first()
+            db.add(BillingEntitlement(
+                user_id=user.id,
+                provider="paykings",
+                provider_subscription_id="sub-fail",
+                provider_plan_id="SBME_PRO_MONTHLY",
+                checkout_reference="pkchk_cancel_fail",
+                tier="pro",
+                billing_period="monthly",
+                status="active",
+                paid_verified=True,
+                current_period_end=datetime.now(timezone.utc) + timedelta(days=29),
+            ))
+            await db.commit()
+
+        class _Client:
+            async def delete_subscription(self, subscription_id):
+                raise PayKingsProviderError(
+                    "paykings_not_approved",
+                    PayKingsTransactResponse(raw="response=2", response="2", responsetext="Declined"),
+                )
+
+        with patch("services.billing_account.PayKingsRecurringClient", return_value=_Client()):
+            res = await client.post(
+                "/api/billing/cancel",
+                json={"confirm": True},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert res.status_code == 502
+        assert "Processor did not confirm" in res.json()["detail"]

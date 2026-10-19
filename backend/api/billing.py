@@ -1,13 +1,18 @@
 from fastapi import APIRouter, Depends, Request, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import Dict, Any
 from pydantic import BaseModel
 import os
-import json
 
 from models.database import get_db, SyncSessionLocal
 from models.domain import User, Subscription
+from services.billing_account import (
+    PURCHASES_PAUSED_DETAIL,
+    BillingCancelError,
+    cancel_user_subscription,
+    purchases_paused,
+    subscription_status,
+)
 from services.stripe_service import StripeService
 from api.utils import wrap_data
 from api.auth import get_current_user, require_admin
@@ -32,6 +37,15 @@ class CheckoutRequest(BaseModel):
     plan: str
 
 
+class CancelRequest(BaseModel):
+    confirm: bool = False
+
+
+def _reject_purchases():
+    if purchases_paused():
+        raise HTTPException(status_code=403, detail=PURCHASES_PAUSED_DETAIL)
+
+
 @router.post("/checkout")
 async def create_checkout(
     body: CheckoutRequest,
@@ -39,6 +53,7 @@ async def create_checkout(
     db: AsyncSession = Depends(get_db)
 ):
     """Initiate a Stripe Checkout session for a chosen plan."""
+    _reject_purchases()
     try:
         frontend_url = _get_canonical_frontend_url()
         success_url = f"{frontend_url}/billing?success=true"
@@ -91,26 +106,26 @@ async def get_subscription_status(
     db: AsyncSession = Depends(get_db)
 ):
     """Get the current user's subscription and plan status."""
-    if not user.active_subscription_id:
-        return wrap_data({
-            "plan": "Starter",
-            "status": "free",
-            "next_billing": None,
-            "trial_end": None,
-            "has_access": False
-        }, source="live")
-        
-    result = await db.execute(select(Subscription).where(Subscription.id == user.active_subscription_id))
-    sub = result.scalars().first()
-    
-    return wrap_data({
-        "plan": sub.plan_name,
-        "status": sub.status,
-        "next_billing": sub.current_period_end.isoformat() if sub.current_period_end else None,
-        "trial_end": sub.trial_end.isoformat() if sub.trial_end else None,
-        "is_canceled": sub.cancel_at_period_end,
-        "has_access": sub.status in ['active', 'trialing']
-    }, source="live")
+    return wrap_data(await subscription_status(db, user), source="live")
+
+
+@router.post("/cancel")
+async def cancel_subscription(
+    body: CancelRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel renewal at the actual processor. Success only if the processor confirms."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="Confirmation required")
+    try:
+        payload = await cancel_user_subscription(db, user)
+    except BillingCancelError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    if not payload.get("processor_confirmed"):
+        raise HTTPException(status_code=502, detail="Processor did not confirm cancellation")
+    await db.commit()
+    return wrap_data(payload, source="live")
 
 
 # ── Admin / Self-service: force sync ─────────────────────────
